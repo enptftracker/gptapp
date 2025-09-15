@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Portfolio Tracker Design System - Financial App Theme */
+
+@layer base {
+  :root {
+    /* Core Brand Colors */
+    --background: 250 20% 97%;
+    --foreground: 220 15% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 15% 12%;
+
+    /* Primary - Professional Blue */
+    --primary: 220 91% 54%;
+    --primary-foreground: 0 0% 100%;
+    --primary-muted: 220 50% 85%;
+
+    /* Secondary - Neutral */
+    --secondary: 220 10% 95%;
+    --secondary-foreground: 220 15% 25%;
+
+    --muted: 220 10% 96%;
+    --muted-foreground: 220 10% 45%;
+
+    --accent: 220 20% 92%;
+    --accent-foreground: 220 15% 25%;
+
+    /* Financial Colors */
+    --profit: 142 71% 45%;
+    --profit-foreground: 0 0% 100%;
+    --profit-muted: 142 30% 90%;
+    
+    --loss: 0 84% 60%;
+    --loss-foreground: 0 0% 100%;
+    --loss-muted: 0 30% 92%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 15% 12%;
+    --warning-muted: 38 50% 90%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 90%;
+    --input: 220 15% 94%;
+    --ring: 220 91% 54%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    /* Dark Mode - Financial App */
+    --background: 220 25% 6%;
+    --foreground: 220 10% 95%;
+
+    --card: 220 20% 8%;
+    --card-foreground: 220 10% 95%;
+
+    --popover: 220 20% 8%;
+    --popover-foreground: 220 10% 95%;
+
+    --primary: 220 91% 54%;
+    --primary-foreground: 0 0% 100%;
+    --primary-muted: 220 40% 25%;
+
+    --secondary: 220 15% 15%;
+    --secondary-foreground: 220 10% 85%;
+
+    --muted: 220 15% 12%;
+    --muted-foreground: 220 10% 65%;
+
+    --accent: 220 15% 18%;
+    --accent-foreground: 220 10% 85%;
+
+    /* Dark Mode Financial Colors */
+    --profit: 142 71% 45%;
+    --profit-foreground: 0 0% 100%;
+    --profit-muted: 142 20% 15%;
+    
+    --loss: 0 84% 60%;
+    --loss-foreground: 0 0% 100%;
+    --loss-muted: 0 20% 15%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 15% 12%;
+    --warning-muted: 38 30% 15%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 20%;
+    --input: 220 15% 15%;
+    --ring: 220 91% 54%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
