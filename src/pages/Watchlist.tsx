@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { TrendingUp, TrendingDown, Trash2, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,7 @@ export default function Watchlist() {
   const addToWatchlist = useAddToWatchlist();
   const removeFromWatchlist = useRemoveFromWatchlist();
 
-  const handleAddSymbol = async (ticker: string, name: string, assetType: string) => {
+  const handleAddSymbol = async (ticker: string, _name: string, _assetType: string) => {
     try {
       await addToWatchlist.mutateAsync(ticker);
       setPendingSelection(ticker.toUpperCase());
@@ -173,7 +174,7 @@ export default function Watchlist() {
                         </p>
                       </button>
 
-                      <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-3 sm:gap-4">
                         {item.price && (
                           <div className="text-right">
                             <div className="font-semibold text-lg">
@@ -195,6 +196,22 @@ export default function Watchlist() {
                             </div>
                           </div>
                         )}
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-primary"
+                          asChild
+                        >
+                          <Link
+                            to={`/symbol/${item.symbol.ticker}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`Open ${item.symbol.ticker} details in a new tab`}
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Link>
+                        </Button>
 
                         <Button
                           variant="ghost"

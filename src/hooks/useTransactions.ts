@@ -44,13 +44,14 @@ export function useCreateTransaction() {
         description: "Your transaction has been recorded successfully.",
       });
     },
-    onError: (error: any) => {
-      toast({
-        title: "Error adding transaction",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
+      onError: (error: unknown) => {
+        const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+        toast({
+          title: "Error adding transaction",
+          description,
+          variant: "destructive",
+        });
+      },
   });
 }
 
@@ -79,13 +80,14 @@ export function useUpdateTransaction() {
         description: 'Your transaction has been updated successfully.',
       });
     },
-    onError: (error: any) => {
-      toast({
-        title: 'Error updating transaction',
-        description: error.message,
-        variant: 'destructive',
-      });
-    }
+      onError: (error: unknown) => {
+        const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+        toast({
+          title: 'Error updating transaction',
+          description,
+          variant: 'destructive',
+        });
+      }
   });
 }
 
@@ -112,12 +114,13 @@ export function useDeleteTransaction() {
         description: 'The transaction has been removed.',
       });
     },
-    onError: (error: any) => {
-      toast({
-        title: 'Error deleting transaction',
-        description: error.message,
-        variant: 'destructive',
-      });
-    }
+      onError: (error: unknown) => {
+        const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+        toast({
+          title: 'Error deleting transaction',
+          description,
+          variant: 'destructive',
+        });
+      }
   });
 }

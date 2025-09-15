@@ -298,7 +298,11 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
         </div>
 
         <Button variant="outline" className="w-full" asChild>
-          <Link to={`/symbol/${item.symbol.ticker}`}>
+          <Link
+            to={`/symbol/${item.symbol.ticker}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             View full symbol details
             <ExternalLink className="ml-2 h-4 w-4" />
           </Link>
