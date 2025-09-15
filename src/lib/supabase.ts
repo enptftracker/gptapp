@@ -21,6 +21,10 @@ export interface Symbol {
   updated_at: string;
 }
 
+export interface SymbolWithPrice extends Symbol {
+  price_cache?: PriceData | null;
+}
+
 export interface Transaction {
   id: string;
   owner_id: string;
@@ -37,6 +41,10 @@ export interface Transaction {
   lot_link?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface TransactionWithSymbol extends Transaction {
+  symbol?: SymbolWithPrice | null;
 }
 
 export interface PriceData {
@@ -158,39 +166,132 @@ export const symbolService = {
 
 // Transaction operations
 export const transactionService = {
-  async getAll(): Promise<Transaction[]> {
+  async getAll(): Promise<TransactionWithSymbol[]> {
     const { data, error } = await supabase
       .from('transactions')
-      .select('*')
+      .select(`
+        *,
+        symbol:symbol_id (
+          id,
+          owner_id,
+          ticker,
+          name,
+          asset_type,
+          exchange,
+          quote_currency,
+          price_cache (
+            price,
+            price_currency,
+            change_24h,
+            change_percent_24h,
+            asof
+          )
+        )
+      `)
       .order('trade_date', { ascending: false });
-    
+
     if (error) throw error;
-    return data || [];
+    return (data as TransactionWithSymbol[]) || [];
   },
 
-  async getByPortfolio(portfolioId: string): Promise<Transaction[]> {
+  async getByPortfolio(portfolioId: string): Promise<TransactionWithSymbol[]> {
     const { data, error } = await supabase
       .from('transactions')
-      .select('*')
+      .select(`
+        *,
+        symbol:symbol_id (
+          id,
+          owner_id,
+          ticker,
+          name,
+          asset_type,
+          exchange,
+          quote_currency,
+          price_cache (
+            price,
+            price_currency,
+            change_24h,
+            change_percent_24h,
+            asof
+          )
+        )
+      `)
       .eq('portfolio_id', portfolioId)
       .order('trade_date', { ascending: false });
-    
+
     if (error) throw error;
-    return data || [];
+    return (data as TransactionWithSymbol[]) || [];
   },
 
-  async create(transaction: Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>): Promise<Transaction> {
+  async create(transaction: Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>): Promise<TransactionWithSymbol> {
     const { data, error } = await supabase
       .from('transactions')
       .insert({
         ...transaction,
         owner_id: (await supabase.auth.getUser()).data.user?.id
       })
-      .select()
+      .select(`
+        *,
+        symbol:symbol_id (
+          id,
+          owner_id,
+          ticker,
+          name,
+          asset_type,
+          exchange,
+          quote_currency,
+          price_cache (
+            price,
+            price_currency,
+            change_24h,
+            change_percent_24h,
+            asof
+          )
+        )
+      `)
       .single();
-    
+
     if (error) throw error;
-    return data;
+    return data as TransactionWithSymbol;
+  },
+
+  async update(id: string, updates: Partial<Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>>): Promise<TransactionWithSymbol> {
+    const { data, error } = await supabase
+      .from('transactions')
+      .update(updates)
+      .eq('id', id)
+      .select(`
+        *,
+        symbol:symbol_id (
+          id,
+          owner_id,
+          ticker,
+          name,
+          asset_type,
+          exchange,
+          quote_currency,
+          price_cache (
+            price,
+            price_currency,
+            change_24h,
+            change_percent_24h,
+            asof
+          )
+        )
+      `)
+      .single();
+
+    if (error) throw error;
+    return data as TransactionWithSymbol;
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('transactions')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
   }
 };
 
