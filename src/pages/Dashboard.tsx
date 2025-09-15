@@ -11,6 +11,7 @@ import { Plus, Wallet, TrendingUp, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatCurrency } from '@/lib/calculations';
 import TransactionForm from '@/components/transactions/TransactionForm';
+import AllocationChart from '@/components/dashboard/AllocationChart';
 
 export default function Dashboard() {
   const { data: portfolios = [], isLoading: portfoliosLoading } = usePortfolios();
@@ -146,38 +147,61 @@ export default function Dashboard() {
 
       {/* Holdings Overview */}
       {consolidatedHoldings.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Top Holdings</CardTitle>
-              <div className="flex items-center space-x-2">
-                <TransactionForm portfolios={portfolios} />
-                <Button variant="outline" asChild>
-                  <Link to="/consolidated">
-                    <TrendingUp className="mr-2 h-4 w-4" />
-                    View All
-                  </Link>
-                </Button>
+        <>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Top Holdings</CardTitle>
+                <div className="flex items-center space-x-2">
+                  <TransactionForm portfolios={portfolios} />
+                  <Button variant="outline" asChild>
+                    <Link to="/consolidated">
+                      <TrendingUp className="mr-2 h-4 w-4" />
+                      View All
+                    </Link>
+                  </Button>
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <HoldingsTable 
-              holdings={consolidatedHoldings.slice(0, 5).map(h => ({
-                portfolioId: '',
-                symbolId: h.symbolId,
-                symbol: h.symbol,
-                quantity: h.totalQuantity,
-                avgCostBase: h.blendedAvgCost,
-                marketValueBase: h.totalMarketValue,
-                unrealizedPL: h.totalUnrealizedPL,
-                unrealizedPLPercent: h.totalUnrealizedPLPercent,
-                allocationPercent: h.allocationPercent,
-                currentPrice: h.currentPrice
-              }))} 
-            />
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent>
+              <HoldingsTable
+                holdings={consolidatedHoldings.slice(0, 5).map(h => ({
+                  portfolioId: '',
+                  symbolId: h.symbolId,
+                  symbol: h.symbol,
+                  quantity: h.totalQuantity,
+                  avgCostBase: h.blendedAvgCost,
+                  marketValueBase: h.totalMarketValue,
+                  unrealizedPL: h.totalUnrealizedPL,
+                  unrealizedPLPercent: h.totalUnrealizedPLPercent,
+                  allocationPercent: h.allocationPercent,
+                  currentPrice: h.currentPrice
+                }))}
+              />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Allocation Breakdown</CardTitle>
+            </CardHeader>
+            <CardContent className="h-[360px]">
+              <AllocationChart
+                holdings={consolidatedHoldings.map(h => ({
+                  portfolioId: '',
+                  symbolId: h.symbolId,
+                  symbol: h.symbol,
+                  quantity: h.totalQuantity,
+                  avgCostBase: h.blendedAvgCost,
+                  marketValueBase: h.totalMarketValue,
+                  unrealizedPL: h.totalUnrealizedPL,
+                  unrealizedPLPercent: h.totalUnrealizedPLPercent,
+                  allocationPercent: h.allocationPercent,
+                  currentPrice: h.currentPrice
+                }))}
+              />
+            </CardContent>
+          </Card>
+        </>
       ) : (
         <Card>
           <CardHeader>

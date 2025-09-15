@@ -61,9 +61,16 @@ export function useDeletePortfolio() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: portfolioService.delete,
-    onSuccess: () => {
+    mutationFn: (id: string) => portfolioService.delete(id),
+    onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['portfolios'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions', 'portfolio', id] });
+      queryClient.invalidateQueries({ queryKey: ['holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['holdings', id] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics', id] });
+      queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
       toast({
         title: "Portfolio deleted",
         description: "Your portfolio has been deleted successfully.",

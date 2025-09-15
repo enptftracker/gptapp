@@ -27,6 +27,7 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
             <TableHead>Symbol</TableHead>
             <TableHead className="text-right">Quantity</TableHead>
             <TableHead className="text-right">Avg Cost</TableHead>
+            <TableHead className="text-right">Current Price</TableHead>
             <TableHead className="text-right">Market Value</TableHead>
             <TableHead className="text-right">P/L</TableHead>
             <TableHead className="text-right">Allocation</TableHead>
@@ -54,6 +55,9 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
                 </TableCell>
                 <TableCell className="text-right font-mono">
                   {formatCurrency(holding.avgCostBase)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatCurrency(holding.currentPrice, holding.symbol.quoteCurrency)}
                 </TableCell>
                 <TableCell className="text-right font-mono font-medium">
                   {formatCurrency(holding.marketValueBase)}

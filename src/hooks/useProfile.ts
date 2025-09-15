@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { profileService, Profile } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 
 export interface UserProfile {
@@ -13,17 +13,9 @@ export interface UserProfile {
 }
 
 export function useProfile() {
-  return useQuery({
+  return useQuery<Profile | null>({
     queryKey: ['profile'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .single();
-
-      if (error) throw error;
-      return data as UserProfile;
-    }
+    queryFn: () => profileService.get()
   });
 }
 
@@ -33,14 +25,7 @@ export function useUpdateProfile() {
 
   return useMutation({
     mutationFn: async (updates: Partial<Omit<UserProfile, 'id' | 'owner_id' | 'created_at' | 'updated_at'>>) => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .update(updates)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      return profileService.update(updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
