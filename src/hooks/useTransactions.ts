@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { transactionService, Transaction } from '@/lib/supabase';
+import { transactionService, Transaction, TransactionWithSymbol } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 
 export function useTransactions() {
@@ -23,14 +23,19 @@ export function useCreateTransaction() {
 
   return useMutation({
     mutationFn: transactionService.create,
-    onSuccess: async () => {
+    onSuccess: async (createdTransaction) => {
       // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      if (createdTransaction?.portfolio_id) {
+        queryClient.invalidateQueries({ queryKey: ['transactions', 'portfolio', createdTransaction.portfolio_id] });
+        queryClient.invalidateQueries({ queryKey: ['holdings', createdTransaction.portfolio_id] });
+        queryClient.invalidateQueries({ queryKey: ['metrics', createdTransaction.portfolio_id] });
+      }
       queryClient.invalidateQueries({ queryKey: ['portfolios'] });
       queryClient.invalidateQueries({ queryKey: ['holdings'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
       queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
-      
+
       // Force refresh of price data for better accuracy
       queryClient.invalidateQueries({ queryKey: ['market-data'] });
       
@@ -39,12 +44,83 @@ export function useCreateTransaction() {
         description: "Your transaction has been recorded successfully.",
       });
     },
-    onError: (error: any) => {
+      onError: (error: unknown) => {
+        const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+        toast({
+          title: "Error adding transaction",
+          description,
+          variant: "destructive",
+        });
+      },
+  });
+}
+
+export function useUpdateTransaction() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>> }) =>
+      transactionService.update(id, updates),
+    onSuccess: async (updatedTransaction) => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      if (updatedTransaction?.portfolio_id) {
+        queryClient.invalidateQueries({ queryKey: ['transactions', 'portfolio', updatedTransaction.portfolio_id] });
+        queryClient.invalidateQueries({ queryKey: ['holdings', updatedTransaction.portfolio_id] });
+        queryClient.invalidateQueries({ queryKey: ['metrics', updatedTransaction.portfolio_id] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['portfolios'] });
+      queryClient.invalidateQueries({ queryKey: ['holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['market-data'] });
+
       toast({
-        title: "Error adding transaction",
-        description: error.message,
-        variant: "destructive",
+        title: 'Transaction updated',
+        description: 'Your transaction has been updated successfully.',
       });
     },
+      onError: (error: unknown) => {
+        const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+        toast({
+          title: 'Error updating transaction',
+          description,
+          variant: 'destructive',
+        });
+      }
+  });
+}
+
+export function useDeleteTransaction() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id }: { id: string; portfolioId?: string }) => transactionService.delete(id),
+    onSuccess: async (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      if (variables?.portfolioId) {
+        queryClient.invalidateQueries({ queryKey: ['transactions', 'portfolio', variables.portfolioId] });
+        queryClient.invalidateQueries({ queryKey: ['holdings', variables.portfolioId] });
+        queryClient.invalidateQueries({ queryKey: ['metrics', variables.portfolioId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['portfolios'] });
+      queryClient.invalidateQueries({ queryKey: ['holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
+
+      toast({
+        title: 'Transaction deleted',
+        description: 'The transaction has been removed.',
+      });
+    },
+      onError: (error: unknown) => {
+        const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+        toast({
+          title: 'Error deleting transaction',
+          description,
+          variant: 'destructive',
+        });
+      }
   });
 }

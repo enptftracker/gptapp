@@ -21,6 +21,10 @@ export interface Symbol {
   updated_at: string;
 }
 
+export interface SymbolWithPrice extends Symbol {
+  price_cache?: PriceData | null;
+}
+
 export interface Transaction {
   id: string;
   owner_id: string;
@@ -37,6 +41,10 @@ export interface Transaction {
   lot_link?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface TransactionWithSymbol extends Transaction {
+  symbol?: SymbolWithPrice | null;
 }
 
 export interface PriceData {
@@ -63,9 +71,18 @@ export interface Profile {
 // Portfolio operations
 export const portfolioService = {
   async getAll(): Promise<Portfolio[]> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
     const { data, error } = await supabase
       .from('portfolios')
       .select('*')
+      .eq('owner_id', user.id)
       .order('created_at', { ascending: false });
     
     if (error) throw error;
@@ -73,11 +90,19 @@ export const portfolioService = {
   },
 
   async create(portfolio: Omit<Portfolio, 'id' | 'owner_id' | 'created_at' | 'updated_at'>): Promise<Portfolio> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
     const { data, error } = await supabase
       .from('portfolios')
       .insert({
         ...portfolio,
-        owner_id: (await supabase.auth.getUser()).data.user?.id
+        owner_id: user.id
       })
       .select()
       .single();
@@ -87,10 +112,19 @@ export const portfolioService = {
   },
 
   async update(id: string, updates: Partial<Portfolio>): Promise<Portfolio> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
     const { data, error } = await supabase
       .from('portfolios')
       .update(updates)
       .eq('id', id)
+      .eq('owner_id', user.id)
       .select()
       .single();
     
@@ -99,11 +133,20 @@ export const portfolioService = {
   },
 
   async delete(id: string): Promise<void> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
     const { error } = await supabase
       .from('portfolios')
       .delete()
-      .eq('id', id);
-    
+      .eq('id', id)
+      .eq('owner_id', user.id);
+
     if (error) throw error;
   }
 };
@@ -121,11 +164,19 @@ export const symbolService = {
   },
 
   async create(symbol: Omit<Symbol, 'id' | 'owner_id' | 'created_at' | 'updated_at'>): Promise<Symbol> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
     const { data, error } = await supabase
       .from('symbols')
       .insert({
         ...symbol,
-        owner_id: (await supabase.auth.getUser()).data.user?.id
+        owner_id: user.id
       })
       .select()
       .single();
@@ -136,10 +187,19 @@ export const symbolService = {
 
   async findOrCreate(ticker: string, assetType: Symbol['asset_type'], quoteCurrency: string = 'USD'): Promise<Symbol> {
     // First try to find existing symbol
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
     const { data: existing } = await supabase
       .from('symbols')
       .select('*')
       .eq('ticker', ticker.toUpperCase())
+      .eq('owner_id', user.id)
       .maybeSingle();
 
     if (existing) {
@@ -158,39 +218,176 @@ export const symbolService = {
 
 // Transaction operations
 export const transactionService = {
-  async getAll(): Promise<Transaction[]> {
+  async getAll(): Promise<TransactionWithSymbol[]> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
     const { data, error } = await supabase
       .from('transactions')
-      .select('*')
+      .select(`
+        *,
+        symbol:symbol_id (
+          id,
+          owner_id,
+          ticker,
+          name,
+          asset_type,
+          exchange,
+          quote_currency,
+          price_cache (
+            price,
+            price_currency,
+            change_24h,
+            change_percent_24h,
+            asof
+          )
+        )
+      `)
+      .eq('owner_id', user.id)
       .order('trade_date', { ascending: false });
-    
+
     if (error) throw error;
-    return data || [];
+    return (data as TransactionWithSymbol[]) || [];
   },
 
-  async getByPortfolio(portfolioId: string): Promise<Transaction[]> {
+  async getByPortfolio(portfolioId: string): Promise<TransactionWithSymbol[]> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
     const { data, error } = await supabase
       .from('transactions')
-      .select('*')
+      .select(`
+        *,
+        symbol:symbol_id (
+          id,
+          owner_id,
+          ticker,
+          name,
+          asset_type,
+          exchange,
+          quote_currency,
+          price_cache (
+            price,
+            price_currency,
+            change_24h,
+            change_percent_24h,
+            asof
+          )
+        )
+      `)
       .eq('portfolio_id', portfolioId)
+      .eq('owner_id', user.id)
       .order('trade_date', { ascending: false });
-    
+
     if (error) throw error;
-    return data || [];
+    return (data as TransactionWithSymbol[]) || [];
   },
 
-  async create(transaction: Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>): Promise<Transaction> {
+  async create(transaction: Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>): Promise<TransactionWithSymbol> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
     const { data, error } = await supabase
       .from('transactions')
       .insert({
         ...transaction,
-        owner_id: (await supabase.auth.getUser()).data.user?.id
+        owner_id: user.id
       })
-      .select()
+      .select(`
+        *,
+        symbol:symbol_id (
+          id,
+          owner_id,
+          ticker,
+          name,
+          asset_type,
+          exchange,
+          quote_currency,
+          price_cache (
+            price,
+            price_currency,
+            change_24h,
+            change_percent_24h,
+            asof
+          )
+        )
+      `)
       .single();
-    
+
     if (error) throw error;
-    return data;
+    return data as TransactionWithSymbol;
+  },
+
+  async update(id: string, updates: Partial<Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>>): Promise<TransactionWithSymbol> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .update(updates)
+      .eq('id', id)
+      .eq('owner_id', user.id)
+      .select(`
+        *,
+        symbol:symbol_id (
+          id,
+          owner_id,
+          ticker,
+          name,
+          asset_type,
+          exchange,
+          quote_currency,
+          price_cache (
+            price,
+            price_currency,
+            change_24h,
+            change_percent_24h,
+            asof
+          )
+        )
+      `)
+      .single();
+
+    if (error) throw error;
+    return data as TransactionWithSymbol;
+  },
+
+  async delete(id: string): Promise<void> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
+    const { error } = await supabase
+      .from('transactions')
+      .delete()
+      .eq('id', id)
+      .eq('owner_id', user.id);
+
+    if (error) throw error;
   }
 };
 
@@ -224,22 +421,48 @@ export const priceService = {
 // Profile operations
 export const profileService = {
   async get(): Promise<Profile | null> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
+      .eq('owner_id', user.id)
       .maybeSingle();
-    
+
     if (error) throw error;
     return data;
   },
 
   async update(updates: Partial<Profile>): Promise<Profile> {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+    if (!user) throw new Error('User not authenticated');
+
+    const existing = await this.get();
+
+    const payload = {
+      owner_id: user.id,
+      base_currency: updates.base_currency ?? existing?.base_currency ?? 'USD',
+      timezone: updates.timezone ?? existing?.timezone ?? 'UTC',
+      default_lot_method: updates.default_lot_method ?? existing?.default_lot_method ?? 'FIFO',
+    } as Partial<Profile> & { owner_id: string };
+
     const { data, error } = await supabase
       .from('profiles')
-      .update(updates)
+      .upsert(payload, { onConflict: 'owner_id' })
       .select()
       .single();
-    
+
     if (error) throw error;
     return data;
   }

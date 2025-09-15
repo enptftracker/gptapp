@@ -14,6 +14,7 @@ import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import Watchlist from "./pages/Watchlist";
 import Settings from "./pages/Settings";
+import SymbolDetail from "./pages/SymbolDetail";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +37,7 @@ const App = () => (
               <Route path="portfolios/:id" element={<PortfolioDetail />} />
               <Route path="consolidated" element={<Consolidated />} />
               <Route path="watchlist" element={<Watchlist />} />
+              <Route path="symbol/:ticker" element={<SymbolDetail />} />
               <Route path="settings" element={<Settings />} />
             </Route>
             <Route path="*" element={<NotFound />} />
