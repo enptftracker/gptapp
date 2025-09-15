@@ -23,6 +23,14 @@ export function useWatchlist() {
   return useQuery({
     queryKey: ['watchlist'],
     queryFn: async () => {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+      if (!user) throw new Error('User not authenticated');
+
       const { data: watchlistData, error } = await supabase
         .from('watchlist')
         .select(`
@@ -36,16 +44,23 @@ export function useWatchlist() {
             quote_currency
           )
         `)
+        .eq('owner_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
       // Get price data for all symbols
       const symbolIds = watchlistData?.map(item => item.symbol_id) || [];
-      const { data: priceData } = await supabase
-        .from('price_cache')
-        .select('symbol_id, price, change_24h, change_percent_24h')
-        .in('symbol_id', symbolIds);
+      let priceData: Array<{ symbol_id: string; price: number; change_24h?: number; change_percent_24h?: number }> = [];
+
+      if (symbolIds.length > 0) {
+        const { data: fetchedPrices } = await supabase
+          .from('price_cache')
+          .select('symbol_id, price, change_24h, change_percent_24h')
+          .in('symbol_id', symbolIds);
+
+        priceData = fetchedPrices || [];
+      }
 
       // Combine watchlist data with price data
       const watchlistWithPrices = watchlistData?.map(item => ({
@@ -124,10 +139,11 @@ export function useAddToWatchlist() {
         description: "Symbol has been added to your watchlist.",
       });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
       toast({
         title: "Error adding to watchlist",
-        description: error.message,
+        description,
         variant: "destructive",
       });
     }
@@ -140,10 +156,19 @@ export function useRemoveFromWatchlist() {
 
   return useMutation({
     mutationFn: async (symbolId: string) => {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+      if (!user) throw new Error('User not authenticated');
+
       const { error } = await supabase
         .from('watchlist')
         .delete()
-        .eq('symbol_id', symbolId);
+        .eq('symbol_id', symbolId)
+        .eq('owner_id', user.id);
 
       if (error) throw error;
     },
@@ -154,10 +179,11 @@ export function useRemoveFromWatchlist() {
         description: "Symbol has been removed from your watchlist.",
       });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
       toast({
         title: "Error removing from watchlist",
-        description: error.message,
+        description,
         variant: "destructive",
       });
     }

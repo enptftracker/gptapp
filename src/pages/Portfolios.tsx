@@ -6,28 +6,50 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, TrendingUp, TrendingDown, Eye, Briefcase, BarChart3 } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, Briefcase, BarChart3, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { usePortfolios, useCreatePortfolio } from '@/hooks/usePortfolios';
+import { usePortfolios, useCreatePortfolio, useDeletePortfolio } from '@/hooks/usePortfolios';
 import { usePortfolioMetrics } from '@/hooks/useHoldings';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import TransactionForm from '@/components/transactions/TransactionForm';
 import { cn } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import type { Portfolio } from '@/lib/supabase';
 
-const PortfolioCard = ({ portfolio, portfolios }: { portfolio: any; portfolios: any[] }) => {
+const PortfolioCard = ({
+  portfolio,
+  portfolios,
+  onDelete,
+  isDeleting,
+}: {
+  portfolio: Portfolio;
+  portfolios: Portfolio[];
+  onDelete: () => Promise<void>;
+  isDeleting: boolean;
+}) => {
   const { data: metrics } = usePortfolioMetrics(portfolio.id);
-  
+
   const isProfit = (metrics?.totalPL || 0) >= 0;
   const hasHoldings = (metrics?.holdings.length || 0) > 0;
-  
+
   return (
     <Card className="hover:shadow-lg transition-shadow">
       <CardHeader>
         <div className="flex items-start justify-between">
           <div>
             <CardTitle className="text-lg">
-              <Link 
+              <Link
                 to={`/portfolios/${portfolio.id}`}
                 className="hover:underline"
               >
@@ -40,9 +62,41 @@ const PortfolioCard = ({ portfolio, portfolios }: { portfolio: any; portfolios: 
               </p>
             )}
           </div>
-          <Badge variant={hasHoldings ? "default" : "outline"}>
-            {metrics?.holdings.length || 0} holdings
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={hasHoldings ? "default" : "outline"}>
+              {metrics?.holdings.length || 0} holdings
+            </Badge>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete portfolio</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. All transactions associated with this portfolio will also be removed.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      void onDelete();
+                    }}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? 'Deleting…' : 'Delete'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -89,7 +143,7 @@ const PortfolioCard = ({ portfolio, portfolios }: { portfolio: any; portfolios: 
               </Link>
             </Button>
             <TransactionForm
-              portfolios={portfolios}
+              portfolios={portfolios.map(({ id, name }) => ({ id, name }))}
               defaultPortfolioId={portfolio.id}
               trigger={
                 <Button size="sm" className="flex-1">
@@ -108,12 +162,25 @@ const PortfolioCard = ({ portfolio, portfolios }: { portfolio: any; portfolios: 
 export default function Portfolios() {
   const { data: portfolios = [], isLoading } = usePortfolios();
   const createPortfolio = useCreatePortfolio();
+  const deletePortfolio = useDeletePortfolio();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: ''
   });
   const { toast } = useToast();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDeletePortfolio = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await deletePortfolio.mutateAsync(id);
+    } catch (error) {
+      console.error('Failed to delete portfolio:', error);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const handleCreatePortfolio = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,11 +354,17 @@ export default function Portfolios() {
         </Dialog>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {portfolios.map((portfolio) => (
-          <PortfolioCard key={portfolio.id} portfolio={portfolio} portfolios={portfolios} />
-        ))}
-      </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {portfolios.map((portfolio) => (
+            <PortfolioCard
+              key={portfolio.id}
+              portfolio={portfolio}
+              portfolios={portfolios}
+              onDelete={() => handleDeletePortfolio(portfolio.id)}
+              isDeleting={deletingId === portfolio.id && deletePortfolio.isPending}
+            />
+          ))}
+        </div>
     </div>
   );
 }

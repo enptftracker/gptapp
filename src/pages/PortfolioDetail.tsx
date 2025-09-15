@@ -1,11 +1,11 @@
 import React from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Plus, TrendingUp, TrendingDown } from 'lucide-react';
-import { usePortfolios } from '@/hooks/usePortfolios';
+import { ArrowLeft, TrendingUp, TrendingDown, Trash2 } from 'lucide-react';
+import { usePortfolios, useDeletePortfolio } from '@/hooks/usePortfolios';
 import { usePortfolioTransactions } from '@/hooks/useTransactions';
 import { usePortfolioHoldings, usePortfolioMetrics } from '@/hooks/useHoldings';
 import HoldingsTable from '@/components/dashboard/HoldingsTable';
@@ -13,6 +13,17 @@ import TransactionHistory from '@/components/transactions/TransactionHistory';
 import TransactionForm from '@/components/transactions/TransactionForm';
 import MetricCard from '@/components/dashboard/MetricCard';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 export default function PortfolioDetail() {
   const { id } = useParams<{ id: string }>();
@@ -20,9 +31,22 @@ export default function PortfolioDetail() {
   const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(id!);
   const { data: holdings = [], isLoading: holdingsLoading } = usePortfolioHoldings(id!);
   const { data: metrics, isLoading: metricsLoading } = usePortfolioMetrics(id!);
+  const deletePortfolio = useDeletePortfolio();
+  const navigate = useNavigate();
 
   const portfolio = portfolios.find(p => p.id === id);
   const isLoading = transactionsLoading || holdingsLoading || metricsLoading;
+
+  const handleDeletePortfolio = async () => {
+    if (!id) return;
+
+    try {
+      await deletePortfolio.mutateAsync(id);
+      navigate('/portfolios');
+    } catch (error) {
+      console.error('Failed to delete portfolio:', error);
+    }
+  };
 
   if (!portfolio) {
     return (
@@ -88,10 +112,43 @@ export default function PortfolioDetail() {
             )}
           </div>
         </div>
-        <TransactionForm 
-          portfolios={[portfolio]}
-          defaultPortfolioId={portfolio.id}
-        />
+        <div className="flex items-center gap-2">
+          <TransactionForm
+            portfolios={[portfolio]}
+            defaultPortfolioId={portfolio.id}
+          />
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-destructive/30 text-destructive hover:text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete this portfolio?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently remove the portfolio and any transactions associated with it.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    void handleDeletePortfolio();
+                  }}
+                  disabled={deletePortfolio.isPending}
+                >
+                  {deletePortfolio.isPending ? 'Deleting…' : 'Delete'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
 
       {/* Key Metrics */}
