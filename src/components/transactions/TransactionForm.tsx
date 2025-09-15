@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,8 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { SymbolSearch } from '@/components/ui/symbol-search';
-import { useCreateTransaction } from '@/hooks/useTransactions';
-import { symbolService } from '@/lib/supabase';
+import { useCreateTransaction, useUpdateTransaction } from '@/hooks/useTransactions';
+import { symbolService, TransactionWithSymbol, Symbol as DbSymbol } from '@/lib/supabase';
 import { MarketDataService } from '@/lib/marketData';
 import { Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -34,71 +34,117 @@ interface TransactionFormProps {
   portfolios: Array<{ id: string; name: string }>;
   defaultPortfolioId?: string;
   trigger?: React.ReactNode;
+  transaction?: TransactionWithSymbol | null;
+  onCompleted?: () => void;
 }
 
-export default function TransactionForm({ 
-  portfolios, 
+export default function TransactionForm({
+  portfolios,
   defaultPortfolioId,
-  trigger 
+  trigger,
+  transaction,
+  onCompleted
 }: TransactionFormProps) {
   const [open, setOpen] = useState(false);
   const createTransaction = useCreateTransaction();
+  const updateTransaction = useUpdateTransaction();
   const { toast } = useToast();
+  const isEditMode = Boolean(transaction);
+
+  const getDefaultValues = useCallback((): TransactionFormData => ({
+    portfolioId: defaultPortfolioId || '',
+    ticker: '',
+    type: 'BUY',
+    quantity: 0,
+    unitPrice: 0,
+    fee: 0,
+    fxRate: 1,
+    tradeCurrency: 'USD',
+    tradeDate: new Date().toISOString().split('T')[0],
+    notes: '',
+  }), [defaultPortfolioId]);
 
   const form = useForm<TransactionFormData>({
     resolver: zodResolver(transactionSchema),
-    defaultValues: {
-      portfolioId: defaultPortfolioId || '',
-      type: 'BUY',
-      quantity: 0,
-      unitPrice: 0,
-      fee: 0,
-      fxRate: 1,
-      tradeCurrency: 'USD',
-      tradeDate: new Date().toISOString().split('T')[0],
-      notes: '',
-    },
+    defaultValues: getDefaultValues(),
   });
 
+  useEffect(() => {
+    if (isEditMode && transaction && open) {
+      form.reset({
+        portfolioId: transaction.portfolio_id,
+        ticker: transaction.symbol?.ticker || '',
+        type: transaction.type,
+        quantity: Number(transaction.quantity),
+        unitPrice: Number(transaction.unit_price),
+        fee: Number(transaction.fee),
+        fxRate: Number(transaction.fx_rate),
+        tradeCurrency: transaction.trade_currency,
+        tradeDate: new Date(transaction.trade_date).toISOString().split('T')[0],
+        notes: transaction.notes || '',
+      });
+    }
+
+    if (!open && !isEditMode) {
+      form.reset(getDefaultValues());
+    }
+  }, [form, getDefaultValues, isEditMode, open, transaction]);
+
   const onSubmit = async (data: TransactionFormData) => {
+    let symbolId: string;
+
     try {
-      // Find or create symbol
+      const assetType: DbSymbol['asset_type'] = transaction?.symbol?.asset_type || 'EQUITY';
       const symbol = await symbolService.findOrCreate(
         data.ticker,
-        'EQUITY', // Use EQUITY which matches the database enum
+        assetType,
         data.tradeCurrency
       );
-
-      // Update price cache with current market data
-      await MarketDataService.updatePriceCache(symbol.id, data.ticker);
-
-      // Create transaction
-      await createTransaction.mutateAsync({
-        portfolio_id: data.portfolioId,
-        symbol_id: symbol.id,
-        type: data.type,
-        quantity: data.quantity,
-        unit_price: data.unitPrice,
-        fee: data.fee,
-        fx_rate: data.fxRate,
-        trade_currency: data.tradeCurrency,
-        trade_date: data.tradeDate,
-        notes: data.notes || undefined,
+      symbolId = symbol.id;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Please check the ticker and try again.';
+      toast({
+        title: 'Unable to find symbol',
+        description: message,
+        variant: 'destructive',
       });
+      return;
+    }
+
+    try {
+      await MarketDataService.updatePriceCache(symbolId, data.ticker);
+    } catch (error) {
+      console.warn('Failed to refresh price cache:', error);
+    }
+
+    const payload = {
+      portfolio_id: data.portfolioId,
+      symbol_id: symbolId,
+      type: data.type,
+      quantity: data.quantity,
+      unit_price: data.unitPrice,
+      fee: data.fee,
+      fx_rate: data.fxRate,
+      trade_currency: data.tradeCurrency,
+      trade_date: data.tradeDate,
+      notes: data.notes || undefined,
+    };
+
+    try {
+      if (isEditMode && transaction) {
+        await updateTransaction.mutateAsync({
+          id: transaction.id,
+          updates: payload,
+        });
+      } else {
+        await createTransaction.mutateAsync(payload);
+      }
 
       setOpen(false);
-      form.reset();
-      
-      toast({
-        title: "Transaction added",
-        description: `${data.type} ${data.quantity} ${data.ticker} recorded successfully`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error adding transaction",
-        description: error.message,
-        variant: "destructive",
-      });
+      form.reset(getDefaultValues());
+      onCompleted?.();
+    } catch (error) {
+      console.error('Transaction mutation failed:', error);
     }
   };
 
@@ -116,9 +162,9 @@ export default function TransactionForm({
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add Transaction</DialogTitle>
+          <DialogTitle>{isEditMode ? 'Edit Transaction' : 'Add Transaction'}</DialogTitle>
         </DialogHeader>
-        
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
@@ -305,8 +351,13 @@ export default function TransactionForm({
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createTransaction.isPending}>
-                {createTransaction.isPending ? 'Adding...' : 'Add Transaction'}
+              <Button
+                type="submit"
+                disabled={isEditMode ? updateTransaction.isPending : createTransaction.isPending}
+              >
+                {isEditMode
+                  ? updateTransaction.isPending ? 'Saving...' : 'Save Changes'
+                  : createTransaction.isPending ? 'Adding...' : 'Add Transaction'}
               </Button>
             </div>
           </form>

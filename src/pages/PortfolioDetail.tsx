@@ -187,9 +187,10 @@ export default function PortfolioDetail() {
         </TabsContent>
         
         <TabsContent value="transactions">
-          <TransactionHistory 
+          <TransactionHistory
             transactions={transactions}
             title={`Transactions (${transactions.length})`}
+            portfolios={portfolios}
           />
         </TabsContent>
       </Tabs>

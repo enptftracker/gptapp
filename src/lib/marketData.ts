@@ -61,26 +61,20 @@ export class MarketDataService {
    * Update price cache in database
    */
   static async updatePriceCache(symbolId: string, ticker: string): Promise<void> {
-    try {
-      const marketData = await this.getMarketData(ticker);
-      if (!marketData) return;
+    void symbolId; // Symbol ID maintained for backwards compatibility
 
-      // Update price_cache table
-      const { error } = await supabase
-        .from('price_cache')
-        .upsert({
-          symbol_id: symbolId,
-          price: marketData.price,
-          price_currency: 'USD',
-          change_24h: marketData.change,
-          change_percent_24h: marketData.changePercent,
-          asof: new Date().toISOString()
-        }, {
-          onConflict: 'symbol_id'
-        });
+    try {
+      const { data, error } = await supabase.functions.invoke('market-data', {
+        body: { action: 'quote', symbol: ticker }
+      });
 
       if (error) {
-        console.error('Error updating price cache:', error);
+        throw error;
+      }
+
+      // If the edge function did not return data, fall back to cached quote
+      if (!data) {
+        await this.getMarketData(ticker);
       }
     } catch (error) {
       console.error('Error in updatePriceCache:', error);

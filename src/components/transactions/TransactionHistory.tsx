@@ -4,15 +4,32 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/calculations';
 import { format } from 'date-fns';
-import { Transaction } from '@/lib/supabase';
+import { TransactionWithSymbol } from '@/lib/supabase';
+import { Button } from '@/components/ui/button';
+import { Edit, Trash2 } from 'lucide-react';
+import TransactionForm from './TransactionForm';
+import { usePortfolios } from '@/hooks/usePortfolios';
+import { useDeleteTransaction } from '@/hooks/useTransactions';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog';
 
 interface TransactionHistoryProps {
-  transactions: Transaction[];
+  transactions: TransactionWithSymbol[];
   title?: string;
   className?: string;
+  portfolios?: Array<{ id: string; name: string }>;
 }
 
-const getTransactionTypeColor = (type: Transaction['type']) => {
+const getTransactionTypeColor = (type: TransactionWithSymbol['type']) => {
   switch (type) {
     case 'BUY':
       return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300';
@@ -31,11 +48,16 @@ const getTransactionTypeColor = (type: Transaction['type']) => {
   }
 };
 
-export default function TransactionHistory({ 
-  transactions, 
+export default function TransactionHistory({
+  transactions,
   title = "Transaction History",
-  className 
+  className,
+  portfolios
 }: TransactionHistoryProps) {
+  const { data: fallbackPortfolios = [] } = usePortfolios();
+  const deleteTransaction = useDeleteTransaction();
+  const availablePortfolios = portfolios || fallbackPortfolios;
+
   if (transactions.length === 0) {
     return (
       <Card className={className}>
@@ -66,15 +88,19 @@ export default function TransactionHistory({
                 <TableHead>Symbol</TableHead>
                 <TableHead className="text-right">Quantity</TableHead>
                 <TableHead className="text-right">Unit Price</TableHead>
+                <TableHead className="text-right">Current Price</TableHead>
                 <TableHead className="text-right">Total Value</TableHead>
                 <TableHead className="text-right">Fee</TableHead>
                 <TableHead>Notes</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {transactions.map((transaction) => {
                 const totalValue = transaction.quantity * transaction.unit_price;
-                
+                const currentPrice = transaction.symbol?.price_cache?.price ?? null;
+                const priceCurrency = transaction.symbol?.price_cache?.price_currency || transaction.trade_currency;
+
                 return (
                   <TableRow key={transaction.id}>
                     <TableCell className="font-medium">
@@ -86,14 +112,28 @@ export default function TransactionHistory({
                       </Badge>
                     </TableCell>
                     <TableCell className="font-mono font-medium">
-                      {/* We'll need to join with symbols table to get ticker */}
-                      {transaction.symbol_id ? 'SYMBOL' : 'CASH'}
+                      {transaction.symbol ? (
+                        <div className="flex flex-col">
+                          <span>{transaction.symbol.ticker}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {transaction.symbol.name || transaction.symbol.ticker}
+                          </span>
+                          <Badge variant="outline" className="mt-1 w-fit text-xs">
+                            {transaction.symbol.asset_type}
+                          </Badge>
+                        </div>
+                      ) : (
+                        'CASH'
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-mono">
                       {transaction.quantity.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right font-mono">
                       {formatCurrency(transaction.unit_price, transaction.trade_currency)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {currentPrice ? formatCurrency(currentPrice, priceCurrency) : '-'}
                     </TableCell>
                     <TableCell className="text-right font-mono font-medium">
                       {formatCurrency(totalValue, transaction.trade_currency)}
@@ -103,6 +143,49 @@ export default function TransactionHistory({
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm max-w-32 truncate">
                       {transaction.notes || '-'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <TransactionForm
+                          portfolios={availablePortfolios}
+                          defaultPortfolioId={transaction.portfolio_id}
+                          transaction={transaction}
+                          trigger={
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          }
+                        />
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete transaction</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This action cannot be undone. This will permanently remove the transaction
+                                from your records.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => deleteTransaction.mutateAsync(transaction.id)}
+                                disabled={deleteTransaction.isPending}
+                              >
+                                {deleteTransaction.isPending ? 'Deleting...' : 'Delete'}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );

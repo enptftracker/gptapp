@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { transactionService, Transaction } from '@/lib/supabase';
+import { transactionService, Transaction, TransactionWithSymbol } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 
 export function useTransactions() {
@@ -46,5 +46,63 @@ export function useCreateTransaction() {
         variant: "destructive",
       });
     },
+  });
+}
+
+export function useUpdateTransaction() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>> }) =>
+      transactionService.update(id, updates),
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolios'] });
+      queryClient.invalidateQueries({ queryKey: ['holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['market-data'] });
+
+      toast({
+        title: 'Transaction updated',
+        description: 'Your transaction has been updated successfully.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error updating transaction',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  });
+}
+
+export function useDeleteTransaction() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (id: string) => transactionService.delete(id),
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolios'] });
+      queryClient.invalidateQueries({ queryKey: ['holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
+
+      toast({
+        title: 'Transaction deleted',
+        description: 'The transaction has been removed.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error deleting transaction',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
   });
 }

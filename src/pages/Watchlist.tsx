@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { SymbolSearch } from "@/components/ui/symbol-search";
 import { useWatchlist, useAddToWatchlist, useRemoveFromWatchlist, WatchlistItem } from "@/hooks/useWatchlist";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "react-router-dom";
 
 export default function Watchlist() {
   const [showAddSymbol, setShowAddSymbol] = useState(false);
@@ -109,17 +110,26 @@ export default function Watchlist() {
           {watchlist?.map((item: WatchlistItem) => (
             <Card key={item.id} className="hover:shadow-md transition-shadow">
               <CardContent className="p-6">
-                <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div>
+                    <Link
+                      to={`/symbol/${item.symbol.ticker}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group"
+                    >
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-lg">{item.symbol.ticker}</h3>
+                        <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
+                          {item.symbol.ticker}
+                        </h3>
                         <Badge variant="outline" className="text-xs">
                           {item.symbol.asset_type}
                         </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground">{item.symbol.name}</p>
-                    </div>
+                      <p className="text-sm text-muted-foreground group-hover:text-primary/80">
+                        {item.symbol.name}
+                      </p>
+                    </Link>
                   </div>
 
                   <div className="flex items-center gap-6">

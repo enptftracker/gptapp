@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -8,6 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useProfile, useUpdateProfile } from "@/hooks/useProfile";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const settingsSchema = z.object({
   base_currency: z.string().min(1, "Please select a base currency"),
@@ -16,6 +20,16 @@ const settingsSchema = z.object({
 });
 
 type SettingsFormData = z.infer<typeof settingsSchema>;
+
+const passwordSchema = z.object({
+  newPassword: z.string().min(8, 'Password must be at least 8 characters long'),
+  confirmPassword: z.string()
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword']
+});
+
+type PasswordFormData = z.infer<typeof passwordSchema>;
 
 const currencies = [
   { value: 'USD', label: 'US Dollar (USD)' },
@@ -67,6 +81,9 @@ const lotMethods = [
 export default function Settings() {
   const { data: profile, isLoading } = useProfile();
   const updateProfile = useUpdateProfile();
+  const { toast } = useToast();
+  const [isExporting, setIsExporting] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const form = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
@@ -77,17 +94,116 @@ export default function Settings() {
     },
   });
 
+  const passwordForm = useForm<PasswordFormData>({
+    resolver: zodResolver(passwordSchema),
+    defaultValues: {
+      newPassword: '',
+      confirmPassword: ''
+    }
+  });
+
+  const isDirty = form.formState.isDirty;
+
   // Update form when profile data loads
-  if (profile && !form.formState.isDirty) {
-    form.reset({
-      base_currency: profile.base_currency,
-      timezone: profile.timezone,
-      default_lot_method: profile.default_lot_method,
-    });
-  }
+  useEffect(() => {
+    if (profile && !isDirty) {
+      form.reset({
+        base_currency: profile.base_currency,
+        timezone: profile.timezone,
+        default_lot_method: profile.default_lot_method,
+      });
+    }
+  }, [profile, form, isDirty]);
 
   const onSubmit = async (data: SettingsFormData) => {
     await updateProfile.mutateAsync(data);
+  };
+
+  const handlePasswordSubmit = async (data: PasswordFormData) => {
+    try {
+      await supabase.auth.updateUser({ password: data.newPassword });
+      toast({
+        title: 'Password updated',
+        description: 'Your password has been updated successfully.'
+      });
+      passwordForm.reset();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'An unexpected error occurred.';
+      toast({
+        title: 'Unable to update password',
+        description: message,
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleExportData = async () => {
+    setIsExporting(true);
+
+    try {
+      const [portfoliosResponse, transactionsResponse, symbolsResponse] = await Promise.all([
+        supabase.from('portfolios').select('*').order('created_at', { ascending: true }),
+        supabase.from('transactions').select('*').order('trade_date', { ascending: true }),
+        supabase.from('symbols').select('*').order('ticker', { ascending: true })
+      ]);
+
+      if (portfoliosResponse.error) throw portfoliosResponse.error;
+      if (transactionsResponse.error) throw transactionsResponse.error;
+      if (symbolsResponse.error) throw symbolsResponse.error;
+
+      const exportPayload = {
+        exportedAt: new Date().toISOString(),
+        profile,
+        portfolios: portfoliosResponse.data,
+        transactions: transactionsResponse.data,
+        symbols: symbolsResponse.data,
+      };
+
+      const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `portfolio-export-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: 'Export ready',
+        description: 'A JSON file with your portfolio data has been downloaded.'
+      });
+    } catch (error: unknown) {
+      console.error('Export error:', error);
+      const message = error instanceof Error ? error.message : 'Unable to export data right now.';
+      toast({
+        title: 'Export failed',
+        description: message,
+        variant: 'destructive'
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleSignOutAll = async () => {
+    setIsSigningOut(true);
+    try {
+      await supabase.auth.signOut({ scope: 'global' });
+      toast({
+        title: 'Signed out everywhere',
+        description: 'All active sessions have been revoked.'
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Could not end sessions.';
+      toast({
+        title: 'Unable to end sessions',
+        description: message,
+        variant: 'destructive'
+      });
+    } finally {
+      setIsSigningOut(false);
+    }
   };
 
   if (isLoading) {
@@ -231,6 +347,121 @@ export default function Settings() {
           </Form>
         </CardContent>
       </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Security</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Keep your account protected with strong credentials and session controls.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <Form {...passwordForm}>
+              <form onSubmit={passwordForm.handleSubmit(handlePasswordSubmit)} className="space-y-4">
+                <FormField
+                  control={passwordForm.control}
+                  name="newPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>New password</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="Enter a new password" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={passwordForm.control}
+                  name="confirmPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Confirm password</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="Re-enter the new password" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => passwordForm.reset()}
+                    disabled={passwordForm.formState.isSubmitting}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={passwordForm.formState.isSubmitting}
+                    className="sm:w-auto"
+                  >
+                    {passwordForm.formState.isSubmitting ? 'Updating...' : 'Update Password'}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+
+            <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+              <p className="mb-1 font-medium text-foreground">Row level security</p>
+              <p>
+                All portfolio, transaction, and watchlist tables enforce Supabase row level security so only your
+                authenticated account can view or modify records.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-muted-foreground">
+                Revoke every active session if you notice unusual account activity.
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleSignOutAll}
+                disabled={isSigningOut}
+                className="sm:w-auto"
+              >
+                {isSigningOut ? 'Signing out...' : 'Sign out on all devices'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Data Management</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Export a backup of your investment records and understand how market data is secured.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Download a JSON export containing portfolios, transactions, and saved symbols for your own archive.
+              </p>
+              <Button
+                onClick={handleExportData}
+                disabled={isExporting}
+                className="w-full sm:w-auto"
+              >
+                {isExporting ? 'Preparing export...' : 'Export data'}
+              </Button>
+            </div>
+
+            <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+              <p className="mb-1 font-medium text-foreground">Market data integrity</p>
+              <p>
+                Live pricing updates run exclusively through secured Supabase Edge Functions that use the service role
+                key. Client applications only have read access to the price cache so write operations stay protected.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
