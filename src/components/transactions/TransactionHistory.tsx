@@ -177,10 +177,9 @@ export default function TransactionHistory({
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction
-                                onClick={() => deleteTransaction.mutateAsync({
-                                  id: transaction.id,
-                                  portfolioId: transaction.portfolio_id,
-                                })}
+
+                                onClick={() => deleteTransaction.mutateAsync(transaction.id)}
+
                                 disabled={deleteTransaction.isPending}
                               >
                                 {deleteTransaction.isPending ? 'Deleting...' : 'Delete'}

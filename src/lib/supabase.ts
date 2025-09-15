@@ -219,13 +219,6 @@ export const symbolService = {
 // Transaction operations
 export const transactionService = {
   async getAll(): Promise<TransactionWithSymbol[]> {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError) throw authError;
-    if (!user) throw new Error('User not authenticated');
 
     const { data, error } = await supabase
       .from('transactions')
@@ -248,7 +241,7 @@ export const transactionService = {
           )
         )
       `)
-      .eq('owner_id', user.id)
+
       .order('trade_date', { ascending: false });
 
     if (error) throw error;
@@ -256,14 +249,6 @@ export const transactionService = {
   },
 
   async getByPortfolio(portfolioId: string): Promise<TransactionWithSymbol[]> {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError) throw authError;
-    if (!user) throw new Error('User not authenticated');
-
     const { data, error } = await supabase
       .from('transactions')
       .select(`
@@ -294,13 +279,6 @@ export const transactionService = {
   },
 
   async create(transaction: Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>): Promise<TransactionWithSymbol> {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError) throw authError;
-    if (!user) throw new Error('User not authenticated');
 
     const { data, error } = await supabase
       .from('transactions')
@@ -334,19 +312,12 @@ export const transactionService = {
   },
 
   async update(id: string, updates: Partial<Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>>): Promise<TransactionWithSymbol> {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError) throw authError;
-    if (!user) throw new Error('User not authenticated');
 
     const { data, error } = await supabase
       .from('transactions')
       .update(updates)
       .eq('id', id)
-      .eq('owner_id', user.id)
+
       .select(`
         *,
         symbol:symbol_id (
@@ -373,19 +344,11 @@ export const transactionService = {
   },
 
   async delete(id: string): Promise<void> {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError) throw authError;
-    if (!user) throw new Error('User not authenticated');
 
     const { error } = await supabase
       .from('transactions')
       .delete()
-      .eq('id', id)
-      .eq('owner_id', user.id);
+      .eq('id', id);
 
     if (error) throw error;
   }

@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { SymbolSearch } from "@/components/ui/symbol-search";
 import { useWatchlist, useAddToWatchlist, useRemoveFromWatchlist, WatchlistItem } from "@/hooks/useWatchlist";
 import { Skeleton } from "@/components/ui/skeleton";
-import SymbolSummary from "@/components/watchlist/SymbolSummary";
-import { cn } from "@/lib/utils";
+
+import { Link } from "react-router-dom";
 
 export default function Watchlist() {
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
@@ -136,10 +136,33 @@ export default function Watchlist() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1.6fr)]">
-          <div className="space-y-4">
-            {watchlist?.map((item: WatchlistItem) => {
-              const isSelected = item.id === selectedSymbolId;
+
+        <div className="grid gap-4">
+          {watchlist?.map((item: WatchlistItem) => (
+            <Card key={item.id} className="hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <Link
+                      to={`/symbol/${item.symbol.ticker}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
+                          {item.symbol.ticker}
+                        </h3>
+                        <Badge variant="outline" className="text-xs">
+                          {item.symbol.asset_type}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground group-hover:text-primary/80">
+                        {item.symbol.name}
+                      </p>
+                    </Link>
+                  </div>
+
 
               return (
                 <Card
