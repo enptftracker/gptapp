@@ -1,5 +1,8 @@
 import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import type { TooltipProps } from 'recharts';
+import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
+import type { LegendProps } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Holding, ConsolidatedHolding } from '@/lib/types';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
@@ -52,9 +55,9 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
     .sort((a, b) => b.value - a.value)
     .slice(0, 10); // Show top 10 holdings
 
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: TooltipProps<ValueType, NameType>) => {
     if (active && payload && payload.length) {
-      const data = payload[0].payload;
+      const data = payload[0].payload as ChartData;
       return (
         <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
           <p className="font-medium text-card-foreground">{data.name}</p>
@@ -70,16 +73,16 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
     return null;
   };
 
-  const CustomLegend = ({ payload }: any) => {
+  const CustomLegend = ({ payload }: LegendProps) => {
     return (
       <div className="flex flex-wrap gap-2 justify-center mt-4">
-        {payload?.slice(0, 8).map((entry: any, index: number) => (
+        {payload?.slice(0, 8).map((entry, index) => (
           <div key={index} className="flex items-center gap-1 text-xs">
-            <div 
-              className="w-3 h-3 rounded-full" 
-              style={{ backgroundColor: entry.color }}
+            <div
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: entry?.color ?? 'transparent' }}
             />
-            <span className="text-muted-foreground">{entry.value}</span>
+            <span className="text-muted-foreground">{entry?.value}</span>
           </div>
         ))}
       </div>

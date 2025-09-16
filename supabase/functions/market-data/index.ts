@@ -25,51 +25,80 @@ interface AlphaVantageResponse {
   'Note'?: string
 }
 
-interface YahooQuoteResponse {
-  quoteResponse: {
-    result: Array<{
-      symbol: string
-      regularMarketPrice: number
-      regularMarketChange: number
-      regularMarketChangePercent: number
-      regularMarketVolume?: number
-      marketCap?: number
+interface YahooChartResponse {
+  chart?: {
+    result?: Array<{
+      meta?: {
+        regularMarketPrice?: number
+        previousClose?: number
+        regularMarketVolume?: number
+      }
     }>
   }
 }
 
-async function fetchYahooQuote(symbol: string): Promise<any> {
+interface MarketQuote {
+  symbol: string
+  price: number
+  change: number
+  changePercent: number
+  volume?: number
+  lastUpdated: string
+}
+
+interface BatchUpdateSymbol {
+  id: string
+  ticker: string
+}
+
+type MarketDataRequest =
+  | { action: 'quote'; symbol: string }
+  | { action: 'batch_update'; symbols: BatchUpdateSymbol[] }
+  | { action: 'historical' }
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  if (typeof error === 'string') {
+    return error
+  }
+
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return 'Unknown error'
+  }
+}
+
+async function fetchYahooQuote(symbol: string): Promise<MarketQuote> {
   console.log(`Fetching Yahoo Finance data for ${symbol}`)
-  
+
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`
     const response = await fetch(url)
-    const data = await response.json()
-    
-    if (!data.chart?.result?.[0]) {
+    const data = await response.json() as YahooChartResponse
+
+    const result = data.chart?.result?.[0]
+    const meta = result?.meta
+
+    if (!meta) {
       throw new Error(`No Yahoo Finance data for ${symbol}`)
     }
-    
-    const result = data.chart.result[0]
-    const meta = result.meta
-    const quote = result.indicators?.quote?.[0]
-    
-    if (!meta || !quote) {
-      throw new Error(`Invalid Yahoo Finance data for ${symbol}`)
-    }
-    
-    const currentPrice = meta.regularMarketPrice || meta.previousClose
-    const previousClose = meta.previousClose
+
+    const currentPrice = meta.regularMarketPrice ?? meta.previousClose ?? 0
+    const previousClose = meta.previousClose ?? currentPrice
     const change = currentPrice - previousClose
     const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0
-    
+
     return {
       symbol: symbol.toUpperCase(),
       price: currentPrice,
-      change: change,
-      changePercent: changePercent,
+      change,
+      changePercent,
       volume: meta.regularMarketVolume,
-      lastUpdated: new Date()
+      lastUpdated: new Date().toISOString()
     }
   } catch (error) {
     console.error(`Yahoo Finance error for ${symbol}:`, error)
@@ -79,12 +108,12 @@ async function fetchYahooQuote(symbol: string): Promise<any> {
       price: 0,
       change: 0,
       changePercent: 0,
-      lastUpdated: new Date()
+      lastUpdated: new Date().toISOString()
     }
   }
 }
 
-async function fetchAlphaVantageQuote(symbol: string): Promise<any> {
+async function fetchAlphaVantageQuote(symbol: string): Promise<MarketQuote> {
   const apiKey = Deno.env.get('ALPHAVANTAGE_API_KEY')
   if (!apiKey) {
     throw new Error('AlphaVantage API key not configured')
@@ -121,7 +150,7 @@ async function fetchAlphaVantageQuote(symbol: string): Promise<any> {
     change: parseFloat(quote['09. change']),
     changePercent: parseFloat(quote['10. change percent'].replace('%', '')),
     volume: parseInt(quote['06. volume']),
-    lastUpdated: new Date()
+    lastUpdated: new Date().toISOString()
   }
 }
 
@@ -137,17 +166,19 @@ async function fetchHistoricalData(symbol: string): Promise<void> {
   console.log(`Fetching historical data for ${symbol}`)
   
   const response = await fetch(url)
-  const data = await response.json()
-  
-  if (data['Error Message']) {
-    throw new Error(`AlphaVantage error: ${data['Error Message']}`)
+  const data = await response.json() as Record<string, unknown>
+
+  const errorMessage = data['Error Message']
+  if (typeof errorMessage === 'string') {
+    throw new Error(`AlphaVantage error: ${errorMessage}`)
   }
-  
-  if (data['Note']) {
-    throw new Error(`AlphaVantage rate limit: ${data['Note']}`)
+
+  const rateLimitNote = data['Note']
+  if (typeof rateLimitNote === 'string') {
+    throw new Error(`AlphaVantage rate limit: ${rateLimitNote}`)
   }
-  
-  const timeSeries = data['Time Series (Daily)']
+
+  const timeSeries = data['Time Series (Daily)'] as Record<string, Record<string, string>> | undefined
   if (!timeSeries) {
     throw new Error(`No historical data returned for symbol ${symbol}`)
   }
@@ -165,7 +196,12 @@ async function fetchHistoricalData(symbol: string): Promise<void> {
   }
 
   // Prepare historical price data for insertion
-  const historicalPrices = []
+  const historicalPrices: Array<{
+    symbol_id: string
+    price: number
+    price_currency: string
+    asof: string
+  }> = []
   const dates = Object.keys(timeSeries).slice(0, 1825) // 5 years of data
 
   for (const date of dates) {
@@ -201,17 +237,18 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { action, symbol, symbols } = await req.json()
-    
-    if (action === 'quote') {
-      let marketData
+    const body = await req.json() as MarketDataRequest
+
+    if (body.action === 'quote') {
+      const { symbol } = body
+      let marketData: MarketQuote
       try {
         marketData = await fetchAlphaVantageQuote(symbol)
       } catch (error) {
         console.error(`AlphaVantage failed for ${symbol}, trying Yahoo:`, error)
         marketData = await fetchYahooQuote(symbol)
       }
-      
+
       // Update price cache in database
       const { data: symbolData } = await supabase
         .from('symbols')
@@ -235,19 +272,27 @@ Deno.serve(async (req) => {
           console.error('Error updating price cache:', error)
         }
       }
-      
+
       return new Response(JSON.stringify(marketData), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
-    
-    if (action === 'batch_update') {
-      const results = []
-      
-      for (const symbolItem of symbols) {
+
+    if (body.action === 'batch_update') {
+      const { symbols } = body
+      const results: Array<{
+        symbol: string
+        success: boolean
+        data?: MarketQuote
+        source?: 'yahoo'
+        error?: string
+      }> = []
+
+      for (let index = 0; index < symbols.length; index++) {
+        const symbolItem = symbols[index]
         try {
           const marketData = await fetchAlphaVantageQuote(symbolItem.ticker)
-          
+
           // Update price cache
           const { error } = await supabase
             .from('price_cache')
@@ -263,19 +308,19 @@ Deno.serve(async (req) => {
           if (error) {
             console.error(`Error updating price cache for ${symbolItem.ticker}:`, error)
           }
-          
+
           results.push({ symbol: symbolItem.ticker, success: true, data: marketData })
-          
+
           // Rate limiting - wait 12 seconds between requests (AlphaVantage free tier: 5 calls/min)
-          if (symbols.indexOf(symbolItem) < symbols.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 12000))
+          if (index < symbols.length - 1) {
+            await new Promise<void>(resolve => setTimeout(resolve, 12000))
           }
         } catch (error) {
           console.error(`Error fetching data for ${symbolItem.ticker}:`, error)
           // Try Yahoo Finance as backup
           try {
             const yahooData = await fetchYahooQuote(symbolItem.ticker)
-            
+
             const { error: updateError } = await supabase
               .from('price_cache')
               .upsert({
@@ -290,46 +335,53 @@ Deno.serve(async (req) => {
             if (updateError) {
               console.error(`Error updating price cache for ${symbolItem.ticker} (Yahoo):`, updateError)
             }
-            
+
             results.push({ symbol: symbolItem.ticker, success: true, data: yahooData, source: 'yahoo' })
           } catch (yahooError) {
-            results.push({ symbol: symbolItem.ticker, success: false, error: error.message })
+            const alphaMessage = getErrorMessage(error)
+            const yahooMessage = getErrorMessage(yahooError)
+            console.error(`Yahoo fallback also failed for ${symbolItem.ticker}:`, yahooError)
+            results.push({
+              symbol: symbolItem.ticker,
+              success: false,
+              error: `${alphaMessage}; Yahoo fallback: ${yahooMessage}`
+            })
           }
         }
       }
-      
+
       return new Response(JSON.stringify({ results }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
-    
-    if (action === 'historical') {
+
+    if (body.action === 'historical') {
       // Fetch historical data for major indices
       const majorIndices = ['SPY', 'QQQ', 'IWM'] // S&P 500, NASDAQ, Russell 2000
-      
+
       for (const index of majorIndices) {
         try {
           await fetchHistoricalData(index)
           // Rate limiting
-          await new Promise(resolve => setTimeout(resolve, 12000))
+          await new Promise<void>(resolve => setTimeout(resolve, 12000))
         } catch (error) {
           console.error(`Error fetching historical data for ${index}:`, error)
         }
       }
-      
+
       return new Response(JSON.stringify({ success: true, message: 'Historical data update completed' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
-    
+
     return new Response(JSON.stringify({ error: 'Invalid action' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
-    
+
   } catch (error) {
     console.error('Market data function error:', error)
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: getErrorMessage(error) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })

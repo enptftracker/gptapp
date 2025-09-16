@@ -10,21 +10,23 @@ export class PortfolioCalculations {
     if (buys.length === 0) return 0;
     
     switch (lotMethod) {
-      case 'AVERAGE':
+      case 'AVERAGE': {
         // Weighted average cost
         const totalCost = buys.reduce((sum, t) => sum + (t.quantity * t.unit_price), 0);
         const totalQuantity = buys.reduce((sum, t) => sum + t.quantity, 0);
         return totalQuantity > 0 ? totalCost / totalQuantity : 0;
-      
+      }
+
       case 'FIFO':
       case 'LIFO':
       case 'HIFO':
-      default:
+      default: {
         // For these methods, we need to calculate based on remaining lots
         // For simplicity, we'll use weighted average but this should be enhanced
         const costSum = buys.reduce((sum, t) => sum + (t.quantity * t.unit_price), 0);
         const qtySum = buys.reduce((sum, t) => sum + t.quantity, 0);
         return qtySum > 0 ? costSum / qtySum : 0;
+      }
     }
   }
 
