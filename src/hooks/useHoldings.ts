@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { useTransactions } from './useTransactions';
+import { usePortfolioTransactions, useTransactions } from './useTransactions';
 import { usePortfolios } from './usePortfolios';
 import { symbolService, priceService, profileService } from '@/lib/supabase';
 import { PortfolioCalculations } from '@/lib/calculations';
 
 export function usePortfolioHoldings(portfolioId: string) {
-  const { data: transactions = [] } = useTransactions();
-  const { data: portfolios = [] } = usePortfolios();
+  const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(portfolioId);
 
   return useQuery({
     queryKey: ['holdings', portfolioId],
@@ -36,12 +35,12 @@ export function usePortfolioHoldings(portfolioId: string) {
         lotMethod
       );
     },
-    enabled: !!portfolioId,
+    enabled: !!portfolioId && !transactionsLoading,
   });
 }
 
 export function usePortfolioMetrics(portfolioId: string) {
-  const { data: transactions = [] } = useTransactions();
+  const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(portfolioId);
 
   return useQuery({
     queryKey: ['metrics', portfolioId],
@@ -80,7 +79,7 @@ export function usePortfolioMetrics(portfolioId: string) {
         lotMethod
       );
     },
-    enabled: !!portfolioId,
+    enabled: !!portfolioId && !transactionsLoading,
   });
 }
 
