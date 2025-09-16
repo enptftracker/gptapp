@@ -1,14 +1,14 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { TrendingUp, TrendingDown, Trash2, ExternalLink } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { SymbolSearch } from "@/components/ui/symbol-search";
-import { useWatchlist, useAddToWatchlist, useRemoveFromWatchlist, WatchlistItem } from "@/hooks/useWatchlist";
-import { Skeleton } from "@/components/ui/skeleton";
-
-import { Link } from "react-router-dom";
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { TrendingUp, TrendingDown, Trash2, ExternalLink } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { SymbolSearch } from '@/components/ui/symbol-search';
+import { useWatchlist, useAddToWatchlist, useRemoveFromWatchlist, WatchlistItem } from '@/hooks/useWatchlist';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
+import { SymbolSummary } from '@/components/watchlist/SymbolSummary';
 
 export default function Watchlist() {
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
@@ -22,7 +22,7 @@ export default function Watchlist() {
       await addToWatchlist.mutateAsync(ticker);
       setPendingSelection(ticker.toUpperCase());
     } catch (error) {
-      // Error handling is done in the hook
+      // Errors are handled by the hook toast notifications
     }
   };
 
@@ -45,7 +45,7 @@ export default function Watchlist() {
   };
 
   const formatChange = (change: number, isPercent = false) => {
-    const formatted = isPercent 
+    const formatted = isPercent
       ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
       : `${change >= 0 ? '+' : ''}${change.toFixed(2)}`;
     return formatted;
@@ -87,8 +87,8 @@ export default function Watchlist() {
           <Skeleton className="h-10 w-32" />
         </div>
         <div className="grid gap-4">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-20 w-full" />
+          {[1, 2, 3].map((item) => (
+            <Skeleton key={item} className="h-20 w-full" />
           ))}
         </div>
       </div>
@@ -128,41 +128,18 @@ export default function Watchlist() {
 
       {watchlist?.length === 0 ? (
         <Card>
-          <CardContent className="text-center py-12">
-            <p className="text-muted-foreground mb-2">Your watchlist is empty.</p>
+          <CardContent className="py-12 text-center">
+            <p className="mb-2 text-muted-foreground">Your watchlist is empty.</p>
             <p className="text-sm text-muted-foreground">
               Use the search above to add companies, ETFs, or crypto assets you want to follow.
             </p>
           </CardContent>
         </Card>
       ) : (
-
-        <div className="grid gap-4">
-          {watchlist?.map((item: WatchlistItem) => (
-            <Card key={item.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <Link
-                      to={`/symbol/${item.symbol.ticker}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group"
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
-                          {item.symbol.ticker}
-                        </h3>
-                        <Badge variant="outline" className="text-xs">
-                          {item.symbol.asset_type}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground group-hover:text-primary/80">
-                        {item.symbol.name}
-                      </p>
-                    </Link>
-                  </div>
-
+        <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+          <div className="space-y-4">
+            {watchlist?.map((item: WatchlistItem) => {
+              const isSelected = item.id === selectedSymbolId;
 
               return (
                 <Card
@@ -192,15 +169,13 @@ export default function Watchlist() {
                             {item.symbol.asset_type}
                           </Badge>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {item.symbol.name}
-                        </p>
+                        <p className="text-sm text-muted-foreground">{item.symbol.name}</p>
                       </button>
 
                       <div className="flex items-center gap-3 sm:gap-4">
                         {item.price && (
                           <div className="text-right">
-                            <div className="font-semibold text-lg">
+                            <div className="text-lg font-semibold">
                               {formatPrice(item.price.price)}
                             </div>
                             <div
