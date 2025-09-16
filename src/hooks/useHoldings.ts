@@ -1,15 +1,31 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useTransactions } from './useTransactions';
+import { usePortfolioTransactions, useTransactions } from './useTransactions';
 import { usePortfolios } from './usePortfolios';
 import { symbolService, priceService, profileService } from '@/lib/supabase';
 import { PortfolioCalculations } from '@/lib/calculations';
 
 export function usePortfolioHoldings(portfolioId: string) {
-  const { data: transactions = [] } = useTransactions();
-  const { data: portfolios = [] } = usePortfolios();
+  const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(portfolioId);
+
+  const transactionsSignature = useMemo(
+    () => transactions
+      .filter(t => t.portfolio_id === portfolioId)
+      .map(t => [
+        t.id,
+        t.updated_at,
+        t.quantity,
+        t.unit_price,
+        t.type,
+        t.trade_date,
+        t.symbol_id
+      ].join('::'))
+      .join('|'),
+    [portfolioId, transactions]
+  );
 
   return useQuery({
-    queryKey: ['holdings', portfolioId],
+    queryKey: ['holdings', portfolioId, transactionsSignature],
     queryFn: async () => {
       // Get all symbols referenced in transactions
       const symbolIds = [...new Set(transactions
@@ -36,15 +52,31 @@ export function usePortfolioHoldings(portfolioId: string) {
         lotMethod
       );
     },
-    enabled: !!portfolioId,
+    enabled: !!portfolioId && !transactionsLoading,
   });
 }
 
 export function usePortfolioMetrics(portfolioId: string) {
-  const { data: transactions = [] } = useTransactions();
+  const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(portfolioId);
+
+  const transactionsSignature = useMemo(
+    () => transactions
+      .filter(t => t.portfolio_id === portfolioId)
+      .map(t => [
+        t.id,
+        t.updated_at,
+        t.quantity,
+        t.unit_price,
+        t.type,
+        t.trade_date,
+        t.symbol_id
+      ].join('::'))
+      .join('|'),
+    [portfolioId, transactions]
+  );
 
   return useQuery({
-    queryKey: ['metrics', portfolioId],
+    queryKey: ['metrics', portfolioId, transactionsSignature],
     queryFn: async () => {
       const symbolIds = [...new Set(transactions
         .filter(t => t.symbol_id)
@@ -80,7 +112,7 @@ export function usePortfolioMetrics(portfolioId: string) {
         lotMethod
       );
     },
-    enabled: !!portfolioId,
+    enabled: !!portfolioId && !transactionsLoading,
   });
 }
 
@@ -88,8 +120,24 @@ export function useConsolidatedHoldings() {
   const { data: portfolios = [] } = usePortfolios();
   const { data: transactions = [] } = useTransactions();
 
+  const transactionsSignature = useMemo(
+    () => transactions
+      .map(t => [
+        t.id,
+        t.updated_at,
+        t.quantity,
+        t.unit_price,
+        t.type,
+        t.trade_date,
+        t.symbol_id,
+        t.portfolio_id
+      ].join('::'))
+      .join('|'),
+    [transactions]
+  );
+
   return useQuery({
-    queryKey: ['consolidated-holdings'],
+    queryKey: ['consolidated-holdings', transactionsSignature],
     queryFn: async () => {
       if (portfolios.length === 0) return [];
 
