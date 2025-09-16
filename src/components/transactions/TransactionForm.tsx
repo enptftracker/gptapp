@@ -135,6 +135,7 @@ export default function TransactionForm({
         await updateTransaction.mutateAsync({
           id: transaction.id,
           updates: payload,
+          previousPortfolioId: transaction.portfolio_id,
         });
       } else {
         await createTransaction.mutateAsync(payload);

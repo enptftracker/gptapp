@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useTransactions } from './useTransactions';
+import { usePortfolioTransactions, useTransactions } from './useTransactions';
 import { usePortfolios } from './usePortfolios';
 import { symbolService, priceService, profileService, TransactionWithSymbol } from '@/lib/supabase';
 import { PortfolioCalculations } from '@/lib/calculations';
@@ -30,19 +30,21 @@ function createTransactionsSignature(transactions: TransactionWithSymbol[], incl
 }
 
 function usePortfolioTransactionSnapshot(portfolioId: string) {
-  const { data: allTransactions = [], isLoading: transactionsLoading } = useTransactions();
-
-  const portfolioTransactions = useMemo(
-    () => allTransactions.filter(transaction => transaction.portfolio_id === portfolioId),
-    [allTransactions, portfolioId]
-  );
+  const {
+    data: portfolioTransactions = [],
+    isLoading: transactionsLoading
+  } = usePortfolioTransactions(portfolioId);
 
   const transactionsSignature = useMemo(
     () => createTransactionsSignature(portfolioTransactions),
     [portfolioTransactions]
   );
 
-  return { transactionsLoading, portfolioTransactions, transactionsSignature };
+  return {
+    transactionsLoading,
+    portfolioTransactions,
+    transactionsSignature
+  };
 }
 
 export function usePortfolioHoldings(portfolioId: string) {
