@@ -63,19 +63,43 @@ export function useUpdateTransaction() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  type UpdateTransactionVariables = {
+    id: string;
+    updates: Partial<Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>>;
+    previousPortfolioId?: string;
+  };
+
   return useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: Partial<Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>> }) =>
+    mutationFn: ({ id, updates }: UpdateTransactionVariables) =>
       transactionService.update(id, updates),
-    onSuccess: async (updatedTransaction) => {
+    onSuccess: async (updatedTransaction, variables) => {
       await queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      if (updatedTransaction?.portfolio_id) {
-        const portfolioId = updatedTransaction.portfolio_id;
-        await queryClient.invalidateQueries({ queryKey: ['transactions', 'portfolio', portfolioId] });
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['holdings', portfolioId] }),
-          queryClient.invalidateQueries({ queryKey: ['metrics', portfolioId] })
-        ]);
+
+      const affectedPortfolioIds = new Set<string>();
+      if (variables?.previousPortfolioId) {
+        affectedPortfolioIds.add(variables.previousPortfolioId);
       }
+      if (updatedTransaction?.portfolio_id) {
+        affectedPortfolioIds.add(updatedTransaction.portfolio_id);
+      }
+
+      const portfolioIds = Array.from(affectedPortfolioIds);
+
+      if (portfolioIds.length > 0) {
+        await Promise.all(
+          portfolioIds.map((portfolioId) =>
+            queryClient.invalidateQueries({ queryKey: ['transactions', 'portfolio', portfolioId] })
+          )
+        );
+
+        await Promise.all(
+          portfolioIds.flatMap((portfolioId) => [
+            queryClient.invalidateQueries({ queryKey: ['holdings', portfolioId] }),
+            queryClient.invalidateQueries({ queryKey: ['metrics', portfolioId] })
+          ])
+        );
+      }
+
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
         queryClient.invalidateQueries({ queryKey: ['holdings'] }),
