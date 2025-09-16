@@ -9,6 +9,7 @@ import {
 } from 'recharts';
 import { Holding } from '@/lib/types';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
+import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
 
 interface AllocationChartProps {
   holdings: Holding[];
@@ -43,30 +44,32 @@ interface TooltipProps {
   payload?: TooltipPayload[];
 }
 
-const CustomTooltip = ({ active, payload }: TooltipProps) => {
-  if (!active || !payload || payload.length === 0) {
-    return null;
-  }
-
-  const data = payload[0].payload;
-
-  return (
-    <div className="rounded-md border bg-background/95 px-3 py-2 shadow-lg">
-      <p className="font-semibold">{data.name}</p>
-      <p className="text-sm text-muted-foreground">
-        Market value: {formatCurrency(data.value)}
-      </p>
-      <p className="text-sm text-muted-foreground">
-        Allocation: {formatPercent(data.allocation)}
-      </p>
-      <p className="text-sm text-muted-foreground">
-        Price: {formatCurrency(data.currentPrice, data.currency)}
-      </p>
-    </div>
-  );
-};
-
 const AllocationChart: React.FC<AllocationChartProps> = ({ holdings }) => {
+  const { baseCurrency } = useCurrencyFormatter();
+
+  const renderTooltip = ({ active, payload }: TooltipProps) => {
+    if (!active || !payload || payload.length === 0) {
+      return null;
+    }
+
+    const data = payload[0].payload;
+
+    return (
+      <div className="rounded-md border bg-background/95 px-3 py-2 shadow-lg">
+        <p className="font-semibold">{data.name}</p>
+        <p className="text-sm text-muted-foreground">
+          Market value: {formatCurrency(data.value, baseCurrency)}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Allocation: {formatPercent(data.allocation)}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Price: {formatCurrency(data.currentPrice, data.currency)}
+        </p>
+      </div>
+    );
+  };
+
   if (holdings.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -98,7 +101,7 @@ const AllocationChart: React.FC<AllocationChartProps> = ({ holdings }) => {
             <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
           ))}
         </Pie>
-        <Tooltip content={<CustomTooltip />} />
+        <Tooltip content={renderTooltip} />
         <Legend
           verticalAlign="bottom"
           align="center"

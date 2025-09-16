@@ -12,7 +12,8 @@ import HoldingsTable from '@/components/dashboard/HoldingsTable';
 import TransactionHistory from '@/components/transactions/TransactionHistory';
 import TransactionForm from '@/components/transactions/TransactionForm';
 import MetricCard from '@/components/dashboard/MetricCard';
-import { formatCurrency, formatPercent } from '@/lib/calculations';
+import { formatPercent } from '@/lib/calculations';
+import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +34,7 @@ export default function PortfolioDetail() {
   const { data: metrics, isLoading: metricsLoading } = usePortfolioMetrics(id!);
   const deletePortfolio = useDeletePortfolio();
   const navigate = useNavigate();
+  const { formatBaseCurrency } = useCurrencyFormatter();
 
   const portfolio = portfolios.find(p => p.id === id);
   const isLoading = transactionsLoading || holdingsLoading || metricsLoading;
@@ -193,13 +195,13 @@ export default function PortfolioDetail() {
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Market Value</p>
                 <p className="text-lg font-mono font-semibold">
-                  {formatCurrency(metrics.totalEquity)}
+                  {formatBaseCurrency(metrics.totalEquity)}
                 </p>
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Cost Basis</p>
                 <p className="text-lg font-mono font-medium">
-                  {formatCurrency(metrics.totalCost)}
+                  {formatBaseCurrency(metrics.totalCost)}
                 </p>
               </div>
               <div className="space-y-1">
@@ -207,7 +209,7 @@ export default function PortfolioDetail() {
                 <div className={`text-lg font-mono font-semibold ${
                   metrics.totalPL >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  <p>{formatCurrency(metrics.totalPL)}</p>
+                  <p>{formatBaseCurrency(metrics.totalPL)}</p>
                   <p className="text-sm">({formatPercent(metrics.totalPLPercent)})</p>
                 </div>
               </div>
@@ -216,7 +218,7 @@ export default function PortfolioDetail() {
                 <div className={`text-lg font-mono font-semibold ${
                   metrics.dailyPL >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  <p>{formatCurrency(metrics.dailyPL)}</p>
+                  <p>{formatBaseCurrency(metrics.dailyPL)}</p>
                   <p className="text-sm">({formatPercent(metrics.dailyPLPercent)})</p>
                 </div>
               </div>
