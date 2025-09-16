@@ -4,13 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, TrendingUp, TrendingDown, Trash2 } from 'lucide-react';
+import { ArrowLeft, TrendingUp, TrendingDown, Trash2, Plus } from 'lucide-react';
 import { usePortfolios, useDeletePortfolio } from '@/hooks/usePortfolios';
 import { usePortfolioTransactions } from '@/hooks/useTransactions';
 import { usePortfolioHoldings, usePortfolioMetrics } from '@/hooks/useHoldings';
 import HoldingsTable from '@/components/dashboard/HoldingsTable';
 import TransactionHistory from '@/components/transactions/TransactionHistory';
 import TransactionForm from '@/components/transactions/TransactionForm';
+import TransactionImportDialog from '@/components/transactions/TransactionImportDialog';
 import MetricCard from '@/components/dashboard/MetricCard';
 import { formatPercent } from '@/lib/calculations';
 import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
@@ -115,9 +116,19 @@ export default function PortfolioDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <TransactionImportDialog
+            portfolioId={portfolio.id}
+            portfolioName={portfolio.name}
+          />
           <TransactionForm
             portfolios={[portfolio]}
             defaultPortfolioId={portfolio.id}
+            trigger={(
+              <Button size="sm">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Transaction
+              </Button>
+            )}
           />
           <AlertDialog>
             <AlertDialogTrigger asChild>
