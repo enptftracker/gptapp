@@ -167,6 +167,7 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
   const latestPrice = marketData?.price ?? item.price?.price;
   const change = marketData?.change ?? item.price?.change_24h ?? 0;
   const changePercent = marketData?.changePercent ?? item.price?.change_percent_24h ?? 0;
+  const quoteCurrency = item.symbol.quote_currency || 'USD';
 
   const chartData = useMemo(
     () => generateHistoricalData(range, latestPrice, item.symbol.ticker),
@@ -180,8 +181,8 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
   const logoUrl = getLogoUrl(item.symbol.ticker, item.symbol.name);
 
   return (
-    <Card className="h-full">
-      <CardHeader className="space-y-4">
+    <Card className="h-full lg:min-h-[560px]">
+      <CardHeader className="space-y-6">
         <div className="flex items-start gap-4">
           <Avatar className="h-12 w-12">
             <AvatarImage src={logoUrl} alt={`${item.symbol.ticker} logo`} />
@@ -198,7 +199,7 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
 
         <div className="flex flex-wrap items-baseline gap-3">
           <div className="text-3xl font-bold">
-            {latestPrice !== undefined ? formatPrice(latestPrice) : '--'}
+            {latestPrice !== undefined ? formatPrice(latestPrice, quoteCurrency) : '--'}
           </div>
           <div
             className={cn(
@@ -237,8 +238,8 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
           </ToggleGroup>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="h-[280px]">
+      <CardContent className="space-y-6">
+        <div className="h-[320px]">
           {chartData.length ? (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
@@ -257,7 +258,7 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
                     borderColor: 'hsl(var(--border))',
                   }}
                   labelStyle={{ color: 'hsl(var(--muted-foreground))' }}
-                  formatter={(value: number) => [formatPrice(Number(value)), 'Price']}
+                  formatter={(value: number) => [formatPrice(Number(value), quoteCurrency), 'Price']}
                 />
                 <Area
                   type="monotone"
@@ -280,13 +281,13 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">Range high</p>
             <p className="font-mono text-lg font-semibold">
-              {rangeHigh ? formatPrice(rangeHigh) : '--'}
+              {rangeHigh ? formatPrice(rangeHigh, quoteCurrency) : '--'}
             </p>
           </div>
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">Range low</p>
             <p className="font-mono text-lg font-semibold">
-              {rangeLow ? formatPrice(rangeLow) : '--'}
+              {rangeLow ? formatPrice(rangeLow, quoteCurrency) : '--'}
             </p>
           </div>
           <div className="space-y-1">

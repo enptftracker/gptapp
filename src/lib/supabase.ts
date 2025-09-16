@@ -170,7 +170,19 @@ export const symbolService = {
       .from('symbols')
       .select('*')
       .order('ticker');
-    
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getByIds(ids: string[]): Promise<Symbol[]> {
+    if (ids.length === 0) return [];
+
+    const { data, error } = await supabase
+      .from('symbols')
+      .select('*')
+      .in('id', ids);
+
     if (error) throw error;
     return data || [];
   },
@@ -382,9 +394,21 @@ export const priceService = {
       .select('*')
       .eq('symbol_id', symbolId)
       .maybeSingle();
-    
+
     if (error) throw error;
     return data;
+  },
+
+  async getLatestForSymbols(symbolIds: string[]): Promise<PriceData[]> {
+    if (symbolIds.length === 0) return [];
+
+    const { data, error } = await supabase
+      .from('price_cache')
+      .select('*')
+      .in('symbol_id', symbolIds);
+
+    if (error) throw error;
+    return data || [];
   },
 
   async updatePrice(symbolId: string, price: number, currency: string = 'USD'): Promise<void> {

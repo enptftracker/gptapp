@@ -4,7 +4,7 @@ import { usePortfolios } from '@/hooks/usePortfolios';
 import { useConsolidatedHoldings } from '@/hooks/useHoldings';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { formatCurrency, formatPercent } from '@/lib/calculations';
+import { formatPercent } from '@/lib/calculations';
 import HoldingsTable from '@/components/dashboard/HoldingsTable';
 import MetricCard from '@/components/dashboard/MetricCard';
 

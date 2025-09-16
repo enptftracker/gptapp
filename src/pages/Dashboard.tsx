@@ -9,21 +9,20 @@ import { useUpdatePrices } from '@/hooks/useMarketData';
 import { Button } from '@/components/ui/button';
 import { Plus, Wallet, TrendingUp, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { formatCurrency } from '@/lib/calculations';
+import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
 import TransactionForm from '@/components/transactions/TransactionForm';
 import AllocationChart from '@/components/dashboard/AllocationChart';
 
 export default function Dashboard() {
   const { data: portfolios = [], isLoading: portfoliosLoading } = usePortfolios();
-  const { data: transactions = [], isLoading: transactionsLoading } = useTransactions();
+  const { isLoading: transactionsLoading } = useTransactions();
   const { data: consolidatedHoldings = [], isLoading: holdingsLoading } = useConsolidatedHoldings();
   const updatePrices = useUpdatePrices();
+  const { formatBaseCurrency } = useCurrencyFormatter();
 
   const isLoading = portfoliosLoading || transactionsLoading || holdingsLoading;
 
   // Calculate real metrics from holdings
-  const totalPortfolios = portfolios.length;
-  const totalTransactions = transactions.length;
   const totalEquity = consolidatedHoldings.reduce((sum, h) => sum + h.totalMarketValue, 0);
   const totalCost = consolidatedHoldings.reduce((sum, h) => sum + (h.totalQuantity * h.blendedAvgCost), 0);
   const totalPL = consolidatedHoldings.reduce((sum, h) => sum + h.totalUnrealizedPL, 0);
@@ -218,7 +217,7 @@ export default function Dashboard() {
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="font-mono font-semibold">{formatCurrency(0)}</p>
+                    <p className="font-mono font-semibold">{formatBaseCurrency(0)}</p>
                     <p className="text-sm text-muted-foreground">0 holdings</p>
                   </div>
                 </div>

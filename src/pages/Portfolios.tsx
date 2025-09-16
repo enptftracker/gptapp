@@ -11,9 +11,10 @@ import { Link } from 'react-router-dom';
 import { usePortfolios, useCreatePortfolio, useDeletePortfolio } from '@/hooks/usePortfolios';
 import { usePortfolioMetrics } from '@/hooks/useHoldings';
 import { useToast } from '@/hooks/use-toast';
-import { formatCurrency, formatPercent } from '@/lib/calculations';
+import { formatPercent } from '@/lib/calculations';
 import TransactionForm from '@/components/transactions/TransactionForm';
 import { cn } from '@/lib/utils';
+import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +40,7 @@ const PortfolioCard = ({
   isDeleting: boolean;
 }) => {
   const { data: metrics } = usePortfolioMetrics(portfolio.id);
+  const { formatBaseCurrency } = useCurrencyFormatter();
 
   const isProfit = (metrics?.totalPL || 0) >= 0;
   const hasHoldings = (metrics?.holdings.length || 0) > 0;
@@ -104,7 +106,7 @@ const PortfolioCard = ({
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Total Value</span>
             <span className="font-mono font-semibold">
-              {formatCurrency(metrics?.totalEquity || 0)}
+              {formatBaseCurrency(metrics?.totalEquity || 0)}
             </span>
           </div>
           
@@ -120,7 +122,7 @@ const PortfolioCard = ({
                 "font-mono font-semibold",
                 isProfit ? "text-green-600" : "text-red-600"
               )}>
-                {formatCurrency(metrics?.totalPL || 0)}
+                {formatBaseCurrency(metrics?.totalPL || 0)}
               </span>
             </div>
           </div>

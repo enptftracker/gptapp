@@ -36,10 +36,10 @@ export default function Watchlist() {
     }
   };
 
-  const formatPrice = (price: number) => {
+  const formatPrice = (price: number, currency: string = 'USD') => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD',
+      currency,
       minimumFractionDigits: 2,
     }).format(price);
   };
@@ -136,7 +136,7 @@ export default function Watchlist() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+        <div className="grid gap-6 lg:grid-cols-[3fr,2fr]">
           <div className="space-y-4">
             {watchlist?.map((item: WatchlistItem) => {
               const isSelected = item.id === selectedSymbolId;
@@ -176,7 +176,7 @@ export default function Watchlist() {
                         {item.price && (
                           <div className="text-right">
                             <div className="text-lg font-semibold">
-                              {formatPrice(item.price.price)}
+                              {formatPrice(item.price.price, item.symbol.quote_currency)}
                             </div>
                             <div
                               className={cn(

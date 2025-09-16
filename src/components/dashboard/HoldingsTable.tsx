@@ -3,6 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
+import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
 import { Holding } from '@/lib/types';
 
 interface HoldingsTableProps {
@@ -11,6 +12,8 @@ interface HoldingsTableProps {
 }
 
 export default function HoldingsTable({ holdings, className }: HoldingsTableProps) {
+  const { baseCurrency } = useCurrencyFormatter();
+
   if (holdings.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center">
@@ -54,13 +57,13 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
                   {holding.quantity.toLocaleString()}
                 </TableCell>
                 <TableCell className="text-right font-mono">
-                  {formatCurrency(holding.avgCostBase)}
+                  {formatCurrency(holding.avgCostBase, baseCurrency)}
                 </TableCell>
                 <TableCell className="text-right font-mono">
                   {formatCurrency(holding.currentPrice, holding.symbol.quoteCurrency)}
                 </TableCell>
                 <TableCell className="text-right font-mono font-medium">
-                  {formatCurrency(holding.marketValueBase)}
+                  {formatCurrency(holding.marketValueBase, baseCurrency)}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className={cn(
@@ -68,7 +71,7 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
                     isProfit ? "text-profit" : "text-loss"
                   )}>
                     <span className="font-mono">
-                      {formatCurrency(holding.unrealizedPL)}
+                      {formatCurrency(holding.unrealizedPL, baseCurrency)}
                     </span>
                     <span className="text-xs">
                       ({formatPercent(holding.unrealizedPLPercent)})
