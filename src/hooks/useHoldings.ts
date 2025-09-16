@@ -1,37 +1,61 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { usePortfolioTransactions, useTransactions } from './useTransactions';
+import { useTransactions } from './useTransactions';
 import { usePortfolios } from './usePortfolios';
-import { symbolService, priceService, profileService } from '@/lib/supabase';
+import { symbolService, priceService, profileService, TransactionWithSymbol } from '@/lib/supabase';
 import { PortfolioCalculations } from '@/lib/calculations';
 
-export function usePortfolioHoldings(portfolioId: string) {
-  const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(portfolioId);
+function createTransactionsSignature(transactions: TransactionWithSymbol[], includePortfolioId: boolean = false) {
+  if (transactions.length === 0) return '';
+
+  return transactions
+    .map(transaction => {
+      const signatureParts = [
+        transaction.id,
+        transaction.updated_at,
+        transaction.quantity,
+        transaction.unit_price,
+        transaction.type,
+        transaction.trade_date,
+        transaction.symbol_id ?? ''
+      ];
+
+      if (includePortfolioId) {
+        signatureParts.push(transaction.portfolio_id);
+      }
+
+      return signatureParts.join('::');
+    })
+    .join('|');
+}
+
+function usePortfolioTransactionSnapshot(portfolioId: string) {
+  const { data: allTransactions = [], isLoading: transactionsLoading } = useTransactions();
+
+  const portfolioTransactions = useMemo(
+    () => allTransactions.filter(transaction => transaction.portfolio_id === portfolioId),
+    [allTransactions, portfolioId]
+  );
 
   const transactionsSignature = useMemo(
-    () => transactions
-      .filter(t => t.portfolio_id === portfolioId)
-      .map(t => [
-        t.id,
-        t.updated_at,
-        t.quantity,
-        t.unit_price,
-        t.type,
-        t.trade_date,
-        t.symbol_id
-      ].join('::'))
-      .join('|'),
-    [portfolioId, transactions]
+    () => createTransactionsSignature(portfolioTransactions),
+    [portfolioTransactions]
   );
+
+  return { transactionsLoading, portfolioTransactions, transactionsSignature };
+}
+
+export function usePortfolioHoldings(portfolioId: string) {
+  const { transactionsLoading, portfolioTransactions, transactionsSignature } = usePortfolioTransactionSnapshot(portfolioId);
 
   return useQuery({
     queryKey: ['holdings', portfolioId, transactionsSignature],
     queryFn: async () => {
       // Get all symbols referenced in transactions
-      const symbolIds = [...new Set(transactions
+      const symbolIds = [...new Set(portfolioTransactions
         .filter(t => t.symbol_id)
         .map(t => t.symbol_id!))];
-      
+
       if (symbolIds.length === 0) return [];
 
       // Fetch symbols, prices, and user profile
@@ -46,7 +70,7 @@ export function usePortfolioHoldings(portfolioId: string) {
 
       return PortfolioCalculations.calculateHoldings(
         portfolioId,
-        transactions,
+        portfolioTransactions,
         symbols,
         validPrices,
         lotMethod
@@ -57,31 +81,15 @@ export function usePortfolioHoldings(portfolioId: string) {
 }
 
 export function usePortfolioMetrics(portfolioId: string) {
-  const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(portfolioId);
-
-  const transactionsSignature = useMemo(
-    () => transactions
-      .filter(t => t.portfolio_id === portfolioId)
-      .map(t => [
-        t.id,
-        t.updated_at,
-        t.quantity,
-        t.unit_price,
-        t.type,
-        t.trade_date,
-        t.symbol_id
-      ].join('::'))
-      .join('|'),
-    [portfolioId, transactions]
-  );
+  const { transactionsLoading, portfolioTransactions, transactionsSignature } = usePortfolioTransactionSnapshot(portfolioId);
 
   return useQuery({
     queryKey: ['metrics', portfolioId, transactionsSignature],
     queryFn: async () => {
-      const symbolIds = [...new Set(transactions
+      const symbolIds = [...new Set(portfolioTransactions
         .filter(t => t.symbol_id)
         .map(t => t.symbol_id!))];
-      
+
       if (symbolIds.length === 0) {
         return {
           portfolioId,
@@ -106,7 +114,7 @@ export function usePortfolioMetrics(portfolioId: string) {
 
       return PortfolioCalculations.calculatePortfolioMetrics(
         portfolioId,
-        transactions,
+        portfolioTransactions,
         symbols,
         validPrices,
         lotMethod
@@ -121,18 +129,7 @@ export function useConsolidatedHoldings() {
   const { data: transactions = [] } = useTransactions();
 
   const transactionsSignature = useMemo(
-    () => transactions
-      .map(t => [
-        t.id,
-        t.updated_at,
-        t.quantity,
-        t.unit_price,
-        t.type,
-        t.trade_date,
-        t.symbol_id,
-        t.portfolio_id
-      ].join('::'))
-      .join('|'),
+    () => createTransactionsSignature(transactions, true),
     [transactions]
   );
 
