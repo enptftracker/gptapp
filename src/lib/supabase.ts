@@ -68,6 +68,18 @@ export interface Profile {
   updated_at: string;
 }
 
+async function getAuthenticatedUser() {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError) throw authError;
+  if (!user) throw new Error('User not authenticated');
+
+  return user;
+}
+
 // Portfolio operations
 export const portfolioService = {
   async getAll(): Promise<Portfolio[]> {
@@ -219,6 +231,7 @@ export const symbolService = {
 // Transaction operations
 export const transactionService = {
   async getAll(): Promise<TransactionWithSymbol[]> {
+    const user = await getAuthenticatedUser();
 
     const { data, error } = await supabase
       .from('transactions')
@@ -241,7 +254,7 @@ export const transactionService = {
           )
         )
       `)
-
+      .eq('owner_id', user.id)
       .order('trade_date', { ascending: false });
 
     if (error) throw error;
@@ -249,6 +262,8 @@ export const transactionService = {
   },
 
   async getByPortfolio(portfolioId: string): Promise<TransactionWithSymbol[]> {
+    const user = await getAuthenticatedUser();
+
     const { data, error } = await supabase
       .from('transactions')
       .select(`
@@ -279,6 +294,7 @@ export const transactionService = {
   },
 
   async create(transaction: Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>): Promise<TransactionWithSymbol> {
+    const user = await getAuthenticatedUser();
 
     const { data, error } = await supabase
       .from('transactions')
@@ -312,11 +328,13 @@ export const transactionService = {
   },
 
   async update(id: string, updates: Partial<Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>>): Promise<TransactionWithSymbol> {
+    const user = await getAuthenticatedUser();
 
     const { data, error } = await supabase
       .from('transactions')
       .update(updates)
       .eq('id', id)
+      .eq('owner_id', user.id)
 
       .select(`
         *,
@@ -344,11 +362,13 @@ export const transactionService = {
   },
 
   async delete(id: string): Promise<void> {
+    const user = await getAuthenticatedUser();
 
     const { error } = await supabase
       .from('transactions')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('owner_id', user.id);
 
     if (error) throw error;
   }
