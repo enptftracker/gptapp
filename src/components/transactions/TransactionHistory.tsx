@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Transaction } from '@/lib/supabase';
 import { Edit, Trash2 } from 'lucide-react';
 import { useDeleteTransaction } from '@/hooks/useTransactions';
 import TransactionForm from './TransactionForm';
-import { CSVImport } from './CSVImport';
+import TransactionImportDialog from './TransactionImportDialog';
 
 interface TransactionHistoryProps {
   transactions: Transaction[];
@@ -39,8 +39,8 @@ const getTransactionTypeColor = (type: Transaction['type']) => {
   }
 };
 
-export default function TransactionHistory({ 
-  transactions, 
+export default function TransactionHistory({
+  transactions,
   title = "Transaction History",
   className,
   portfolios = [],
@@ -49,6 +49,13 @@ export default function TransactionHistory({
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
   const deleteTransaction = useDeleteTransaction();
+
+  const importPortfolio = useMemo(() => {
+    if (defaultPortfolioId) {
+      return portfolios.find(portfolio => portfolio.id === defaultPortfolioId) || null;
+    }
+    return portfolios.length > 0 ? portfolios[0] : null;
+  }, [defaultPortfolioId, portfolios]);
 
   const handleDelete = async () => {
     if (deleteId) {
@@ -78,10 +85,10 @@ export default function TransactionHistory({
         <CardHeader>
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <CardTitle className="text-lg md:text-xl">{title}</CardTitle>
-            {portfolios.length > 0 && (
-              <CSVImport 
-                portfolios={portfolios}
-                defaultPortfolioId={defaultPortfolioId}
+            {importPortfolio && (
+              <TransactionImportDialog
+                portfolioId={importPortfolio.id}
+                portfolioName={importPortfolio.name}
               />
             )}
           </div>

@@ -1,8 +1,12 @@
+import { useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/calculations';
+import { useHistoricalPrices } from '@/hooks/useMarketData';
+import type { HistoricalRange } from '@/lib/marketData';
 
 interface StockChartProps {
   ticker: string;
@@ -11,54 +15,63 @@ interface StockChartProps {
 
 type TimeRange = '1M' | '3M' | '6M' | '1Y' | '5Y';
 
+const rangeDisplayFormat: Record<HistoricalRange, string> = {
+  '1D': 'HH:mm',
+  '1W': 'MMM d',
+  '1M': 'MMM d',
+  '3M': 'MMM d',
+  '6M': 'MMM d',
+  '1Y': 'MMM yyyy',
+  '5Y': 'MMM yyyy',
+  'MAX': 'yyyy',
+};
+
+const rangeTooltipFormat: Record<HistoricalRange, string> = {
+  '1D': 'MMM d, HH:mm',
+  '1W': 'EEE, MMM d yyyy',
+  '1M': 'EEE, MMM d yyyy',
+  '3M': 'EEE, MMM d yyyy',
+  '6M': 'MMM d yyyy',
+  '1Y': 'MMM d yyyy',
+  '5Y': 'MMM yyyy',
+  'MAX': 'MMM yyyy',
+};
+
+const rangeMap: Record<TimeRange, HistoricalRange> = {
+  '1M': '1M',
+  '3M': '3M',
+  '6M': '6M',
+  '1Y': '1Y',
+  '5Y': '5Y',
+};
+
 export function StockChart({ ticker, currency }: StockChartProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>('1Y');
 
-  // Generate mock historical data
-  const generateMockData = (range: TimeRange) => {
-    const today = new Date();
-    let days = 365;
-    
-    switch (range) {
-      case '1M': days = 30; break;
-      case '3M': days = 90; break;
-      case '6M': days = 180; break;
-      case '1Y': days = 365; break;
-      case '5Y': days = 1825; break;
-    }
+  const historicalRange = rangeMap[timeRange];
+  const { data: historicalPrices = [], isLoading } = useHistoricalPrices(ticker, historicalRange);
 
-    // Use realistic base price (e.g., $500 for SPY-like stocks)
-    const basePrice = 500;
-    const data = [];
-    let currentPrice = basePrice;
-    
-    for (let i = days; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      
-      // Realistic daily price movement (typically -2% to +2%)
-      const dailyChangePercent = (Math.random() - 0.45) * 2; // Slight upward bias
-      const dailyChange = currentPrice * (dailyChangePercent / 100);
-      currentPrice = Math.max(basePrice * 0.8, currentPrice + dailyChange); // Don't drop below 80% of base
-      
-      data.push({
-        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        price: parseFloat(currentPrice.toFixed(2))
-      });
-    }
-    
-    return data;
-  };
+  const data = useMemo(
+    () =>
+      historicalPrices.map((point) => ({
+        date: format(new Date(point.time), rangeDisplayFormat[historicalRange]),
+        iso: point.time,
+        price: Number(point.price.toFixed(2)),
+      })),
+    [historicalPrices, historicalRange]
+  );
 
-  const data = generateMockData(timeRange);
-  const minPrice = Math.min(...data.map(d => d.price));
-  const maxPrice = Math.max(...data.map(d => d.price));
+  const prices = historicalPrices.map(point => point.price);
+  const minPrice = prices.length ? Math.min(...prices) : 0;
+  const maxPrice = prices.length ? Math.max(...prices) : 0;
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
+      const iso = payload[0]?.payload?.iso as string | undefined;
+      const label = iso ? format(new Date(iso), rangeTooltipFormat[historicalRange]) : payload[0].payload.date;
       return (
         <div className="bg-card border border-border rounded-lg p-2 shadow-lg">
-          <p className="text-xs text-muted-foreground">{payload[0].payload.date}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
           <p className="text-sm font-semibold text-card-foreground">
             {formatCurrency(payload[0].value, currency)}
           </p>
@@ -90,32 +103,42 @@ export function StockChart({ ticker, currency }: StockChartProps) {
       </CardHeader>
       <CardContent>
         <div className="h-48 md:h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis 
-                dataKey="date" 
-                tick={{ fontSize: 10 }}
-                stroke="hsl(var(--muted-foreground))"
-                interval="preserveStartEnd"
-              />
-              <YAxis 
-                domain={[minPrice * 0.98, maxPrice * 1.02]}
-                tick={{ fontSize: 10 }}
-                stroke="hsl(var(--muted-foreground))"
-                tickFormatter={(value) => `${value.toFixed(0)}`}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Line 
-                type="monotone" 
-                dataKey="price" 
-                stroke="hsl(var(--primary))" 
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 4 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          {isLoading ? (
+            <div className="flex h-full items-center justify-center">
+              <Skeleton className="h-full w-full" />
+            </div>
+          ) : data.length ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 10 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  domain={[minPrice * 0.98, maxPrice * 1.02]}
+                  tick={{ fontSize: 10 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  tickFormatter={(value) => `${value.toFixed(0)}`}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Line
+                  type="monotone"
+                  dataKey="price"
+                  stroke="hsl(var(--chart-1))"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              No historical data available
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

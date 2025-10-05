@@ -82,9 +82,9 @@ export function PerformanceBreakdown({ holdings, title = "Performance by Positio
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="pl" radius={[4, 4, 0, 0]}>
                 {chartData.map((entry, index) => (
-                  <Cell 
-                    key={`cell-${index}`} 
-                    fill={entry.pl >= 0 ? 'hsl(var(--profit))' : 'hsl(var(--loss))'}
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={entry.pl >= 0 ? 'hsl(var(--chart-2))' : 'hsl(var(--chart-5))'}
                   />
                 ))}
               </Bar>

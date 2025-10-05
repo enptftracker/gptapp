@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { MarketDataService } from '@/lib/marketData';
 import { useToast } from '@/hooks/use-toast';
 
 export interface WatchlistItem {
@@ -42,16 +43,60 @@ export function useWatchlist() {
 
       // Get price data for all symbols
       const symbolIds = watchlistData?.map(item => item.symbol_id) || [];
+
+      if (symbolIds.length === 0) {
+        return (watchlistData || []).map(item => ({ ...item, price: undefined })) as WatchlistItem[];
+      }
       const { data: priceData } = await supabase
         .from('price_cache')
-        .select('symbol_id, price, change_24h, change_percent_24h')
+        .select('symbol_id, price, change_24h, change_percent_24h, asof')
         .in('symbol_id', symbolIds);
 
-      // Combine watchlist data with price data
-      const watchlistWithPrices = watchlistData?.map(item => ({
-        ...item,
-        price: priceData?.find(p => p.symbol_id === item.symbol_id)
-      })) || [];
+      const priceMap = new Map(
+        (priceData || []).map(entry => [
+          entry.symbol_id,
+          {
+            price: Number(entry.price),
+            change_24h: Number(entry.change_24h ?? 0),
+            change_percent_24h: Number(entry.change_percent_24h ?? 0),
+            asof: entry.asof ? new Date(entry.asof).getTime() : undefined,
+          }
+        ])
+      );
+
+      const now = Date.now();
+      const freshnessWindow = 1000 * 60 * 5; // 5 minutes
+
+      const watchlistWithPrices = await Promise.all(
+        (watchlistData || []).map(async (item) => {
+          const cached = priceMap.get(item.symbol_id);
+          let resolvedPrice = cached
+            ? {
+                price: cached.price,
+                change_24h: cached.change_24h,
+                change_percent_24h: cached.change_percent_24h,
+              }
+            : undefined;
+
+          const isStale = !cached?.asof || now - cached.asof > freshnessWindow;
+
+          if (isStale) {
+            const fresh = await MarketDataService.getMarketData(item.symbol.ticker);
+            if (fresh) {
+              resolvedPrice = {
+                price: fresh.price,
+                change_24h: fresh.change,
+                change_percent_24h: fresh.changePercent,
+              };
+            }
+          }
+
+          return {
+            ...item,
+            price: resolvedPrice,
+          };
+        })
+      );
 
       return watchlistWithPrices as WatchlistItem[];
     }

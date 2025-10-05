@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MarketDataService } from '@/lib/marketData';
+import { HistoricalRange, MarketDataService } from '@/lib/marketData';
 import { symbolService } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 
@@ -10,6 +10,18 @@ export function useMarketData(ticker: string) {
     enabled: !!ticker,
     staleTime: 1000 * 60 * 5, // 5 minutes
     refetchInterval: 1000 * 60 * 5, // Refresh every 5 minutes
+  });
+}
+
+export const HISTORICAL_RANGES: HistoricalRange[] = ['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'MAX'];
+
+export function useHistoricalPrices(ticker: string, range: HistoricalRange) {
+  return useQuery({
+    queryKey: ['market-data', 'historical', ticker, range],
+    queryFn: () => MarketDataService.getHistoricalPrices(ticker, range),
+    enabled: !!ticker,
+    staleTime: 1000 * 60 * 10,
+    refetchOnWindowFocus: false,
   });
 }
 

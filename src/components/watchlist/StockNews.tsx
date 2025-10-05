@@ -8,6 +8,7 @@ interface StockNewsProps {
 
 export function StockNews({ ticker }: StockNewsProps) {
   // Mock news data - in production, fetch from a news API
+  const encodedTicker = encodeURIComponent(`${ticker} stock`);
   const mockNews = [
     {
       id: 1,
@@ -15,7 +16,7 @@ export function StockNews({ ticker }: StockNewsProps) {
       source: 'Financial Times',
       time: '2 hours ago',
       sentiment: 'positive',
-      url: '#'
+      url: `https://www.ft.com/search?q=${encodedTicker}&sort=relevance`
     },
     {
       id: 2,
@@ -23,7 +24,7 @@ export function StockNews({ ticker }: StockNewsProps) {
       source: 'Bloomberg',
       time: '5 hours ago',
       sentiment: 'positive',
-      url: '#'
+      url: `https://www.bloomberg.com/quote/${ticker}:US`
     },
     {
       id: 3,
@@ -31,7 +32,7 @@ export function StockNews({ ticker }: StockNewsProps) {
       source: 'Reuters',
       time: '1 day ago',
       sentiment: 'neutral',
-      url: '#'
+      url: `https://www.reuters.com/markets/companies/${ticker}`
     },
     {
       id: 4,
@@ -39,7 +40,7 @@ export function StockNews({ ticker }: StockNewsProps) {
       source: 'CNBC',
       time: '2 days ago',
       sentiment: 'positive',
-      url: '#'
+      url: `https://www.cnbc.com/quotes/${ticker}`
     },
     {
       id: 5,
@@ -47,7 +48,7 @@ export function StockNews({ ticker }: StockNewsProps) {
       source: 'Wall Street Journal',
       time: '3 days ago',
       sentiment: 'positive',
-      url: '#'
+      url: `https://www.wsj.com/market-data/quotes/${ticker}`
     }
   ];
 
