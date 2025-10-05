@@ -10,12 +10,12 @@ interface AssetTypeBreakdownProps {
 }
 
 const ASSET_COLORS: Record<string, string> = {
-  EQUITY: 'hsl(var(--primary))',
-  ETF: 'hsl(var(--profit))',
-  CRYPTO: 'hsl(var(--warning))',
-  BOND: 'hsl(var(--loss))',
-  COMMODITY: 'hsl(var(--primary) / 0.75)',
-  FOREX: 'hsl(var(--profit) / 0.75)',
+  EQUITY: 'hsl(var(--chart-1))',
+  ETF: 'hsl(var(--chart-2))',
+  CRYPTO: 'hsl(var(--chart-3))',
+  BOND: 'hsl(var(--chart-4))',
+  COMMODITY: 'hsl(var(--chart-5))',
+  FOREX: 'hsl(var(--chart-2) / 0.7)',
 };
 
 export function AssetTypeBreakdown({ holdings, title = "Asset Allocation by Type", className }: AssetTypeBreakdownProps) {

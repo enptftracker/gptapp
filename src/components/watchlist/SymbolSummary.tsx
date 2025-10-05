@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useMarketData } from '@/hooks/useMarketData';
+import { useHistoricalPrices, useMarketData } from '@/hooks/useMarketData';
+import type { HistoricalRange } from '@/lib/marketData';
 import { WatchlistItem } from '@/hooks/useWatchlist';
 import {
   ResponsiveContainer,
@@ -49,89 +50,29 @@ const logoDomains: Record<string, string> = {
   MSTR: 'microstrategy.com',
 };
 
-const rangeOptions = ['1D', '1W', '1M', '3M', '1Y', '5Y', 'MAX'] as const;
-type TimeRange = typeof rangeOptions[number];
+const rangeOptions: HistoricalRange[] = ['1D', '1W', '1M', '3M', '1Y', '5Y', 'MAX'];
 
-const rangeFormat: Record<TimeRange, { format: string; points: number; volatility: number }> = {
-  '1D': { format: 'haaa', points: 24, volatility: 0.012 },
-  '1W': { format: 'MMM dd', points: 7, volatility: 0.02 },
-  '1M': { format: 'MMM dd', points: 30, volatility: 0.035 },
-  '3M': { format: 'MMM dd', points: 13, volatility: 0.05 },
-  '1Y': { format: 'MMM yyyy', points: 12, volatility: 0.12 },
-  '5Y': { format: 'MMM yyyy', points: 10, volatility: 0.22 },
-  'MAX': { format: 'yyyy', points: 12, volatility: 0.35 },
+const rangeDisplayFormat: Record<HistoricalRange, string> = {
+  '1D': 'HH:mm',
+  '1W': 'MMM d',
+  '1M': 'MMM d',
+  '3M': 'MMM d',
+  '6M': 'MMM d',
+  '1Y': 'MMM yyyy',
+  '5Y': 'MMM yyyy',
+  'MAX': 'yyyy',
 };
 
-type ChartPoint = { date: string; price: number };
-
-function subtractDate(range: TimeRange, base: Date, stepsBack: number): Date {
-  const date = new Date(base);
-
-  switch (range) {
-    case '1D':
-      date.setHours(date.getHours() - stepsBack);
-      break;
-    case '1W':
-      date.setDate(date.getDate() - stepsBack);
-      break;
-    case '1M':
-      date.setDate(date.getDate() - stepsBack);
-      break;
-    case '3M':
-      date.setDate(date.getDate() - stepsBack * 7);
-      break;
-    case '1Y':
-      date.setMonth(date.getMonth() - stepsBack);
-      break;
-    case '5Y':
-      date.setMonth(date.getMonth() - stepsBack * 6);
-      break;
-    case 'MAX':
-      date.setFullYear(date.getFullYear() - stepsBack);
-      break;
-    default:
-      break;
-  }
-
-  return date;
-}
-
-function seededDrift(seed: number, index: number): number {
-  return Math.sin((seed + index) * 0.45) * 0.6 + Math.cos((seed - index) * 0.35) * 0.4;
-}
-
-function generateHistoricalData(range: TimeRange, latestPrice: number | undefined, ticker: string): ChartPoint[] {
-  const config = rangeFormat[range];
-  const now = new Date();
-  const basePrice = latestPrice ?? 100;
-  const seed = ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const points: ChartPoint[] = [];
-
-  let runningPrice = basePrice * (1 - config.volatility * 1.2);
-
-  for (let index = 0; index < config.points; index++) {
-    const stepsBack = config.points - index - 1;
-    const pointDate = subtractDate(range, now, stepsBack);
-    const ratio = index / Math.max(config.points - 1, 1);
-    const movement = seededDrift(seed, index) * config.volatility * basePrice;
-    const pullToBase = (basePrice - runningPrice) * 0.18;
-
-    runningPrice = Math.max(runningPrice + movement + pullToBase, basePrice * 0.2);
-    const price = Number(runningPrice.toFixed(2));
-
-    points.push({
-      date: format(pointDate, config.format),
-      price,
-    });
-  }
-
-  if (points.length) {
-    const finalPrice = latestPrice ?? points[points.length - 1].price;
-    points[points.length - 1].price = Number(finalPrice.toFixed(2));
-  }
-
-  return points;
-}
+const rangeTooltipFormat: Record<HistoricalRange, string> = {
+  '1D': 'MMM d, HH:mm',
+  '1W': 'EEE, MMM d yyyy',
+  '1M': 'EEE, MMM d yyyy',
+  '3M': 'EEE, MMM d yyyy',
+  '6M': 'MMM d yyyy',
+  '1Y': 'MMM d yyyy',
+  '5Y': 'MMM yyyy',
+  'MAX': 'MMM yyyy',
+};
 
 function getLogoUrl(ticker: string, name?: string) {
   const domain = logoDomains[ticker.toUpperCase()];
@@ -161,8 +102,9 @@ interface SymbolSummaryProps {
 }
 
 export function SymbolSummary({ item }: SymbolSummaryProps) {
-  const [range, setRange] = useState<TimeRange>('1M');
-  const { data: marketData, isLoading } = useMarketData(item.symbol.ticker);
+  const [range, setRange] = useState<HistoricalRange>('1M');
+  const { data: marketData, isLoading: isPriceLoading } = useMarketData(item.symbol.ticker);
+  const { data: historicalPrices = [], isLoading: isHistoryLoading } = useHistoricalPrices(item.symbol.ticker, range);
 
   const latestPrice = marketData?.price ?? item.price?.price;
   const change = marketData?.change ?? item.price?.change_24h ?? 0;
@@ -170,12 +112,17 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
   const quoteCurrency = item.symbol.quote_currency || 'USD';
 
   const chartData = useMemo(
-    () => generateHistoricalData(range, latestPrice, item.symbol.ticker),
-    [range, latestPrice, item.symbol.ticker]
+    () =>
+      historicalPrices.map((point) => ({
+        date: format(new Date(point.time), rangeDisplayFormat[range]),
+        iso: point.time,
+        price: Number(point.price.toFixed(2)),
+      })),
+    [historicalPrices, range]
   );
 
-  const rangeLow = chartData.length ? Math.min(...chartData.map((point) => point.price)) : null;
-  const rangeHigh = chartData.length ? Math.max(...chartData.map((point) => point.price)) : null;
+  const rangeLow = historicalPrices.length ? Math.min(...historicalPrices.map((point) => point.price)) : null;
+  const rangeHigh = historicalPrices.length ? Math.max(...historicalPrices.map((point) => point.price)) : null;
   const isPositive = change >= 0;
 
   const logoUrl = getLogoUrl(item.symbol.ticker, item.symbol.name);
@@ -222,7 +169,7 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
             value={range}
             onValueChange={(value) => {
               if (!value) return;
-              setRange(value as TimeRange);
+              setRange(value as HistoricalRange);
             }}
             className="flex flex-wrap gap-2"
           >
@@ -240,13 +187,17 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="h-[320px]">
-          {chartData.length ? (
+          {isHistoryLoading ? (
+            <div className="flex h-full items-center justify-center">
+              <Skeleton className="h-full w-full" />
+            </div>
+          ) : chartData.length ? (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id={`summaryGradient-${item.id}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.8} />
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                    <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -259,11 +210,16 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
                   }}
                   labelStyle={{ color: 'hsl(var(--muted-foreground))' }}
                   formatter={(value: number) => [formatPrice(Number(value), quoteCurrency), 'Price']}
+                  labelFormatter={(_, payload) => {
+                    const iso = payload?.[0]?.payload?.iso as string | undefined;
+                    if (!iso) return '';
+                    return format(new Date(iso), rangeTooltipFormat[range]);
+                  }}
                 />
                 <Area
                   type="monotone"
                   dataKey="price"
-                  stroke="#2563eb"
+                  stroke="hsl(var(--chart-1))"
                   strokeWidth={2}
                   fill={`url(#summaryGradient-${item.id})`}
                   activeDot={{ r: 5 }}
@@ -271,8 +227,8 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex h-full items-center justify-center">
-              <Skeleton className="h-full w-full" />
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              No historical data available
             </div>
           )}
         </div>
@@ -293,7 +249,7 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">Latest update</p>
             <p className="text-sm text-muted-foreground">
-              {isLoading ? 'Refreshing quote…' : 'Based on recent market data'}
+              {isPriceLoading ? 'Refreshing quote…' : 'Based on recent market data'}
             </p>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -11,6 +11,9 @@ import { useProfile, useUpdateProfile } from "@/hooks/useProfile";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const settingsSchema = z.object({
   base_currency: z.string().min(1, "Please select a base currency"),
@@ -19,6 +22,23 @@ const settingsSchema = z.object({
 });
 
 type SettingsFormData = z.infer<typeof settingsSchema>;
+
+const passwordSchema = z.object({
+  current_password: z.string().min(8, 'Current password must be at least 8 characters'),
+  new_password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/(?=.*[A-Z])(?=.*\d)/, 'Use at least one uppercase letter and one number'),
+  confirm_password: z.string().min(8, 'Please confirm your new password'),
+}).refine((data) => data.new_password === data.confirm_password, {
+  path: ['confirm_password'],
+  message: 'Passwords do not match',
+}).refine((data) => data.current_password !== data.new_password, {
+  path: ['new_password'],
+  message: 'New password must differ from the current password',
+});
+
+type PasswordFormData = z.infer<typeof passwordSchema>;
 
 const currencies = [
   { value: 'USD', label: 'US Dollar (USD)' },
@@ -72,6 +92,8 @@ export default function Settings() {
   const { data: profile, isLoading } = useProfile();
   const updateProfile = useUpdateProfile();
   const { theme, setTheme } = useTheme();
+  const { toast } = useToast();
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   const form = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
@@ -79,6 +101,15 @@ export default function Settings() {
       base_currency: 'USD',
       timezone: 'UTC',
       default_lot_method: 'FIFO',
+    },
+  });
+
+  const passwordForm = useForm<PasswordFormData>({
+    resolver: zodResolver(passwordSchema),
+    defaultValues: {
+      current_password: '',
+      new_password: '',
+      confirm_password: '',
     },
   });
 
@@ -97,6 +128,50 @@ export default function Settings() {
     await updateProfile.mutateAsync(data);
   };
 
+  const onPasswordSubmit = passwordForm.handleSubmit(async (values) => {
+    try {
+      setIsUpdatingPassword(true);
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getUser();
+      if (sessionError || !sessionData?.user?.email) {
+        throw new Error(t('settings.passwordUpdateFailedDesc'));
+      }
+
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: sessionData.user.email,
+        password: values.current_password,
+      });
+
+      if (reauthError) {
+        passwordForm.setError('current_password', {
+          type: 'manual',
+          message: t('settings.currentPasswordIncorrect'),
+        });
+        throw new Error(t('settings.currentPasswordIncorrect'));
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({ password: values.new_password });
+      if (updateError) {
+        throw updateError;
+      }
+
+      toast({
+        title: t('settings.passwordUpdated'),
+        description: t('settings.passwordUpdatedDesc'),
+      });
+      passwordForm.reset();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settings.passwordUpdateFailedDesc');
+      toast({
+        title: t('settings.passwordUpdateFailed'),
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  });
+
   if (isLoading) {
     return (
       <div className="container mx-auto p-6 space-y-6">
@@ -113,11 +188,74 @@ export default function Settings() {
                 <Skeleton className="h-10 w-full" />
               </div>
             ))}
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+      </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('settings.security')}</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            {t('settings.passwordDesc')}
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Form {...passwordForm}>
+            <form onSubmit={onPasswordSubmit} className="space-y-6">
+              <FormField
+                control={passwordForm.control}
+                name="current_password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('settings.currentPassword')}</FormLabel>
+                    <FormControl>
+                      <Input type="password" autoComplete="current-password" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={passwordForm.control}
+                name="new_password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('settings.newPassword')}</FormLabel>
+                    <FormControl>
+                      <Input type="password" autoComplete="new-password" {...field} />
+                    </FormControl>
+                    <FormDescription>{t('settings.passwordRequirements')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={passwordForm.control}
+                name="confirm_password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('settings.confirmPassword')}</FormLabel>
+                    <FormControl>
+                      <Input type="password" autoComplete="new-password" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="flex justify-end">
+                <Button type="submit" disabled={isUpdatingPassword} className="min-w-36">
+                  {isUpdatingPassword ? t('settings.updatingPassword') : t('settings.updatePassword')}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
   return (
     <div className="container mx-auto p-6 space-y-6">

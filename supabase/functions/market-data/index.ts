@@ -39,6 +39,19 @@ interface YahooQuoteResponse {
   }
 }
 
+type HistoricalRange = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX'
+
+const yahooRangeConfig: Record<HistoricalRange, { range: string; interval: string }> = {
+  '1D': { range: '1d', interval: '15m' },
+  '1W': { range: '5d', interval: '1h' },
+  '1M': { range: '1mo', interval: '1d' },
+  '3M': { range: '3mo', interval: '1d' },
+  '6M': { range: '6mo', interval: '1d' },
+  '1Y': { range: '1y', interval: '1wk' },
+  '5Y': { range: '5y', interval: '1mo' },
+  'MAX': { range: 'max', interval: '3mo' }
+}
+
 async function fetchYahooQuote(symbol: string): Promise<any> {
   console.log(`Fetching Yahoo Finance data for ${symbol}`)
   
@@ -82,6 +95,71 @@ async function fetchYahooQuote(symbol: string): Promise<any> {
       changePercent: 0,
       lastUpdated: new Date()
     }
+  }
+}
+
+async function fetchYahooHistoricalRange(symbol: string, range: HistoricalRange) {
+  const config = yahooRangeConfig[range]
+
+  if (!config) {
+    throw new Error(`Unsupported range ${range}`)
+  }
+
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${config.range}&interval=${config.interval}` +
+    '&includePrePost=false&events=div%2Csplits'
+
+  const response = await fetch(url)
+
+  if (!response.ok) {
+    throw new Error(`Yahoo Finance request failed with status ${response.status}`)
+  }
+
+  const payload = await response.json()
+  const result = payload?.chart?.result?.[0]
+
+  if (!result) {
+    throw new Error(`No historical data returned for ${symbol}`)
+  }
+
+  const timestamps: number[] | undefined = result.timestamp
+  const quoteSeries: Array<number | null> | undefined = result.indicators?.quote?.[0]?.close
+  const adjCloseSeries: Array<number | null> | undefined = result.indicators?.adjclose?.[0]?.adjclose
+
+  const series = quoteSeries && quoteSeries.some(value => typeof value === 'number')
+    ? quoteSeries
+    : adjCloseSeries
+
+  if (!timestamps || !series) {
+    throw new Error(`Incomplete historical data for ${symbol}`)
+  }
+
+  const points = timestamps
+    .map((timestamp, index) => {
+      const price = series[index]
+
+      if (price === null || Number.isNaN(price)) {
+        return null
+      }
+
+      return {
+        time: new Date(timestamp * 1000).toISOString(),
+        price: Number.parseFloat(price.toFixed(4))
+      }
+    })
+    .filter((point): point is { time: string; price: number } => Boolean(point))
+
+  if (points.length === 0) {
+    throw new Error(`Historical series contained no valid data points for ${symbol}`)
+  }
+
+  const currency = result.meta?.currency ?? 'USD'
+
+  return {
+    symbol: symbol.toUpperCase(),
+    currency,
+    range,
+    points: points.slice(-800) // defensive limit to avoid huge payloads
   }
 }
 
@@ -235,7 +313,7 @@ Deno.serve(async (req) => {
       return unauthorizedResponse()
     }
 
-    const { action, symbol, symbols } = await req.json()
+    const { action, symbol, symbols, range } = await req.json()
 
     if (typeof action !== 'string') {
       return new Response(JSON.stringify({ error: 'Invalid action' }), {
@@ -386,6 +464,47 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ results }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
+    }
+
+    if (action === 'historical_range') {
+      if (typeof symbol !== 'string' || symbol.trim().length === 0) {
+        return new Response(JSON.stringify({ error: 'Symbol is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      if (typeof range !== 'string') {
+        return new Response(JSON.stringify({ error: 'Unsupported range' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const normalizedRangeInput = range.trim().toUpperCase()
+
+      if (!Object.prototype.hasOwnProperty.call(yahooRangeConfig, normalizedRangeInput)) {
+        return new Response(JSON.stringify({ error: 'Unsupported range' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const normalizedSymbol = symbol.trim().toUpperCase()
+      const normalizedRange = normalizedRangeInput as HistoricalRange
+
+      try {
+        const historical = await fetchYahooHistoricalRange(normalizedSymbol, normalizedRange)
+        return new Response(JSON.stringify(historical), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      } catch (error) {
+        console.error(`Historical data fetch failed for ${normalizedSymbol}:`, error)
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
     }
 
     if (action === 'historical') {

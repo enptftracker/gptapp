@@ -47,6 +47,13 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
+    /* Chart palette */
+    --chart-1: 220 88% 56%;
+    --chart-2: 160 70% 38%;
+    --chart-3: 28 90% 54%;
+    --chart-4: 280 70% 55%;
+    --chart-5: 340 72% 52%;
+
     --border: 220 15% 90%;
     --input: 220 15% 94%;
     --ring: 220 91% 54%;
@@ -109,6 +116,13 @@
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
+
+    /* Chart palette */
+    --chart-1: 220 90% 66%;
+    --chart-2: 160 70% 48%;
+    --chart-3: 28 96% 62%;
+    --chart-4: 280 80% 68%;
+    --chart-5: 340 80% 65%;
 
     --border: 220 15% 20%;
     --input: 220 15% 15%;

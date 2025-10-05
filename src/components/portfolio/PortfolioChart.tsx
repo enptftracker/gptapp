@@ -12,16 +12,16 @@ interface PortfolioChartProps {
 
 // Professional color palette for financial charts
 const CHART_COLORS = [
-  'hsl(var(--primary))',
-  'hsl(var(--profit))',
-  'hsl(var(--warning))',
-  'hsl(var(--loss))',
-  'hsl(var(--secondary))',
-  'hsl(220 60% 65%)',
-  'hsl(142 60% 65%)',
-  'hsl(38 60% 65%)',
-  'hsl(0 60% 75%)',
-  'hsl(220 30% 75%)',
+  'hsl(var(--chart-1))',
+  'hsl(var(--chart-2))',
+  'hsl(var(--chart-3))',
+  'hsl(var(--chart-4))',
+  'hsl(var(--chart-5))',
+  'hsl(var(--chart-1) / 0.6)',
+  'hsl(var(--chart-2) / 0.6)',
+  'hsl(var(--chart-3) / 0.6)',
+  'hsl(var(--chart-4) / 0.6)',
+  'hsl(var(--chart-5) / 0.6)',
 ];
 
 interface ChartData {

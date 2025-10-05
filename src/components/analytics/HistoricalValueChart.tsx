@@ -78,18 +78,18 @@ export function HistoricalValueChart({ data, title = "Portfolio Value Over Time"
               />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="value" 
-                stroke="hsl(var(--primary))" 
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke="hsl(var(--chart-1))"
                 strokeWidth={2}
                 name="Market Value"
                 dot={false}
               />
-              <Line 
-                type="monotone" 
-                dataKey="cost" 
-                stroke="hsl(var(--muted-foreground))" 
+              <Line
+                type="monotone"
+                dataKey="cost"
+                stroke="hsl(var(--chart-4))"
                 strokeWidth={2}
                 strokeDasharray="5 5"
                 name="Cost Basis"

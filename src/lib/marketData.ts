@@ -10,6 +10,13 @@ export interface MarketDataProvider {
   lastUpdated: Date;
 }
 
+export type HistoricalRange = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX';
+
+export interface HistoricalPricePoint {
+  time: string;
+  price: number;
+}
+
 export class MarketDataService {
 
   private static async invokeMarketData<T>(body: Record<string, unknown>): Promise<T | null> {
@@ -149,6 +156,31 @@ export class MarketDataService {
       console.log('Historical data fetch result:', data);
     } catch (error) {
       console.error('Error fetching historical data:', error);
+    }
+  }
+
+  /**
+   * Retrieve historical pricing data for a ticker and range.
+   */
+  static async getHistoricalPrices(ticker: string, range: HistoricalRange): Promise<HistoricalPricePoint[]> {
+    try {
+      const data = await this.invokeMarketData<{ points: HistoricalPricePoint[] }>({
+        action: 'historical_range',
+        symbol: ticker,
+        range
+      });
+
+      if (!data?.points) {
+        return [];
+      }
+
+      return data.points.map(point => ({
+        time: point.time,
+        price: Number(point.price)
+      }));
+    } catch (error) {
+      console.error('Error fetching historical prices:', error);
+      return [];
     }
   }
 
