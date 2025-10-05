@@ -59,7 +59,7 @@ enable_signup = false
 enable_confirmations = false
 
 [functions.market-data]
-verify_jwt = false
+verify_jwt = true
 
 [edge_runtime]
 policy = "per_worker"

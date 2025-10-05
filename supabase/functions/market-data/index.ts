@@ -1,10 +1,11 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL') ?? '',
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-)
+const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+
+const adminClient = createClient(supabaseUrl, serviceRoleKey)
 
 interface AlphaVantageQuote {
   '01. symbol': string
@@ -125,7 +126,7 @@ async function fetchAlphaVantageQuote(symbol: string): Promise<any> {
   }
 }
 
-async function fetchHistoricalData(symbol: string): Promise<void> {
+async function fetchHistoricalData(symbol: string, client: SupabaseClient): Promise<void> {
   const apiKey = Deno.env.get('ALPHAVANTAGE_API_KEY')
   if (!apiKey) {
     throw new Error('AlphaVantage API key not configured')
@@ -153,7 +154,7 @@ async function fetchHistoricalData(symbol: string): Promise<void> {
   }
 
   // Get symbol_id from database
-  const { data: symbolData, error: symbolError } = await supabase
+  const { data: symbolData, error: symbolError } = await client
     .from('symbols')
     .select('id')
     .eq('ticker', symbol.toUpperCase())
@@ -182,7 +183,7 @@ async function fetchHistoricalData(symbol: string): Promise<void> {
   const batchSize = 100
   for (let i = 0; i < historicalPrices.length; i += batchSize) {
     const batch = historicalPrices.slice(i, i + batchSize)
-    const { error } = await supabase
+    const { error } = await client
       .from('price_cache')
       .upsert(batch, { onConflict: 'symbol_id,asof' })
     
@@ -200,27 +201,75 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders })
   }
 
+  const unauthorizedResponse = () =>
+    new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+
   try {
+    const authHeader = req.headers.get('Authorization')?.trim() ?? ''
+
+    if (!authHeader.toLowerCase().startsWith('bearer ')) {
+      return unauthorizedResponse()
+    }
+
+    if (!anonKey) {
+      console.error('SUPABASE_ANON_KEY is not configured')
+      return new Response(JSON.stringify({ error: 'Server configuration error' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } }
+    })
+
+    const {
+      data: { user },
+      error: userError
+    } = await userClient.auth.getUser()
+
+    if (userError || !user) {
+      return unauthorizedResponse()
+    }
+
     const { action, symbol, symbols } = await req.json()
-    
+
+    if (typeof action !== 'string') {
+      return new Response(JSON.stringify({ error: 'Invalid action' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     if (action === 'quote') {
+      if (typeof symbol !== 'string' || symbol.trim().length === 0) {
+        return new Response(JSON.stringify({ error: 'Symbol is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const normalizedSymbol = symbol.trim().toUpperCase()
+
       let marketData
       try {
-        marketData = await fetchAlphaVantageQuote(symbol)
+        marketData = await fetchAlphaVantageQuote(normalizedSymbol)
       } catch (error) {
-        console.error(`AlphaVantage failed for ${symbol}, trying Yahoo:`, error)
-        marketData = await fetchYahooQuote(symbol)
+        console.error(`AlphaVantage failed for ${normalizedSymbol}, trying Yahoo:`, error)
+        marketData = await fetchYahooQuote(normalizedSymbol)
       }
-      
-      // Update price cache in database
-      const { data: symbolData } = await supabase
+
+      const { data: symbolData } = await adminClient
         .from('symbols')
         .select('id')
-        .eq('ticker', symbol.toUpperCase())
+        .eq('ticker', normalizedSymbol)
         .single()
 
       if (symbolData) {
-        const { error } = await supabase
+        const { error } = await adminClient
           .from('price_cache')
           .upsert({
             symbol_id: symbolData.id,
@@ -235,21 +284,58 @@ Deno.serve(async (req) => {
           console.error('Error updating price cache:', error)
         }
       }
-      
+
       return new Response(JSON.stringify(marketData), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
-    
+
     if (action === 'batch_update') {
+      if (!Array.isArray(symbols)) {
+        return new Response(JSON.stringify({ error: 'symbols must be an array' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      if (symbols.length === 0) {
+        return new Response(JSON.stringify({ error: 'At least one symbol is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      if (symbols.length > 20) {
+        return new Response(JSON.stringify({ error: 'Too many symbols requested' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const sanitizedSymbols = symbols
+        .filter((item) =>
+          item && typeof item === 'object' && typeof item.id === 'string' && typeof item.ticker === 'string'
+        )
+        .map((item) => ({
+          id: item.id,
+          ticker: item.ticker.trim().toUpperCase()
+        }))
+
+      if (sanitizedSymbols.length === 0) {
+        return new Response(JSON.stringify({ error: 'No valid symbols provided' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
       const results = []
-      
-      for (const symbolItem of symbols) {
+
+      for (let index = 0; index < sanitizedSymbols.length; index++) {
+        const symbolItem = sanitizedSymbols[index]
         try {
           const marketData = await fetchAlphaVantageQuote(symbolItem.ticker)
-          
-          // Update price cache
-          const { error } = await supabase
+
+          const { error } = await adminClient
             .from('price_cache')
             .upsert({
               symbol_id: symbolItem.id,
@@ -263,20 +349,18 @@ Deno.serve(async (req) => {
           if (error) {
             console.error(`Error updating price cache for ${symbolItem.ticker}:`, error)
           }
-          
+
           results.push({ symbol: symbolItem.ticker, success: true, data: marketData })
-          
-          // Rate limiting - wait 12 seconds between requests (AlphaVantage free tier: 5 calls/min)
-          if (symbols.indexOf(symbolItem) < symbols.length - 1) {
+
+          if (index < sanitizedSymbols.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 12000))
           }
         } catch (error) {
           console.error(`Error fetching data for ${symbolItem.ticker}:`, error)
-          // Try Yahoo Finance as backup
           try {
             const yahooData = await fetchYahooQuote(symbolItem.ticker)
-            
-            const { error: updateError } = await supabase
+
+            const { error: updateError } = await adminClient
               .from('price_cache')
               .upsert({
                 symbol_id: symbolItem.id,
@@ -290,46 +374,45 @@ Deno.serve(async (req) => {
             if (updateError) {
               console.error(`Error updating price cache for ${symbolItem.ticker} (Yahoo):`, updateError)
             }
-            
+
             results.push({ symbol: symbolItem.ticker, success: true, data: yahooData, source: 'yahoo' })
           } catch (yahooError) {
-            results.push({ symbol: symbolItem.ticker, success: false, error: error.message })
+            const fallbackError = yahooError instanceof Error ? yahooError.message : String(yahooError)
+            results.push({ symbol: symbolItem.ticker, success: false, error: fallbackError })
           }
         }
       }
-      
+
       return new Response(JSON.stringify({ results }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
-    
+
     if (action === 'historical') {
-      // Fetch historical data for major indices
-      const majorIndices = ['SPY', 'QQQ', 'IWM'] // S&P 500, NASDAQ, Russell 2000
-      
+      const majorIndices = ['SPY', 'QQQ', 'IWM']
+
       for (const index of majorIndices) {
         try {
-          await fetchHistoricalData(index)
-          // Rate limiting
+          await fetchHistoricalData(index, adminClient)
           await new Promise(resolve => setTimeout(resolve, 12000))
         } catch (error) {
           console.error(`Error fetching historical data for ${index}:`, error)
         }
       }
-      
+
       return new Response(JSON.stringify({ success: true, message: 'Historical data update completed' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
-    
+
     return new Response(JSON.stringify({ error: 'Invalid action' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
-    
+
   } catch (error) {
     console.error('Market data function error:', error)
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
