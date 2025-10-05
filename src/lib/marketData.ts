@@ -12,6 +12,40 @@ export interface MarketDataProvider {
 
 export class MarketDataService {
 
+  private static async invokeMarketData<T>(body: Record<string, unknown>): Promise<T | null> {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.error('Unable to retrieve session for market data request:', sessionError);
+      return null;
+    }
+    const accessToken = sessionData.session?.access_token;
+
+    if (!accessToken) {
+      console.warn('No active session found. Skipping market data request.');
+      return null;
+    }
+
+    const { data, error } = await supabase.functions.invoke<T>('market-data', {
+      body,
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    const status = (error as { status?: number } | null)?.status;
+    if (status === 401) {
+      console.warn('Market data request returned 401. Please reauthenticate.');
+      return null;
+    }
+
+    if (error) {
+      throw error;
+    }
+
+    return (data as T | null) ?? null;
+  }
+
   /**
    * Get current market data for a symbol using real API
    */
@@ -45,11 +79,8 @@ export class MarketDataService {
       }
 
       // If no cached data, fetch from API
-      const { data, error } = await supabase.functions.invoke('market-data', {
-        body: { action: 'quote', symbol: ticker }
-      });
-
-      if (error) throw error;
+      const data = await this.invokeMarketData<MarketDataProvider>({ action: 'quote', symbol: ticker });
+      if (!data) return null;
       return data;
     } catch (error) {
       console.error('Error fetching market data:', error);
@@ -92,11 +123,12 @@ export class MarketDataService {
    */
   static async batchUpdatePrices(symbols: Array<{ id: string; ticker: string }>): Promise<void> {
     try {
-      const { data, error } = await supabase.functions.invoke('market-data', {
-        body: { action: 'batch_update', symbols }
-      });
+      const data = await this.invokeMarketData<{ results: unknown[] }>({ action: 'batch_update', symbols });
+      if (!data) {
+        console.warn('Batch update skipped due to missing authorization.');
+        return;
+      }
 
-      if (error) throw error;
       console.log('Batch update results:', data);
     } catch (error) {
       console.error('Error in batch price update:', error);
@@ -108,11 +140,12 @@ export class MarketDataService {
    */
   static async fetchHistoricalData(): Promise<void> {
     try {
-      const { data, error } = await supabase.functions.invoke('market-data', {
-        body: { action: 'historical' }
-      });
+      const data = await this.invokeMarketData<{ success: boolean; message: string }>({ action: 'historical' });
+      if (!data) {
+        console.warn('Historical data fetch skipped due to missing authorization.');
+        return;
+      }
 
-      if (error) throw error;
       console.log('Historical data fetch result:', data);
     } catch (error) {
       console.error('Error fetching historical data:', error);
