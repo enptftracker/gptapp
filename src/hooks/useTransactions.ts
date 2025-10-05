@@ -23,36 +23,26 @@ export function useCreateTransaction() {
 
   return useMutation({
     mutationFn: transactionService.create,
-    onSuccess: async (createdTransaction) => {
+    onSuccess: async () => {
       // Invalidate all relevant queries
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      if (createdTransaction?.portfolio_id) {
-        const portfolioId = createdTransaction.portfolio_id;
-        await queryClient.invalidateQueries({ queryKey: ['transactions', 'portfolio', portfolioId] });
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['holdings', portfolioId] }),
-          queryClient.invalidateQueries({ queryKey: ['metrics', portfolioId] })
-        ]);
-      }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
-        queryClient.invalidateQueries({ queryKey: ['holdings'] }),
-        queryClient.invalidateQueries({ queryKey: ['metrics'] }),
-        queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] }),
-        // Force refresh of price data for better accuracy
-        queryClient.invalidateQueries({ queryKey: ['market-data'] })
-      ]);
-
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolios'] });
+      queryClient.invalidateQueries({ queryKey: ['holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
+      
+      // Force refresh of price data for better accuracy
+      queryClient.invalidateQueries({ queryKey: ['market-data'] });
+      
       toast({
         title: "Transaction added",
         description: "Your transaction has been recorded successfully.",
       });
     },
-    onError: (error: unknown) => {
-      const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+    onError: (error: any) => {
       toast({
         title: "Error adding transaction",
-        description,
+        description: error.message,
         variant: "destructive",
       });
     },
@@ -64,37 +54,26 @@ export function useUpdateTransaction() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: Partial<Omit<Transaction, 'id' | 'owner_id' | 'created_at' | 'updated_at'>> }) =>
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Transaction> }) =>
       transactionService.update(id, updates),
-    onSuccess: async (updatedTransaction) => {
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      if (updatedTransaction?.portfolio_id) {
-        const portfolioId = updatedTransaction.portfolio_id;
-        await queryClient.invalidateQueries({ queryKey: ['transactions', 'portfolio', portfolioId] });
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['holdings', portfolioId] }),
-          queryClient.invalidateQueries({ queryKey: ['metrics', portfolioId] })
-        ]);
-      }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
-        queryClient.invalidateQueries({ queryKey: ['holdings'] }),
-        queryClient.invalidateQueries({ queryKey: ['metrics'] }),
-        queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] }),
-        queryClient.invalidateQueries({ queryKey: ['market-data'] })
-      ]);
-
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolios'] });
+      queryClient.invalidateQueries({ queryKey: ['holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['market-data'] });
+      
       toast({
-        title: 'Transaction updated',
-        description: 'Your transaction has been updated successfully.',
+        title: "Transaction updated",
+        description: "Your transaction has been updated successfully.",
       });
     },
-    onError: (error: unknown) => {
-      const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+    onError: (error: any) => {
       toast({
-        title: 'Error updating transaction',
-        description,
-        variant: 'destructive',
+        title: "Error updating transaction",
+        description: error.message,
+        variant: "destructive",
       });
     },
   });
@@ -105,31 +84,25 @@ export function useDeleteTransaction() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: (id: string) => transactionService.delete(id),
+    mutationFn: transactionService.delete,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] });
-
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
-        queryClient.invalidateQueries({ queryKey: ['holdings'] }),
-        queryClient.invalidateQueries({ queryKey: ['metrics'] }),
-        queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] })
-      ]);
-
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolios'] });
+      queryClient.invalidateQueries({ queryKey: ['holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
+      
       toast({
-        title: 'Transaction deleted',
-        description: 'The transaction has been removed.',
+        title: "Transaction deleted",
+        description: "Your transaction has been deleted successfully.",
       });
     },
-
-    onError: (error: unknown) => {
-      const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+    onError: (error: any) => {
       toast({
-        title: 'Error deleting transaction',
-        description,
-        variant: 'destructive',
+        title: "Error deleting transaction",
+        description: error.message,
+        variant: "destructive",
       });
-    }
+    },
   });
 }
-

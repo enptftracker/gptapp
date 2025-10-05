@@ -9,12 +9,10 @@ import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Portfolios from "./pages/Portfolios";
 import PortfolioDetail from "./pages/PortfolioDetail";
-import Consolidated from "./pages/Consolidated";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import Watchlist from "./pages/Watchlist";
 import Settings from "./pages/Settings";
-import SymbolDetail from "./pages/SymbolDetail";
 
 const queryClient = new QueryClient();
 
@@ -35,9 +33,7 @@ const App = () => (
               <Route index element={<Dashboard />} />
               <Route path="portfolios" element={<Portfolios />} />
               <Route path="portfolios/:id" element={<PortfolioDetail />} />
-              <Route path="consolidated" element={<Consolidated />} />
               <Route path="watchlist" element={<Watchlist />} />
-              <Route path="symbol/:ticker" element={<SymbolDetail />} />
               <Route path="settings" element={<Settings />} />
             </Route>
             <Route path="*" element={<NotFound />} />

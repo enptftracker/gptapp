@@ -3,7 +3,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
-import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
 import { Holding } from '@/lib/types';
 
 interface HoldingsTableProps {
@@ -12,28 +11,25 @@ interface HoldingsTableProps {
 }
 
 export default function HoldingsTable({ holdings, className }: HoldingsTableProps) {
-  const { baseCurrency } = useCurrencyFormatter();
-
   if (holdings.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-muted-foreground">No holdings to display</p>
+      <div className="rounded-lg border border-dashed p-6 md:p-8 text-center">
+        <p className="text-sm md:text-base text-muted-foreground">No holdings to display</p>
       </div>
     );
   }
 
   return (
-    <div className={cn("rounded-lg border", className)}>
+    <div className={cn("rounded-lg border overflow-x-auto", className)}>
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Symbol</TableHead>
-            <TableHead className="text-right">Quantity</TableHead>
-            <TableHead className="text-right">Avg Cost</TableHead>
-            <TableHead className="text-right">Current Price</TableHead>
-            <TableHead className="text-right">Market Value</TableHead>
-            <TableHead className="text-right">P/L</TableHead>
-            <TableHead className="text-right">Allocation</TableHead>
+            <TableHead className="text-xs md:text-sm">Symbol</TableHead>
+            <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
+            <TableHead className="text-right text-xs md:text-sm hidden sm:table-cell">Avg Cost</TableHead>
+            <TableHead className="text-right text-xs md:text-sm">Market Value</TableHead>
+            <TableHead className="text-right text-xs md:text-sm">P/L</TableHead>
+            <TableHead className="text-right text-xs md:text-sm hidden lg:table-cell">Allocation</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -43,8 +39,8 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
             return (
               <TableRow key={`${holding.portfolioId}-${holding.symbolId}`}>
                 <TableCell>
-                  <div className="flex flex-col">
-                    <span className="font-medium">{holding.symbol.ticker}</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium text-sm md:text-base">{holding.symbol.ticker}</span>
                     <Badge 
                       variant="outline" 
                       className="w-fit text-xs"
@@ -53,32 +49,29 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
                     </Badge>
                   </div>
                 </TableCell>
-                <TableCell className="text-right font-mono">
+                <TableCell className="text-right font-mono text-xs md:text-sm whitespace-nowrap">
                   {holding.quantity.toLocaleString()}
                 </TableCell>
-                <TableCell className="text-right font-mono">
-                  {formatCurrency(holding.avgCostBase, baseCurrency)}
+                <TableCell className="text-right font-mono text-xs md:text-sm hidden sm:table-cell whitespace-nowrap">
+                  {formatCurrency(holding.avgCostBase)}
                 </TableCell>
-                <TableCell className="text-right font-mono">
-                  {formatCurrency(holding.currentPrice, holding.symbol.quoteCurrency)}
-                </TableCell>
-                <TableCell className="text-right font-mono font-medium">
-                  {formatCurrency(holding.marketValueBase, baseCurrency)}
+                <TableCell className="text-right font-mono font-medium text-xs md:text-sm whitespace-nowrap">
+                  {formatCurrency(holding.marketValueBase)}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className={cn(
-                    "flex flex-col text-sm font-medium",
+                    "flex flex-col text-xs md:text-sm font-medium",
                     isProfit ? "text-profit" : "text-loss"
                   )}>
-                    <span className="font-mono">
-                      {formatCurrency(holding.unrealizedPL, baseCurrency)}
+                    <span className="font-mono whitespace-nowrap">
+                      {formatCurrency(holding.unrealizedPL)}
                     </span>
                     <span className="text-xs">
                       ({formatPercent(holding.unrealizedPLPercent)})
                     </span>
                   </div>
                 </TableCell>
-                <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                <TableCell className="text-right font-mono text-xs md:text-sm text-muted-foreground hidden lg:table-cell">
                   {formatPercent(holding.allocationPercent)}
                 </TableCell>
               </TableRow>

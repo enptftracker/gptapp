@@ -2,8 +2,7 @@ import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Holding, ConsolidatedHolding } from '@/lib/types';
-import { formatPercent } from '@/lib/calculations';
-import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
+import { formatCurrency, formatPercent } from '@/lib/calculations';
 
 interface PortfolioChartProps {
   holdings: Holding[] | ConsolidatedHolding[];
@@ -32,22 +31,7 @@ interface ChartData {
   color: string;
 }
 
-interface PieTooltipProps {
-  active?: boolean;
-  payload?: Array<{ payload: ChartData }>;
-}
-
-interface LegendPayloadEntry {
-  value: string;
-  color: string;
-}
-
-interface LegendProps {
-  payload?: LegendPayloadEntry[];
-}
-
 export default function PortfolioChart({ holdings, title = "Portfolio Allocation", className }: PortfolioChartProps) {
-  const { formatBaseCurrency } = useCurrencyFormatter();
   const chartData: ChartData[] = holdings
     .filter(holding => {
       // Handle both Holding and ConsolidatedHolding types
@@ -68,14 +52,14 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
     .sort((a, b) => b.value - a.value)
     .slice(0, 10); // Show top 10 holdings
 
-  const CustomTooltip = ({ active, payload }: PieTooltipProps) => {
+  const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
         <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
           <p className="font-medium text-card-foreground">{data.name}</p>
           <p className="text-sm text-primary">
-            Value: {formatBaseCurrency(data.value)}
+            Value: {formatCurrency(data.value)}
           </p>
           <p className="text-sm text-muted-foreground">
             Allocation: {formatPercent(data.percentage)}
@@ -86,14 +70,13 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
     return null;
   };
 
-  const CustomLegend = ({ payload }: LegendProps) => {
-    const legendEntries = payload ?? [];
+  const CustomLegend = ({ payload }: any) => {
     return (
       <div className="flex flex-wrap gap-2 justify-center mt-4">
-        {legendEntries.slice(0, 8).map((entry, index) => (
+        {payload?.slice(0, 8).map((entry: any, index: number) => (
           <div key={index} className="flex items-center gap-1 text-xs">
-            <div
-              className="w-3 h-3 rounded-full"
+            <div 
+              className="w-3 h-3 rounded-full" 
               style={{ backgroundColor: entry.color }}
             />
             <span className="text-muted-foreground">{entry.value}</span>
@@ -164,7 +147,7 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
                 <span className="font-medium">{item.name}</span>
               </div>
               <div className="text-right">
-                <div className="font-mono">{formatBaseCurrency(item.value)}</div>
+                <div className="font-mono">{formatCurrency(item.value)}</div>
                 <div className="text-xs text-muted-foreground">
                   {formatPercent(item.percentage)}
                 </div>

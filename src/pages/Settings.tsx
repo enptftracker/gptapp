@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { useTheme } from "next-themes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -9,9 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useProfile, useUpdateProfile } from "@/hooks/useProfile";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Input } from "@/components/ui/input";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const settingsSchema = z.object({
   base_currency: z.string().min(1, "Please select a base currency"),
@@ -20,16 +19,6 @@ const settingsSchema = z.object({
 });
 
 type SettingsFormData = z.infer<typeof settingsSchema>;
-
-const passwordSchema = z.object({
-  newPassword: z.string().min(8, 'Password must be at least 8 characters long'),
-  confirmPassword: z.string()
-}).refine((data) => data.newPassword === data.confirmPassword, {
-  message: 'Passwords do not match',
-  path: ['confirmPassword']
-});
-
-type PasswordFormData = z.infer<typeof passwordSchema>;
 
 const currencies = [
   { value: 'USD', label: 'US Dollar (USD)' },
@@ -79,137 +68,39 @@ const lotMethods = [
 ];
 
 export default function Settings() {
+  const { t, language, setLanguage } = useLanguage();
   const { data: profile, isLoading } = useProfile();
   const updateProfile = useUpdateProfile();
-  const { toast } = useToast();
-  const [isExporting, setIsExporting] = useState(false);
-  const [isSigningOut, setIsSigningOut] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   const form = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
     defaultValues: {
-      base_currency: profile?.base_currency || 'USD',
-      timezone: profile?.timezone || 'UTC',
-      default_lot_method: profile?.default_lot_method || 'FIFO',
+      base_currency: 'USD',
+      timezone: 'UTC',
+      default_lot_method: 'FIFO',
     },
   });
 
-  const passwordForm = useForm<PasswordFormData>({
-    resolver: zodResolver(passwordSchema),
-    defaultValues: {
-      newPassword: '',
-      confirmPassword: ''
-    }
-  });
-
-  const isDirty = form.formState.isDirty;
-
   // Update form when profile data loads
   useEffect(() => {
-    if (profile && !isDirty) {
+    if (profile) {
       form.reset({
         base_currency: profile.base_currency,
         timezone: profile.timezone,
         default_lot_method: profile.default_lot_method,
       });
     }
-  }, [profile, form, isDirty]);
+  }, [profile, form]);
 
   const onSubmit = async (data: SettingsFormData) => {
     await updateProfile.mutateAsync(data);
   };
 
-  const handlePasswordSubmit = async (data: PasswordFormData) => {
-    try {
-      await supabase.auth.updateUser({ password: data.newPassword });
-      toast({
-        title: 'Password updated',
-        description: 'Your password has been updated successfully.'
-      });
-      passwordForm.reset();
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'An unexpected error occurred.';
-      toast({
-        title: 'Unable to update password',
-        description: message,
-        variant: 'destructive'
-      });
-    }
-  };
-
-  const handleExportData = async () => {
-    setIsExporting(true);
-
-    try {
-      const [portfoliosResponse, transactionsResponse, symbolsResponse] = await Promise.all([
-        supabase.from('portfolios').select('*').order('created_at', { ascending: true }),
-        supabase.from('transactions').select('*').order('trade_date', { ascending: true }),
-        supabase.from('symbols').select('*').order('ticker', { ascending: true })
-      ]);
-
-      if (portfoliosResponse.error) throw portfoliosResponse.error;
-      if (transactionsResponse.error) throw transactionsResponse.error;
-      if (symbolsResponse.error) throw symbolsResponse.error;
-
-      const exportPayload = {
-        exportedAt: new Date().toISOString(),
-        profile,
-        portfolios: portfoliosResponse.data,
-        transactions: transactionsResponse.data,
-        symbols: symbolsResponse.data,
-      };
-
-      const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `portfolio-export-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: 'Export ready',
-        description: 'A JSON file with your portfolio data has been downloaded.'
-      });
-    } catch (error: unknown) {
-      console.error('Export error:', error);
-      const message = error instanceof Error ? error.message : 'Unable to export data right now.';
-      toast({
-        title: 'Export failed',
-        description: message,
-        variant: 'destructive'
-      });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleSignOutAll = async () => {
-    setIsSigningOut(true);
-    try {
-      await supabase.auth.signOut({ scope: 'global' });
-      toast({
-        title: 'Signed out everywhere',
-        description: 'All active sessions have been revoked.'
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Could not end sessions.';
-      toast({
-        title: 'Unable to end sessions',
-        description: message,
-        variant: 'destructive'
-      });
-    } finally {
-      setIsSigningOut(false);
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="container mx-auto p-6 space-y-6">
-        <h1 className="text-3xl font-bold">Settings</h1>
+        <h1 className="text-3xl font-bold">{t('settings.title')}</h1>
         <Card>
           <CardHeader>
             <Skeleton className="h-6 w-48" />
@@ -230,13 +121,16 @@ export default function Settings() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <h1 className="text-3xl font-bold">Settings</h1>
+      <div>
+        <h1 className="text-3xl font-bold">{t('settings.title')}</h1>
+        <p className="text-muted-foreground">{t('settings.subtitle')}</p>
+      </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Account Preferences</CardTitle>
+          <CardTitle>{t('settings.baseCurrency')}</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Configure your portfolio calculation and display preferences.
+            {t('settings.baseCurrencyDesc')}
           </p>
         </CardHeader>
         <CardContent>
@@ -247,7 +141,7 @@ export default function Settings() {
                 name="base_currency"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Base Currency</FormLabel>
+                    <FormLabel>{t('settings.baseCurrency')}</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -263,7 +157,7 @@ export default function Settings() {
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      Your portfolio values and calculations will be displayed in this currency.
+                      {t('settings.baseCurrencyDesc')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -275,7 +169,7 @@ export default function Settings() {
                 name="timezone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Timezone</FormLabel>
+                    <FormLabel>{t('settings.timezone')}</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -291,7 +185,7 @@ export default function Settings() {
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      Used for displaying timestamps and market hours.
+                      {t('settings.timezoneDesc')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -300,12 +194,51 @@ export default function Settings() {
 
               <Separator />
 
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-medium">{t('settings.theme')}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings.themeDesc')}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t('settings.theme')}</label>
+                  <Select value={theme} onValueChange={setTheme}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select theme" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="light">{t('theme.light')}</SelectItem>
+                      <SelectItem value="dark">{t('theme.dark')}</SelectItem>
+                      <SelectItem value="system">{t('theme.system')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{t('settings.language')}</label>
+                  <Select value={language} onValueChange={(value) => setLanguage(value as 'en' | 'fr')}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="en">{t('language.english')}</SelectItem>
+                      <SelectItem value="fr">{t('language.french')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings.languageDesc')}
+                  </p>
+                </div>
+              </div>
+
+              <Separator />
+
               <FormField
                 control={form.control}
                 name="default_lot_method"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Default Lot Accounting Method</FormLabel>
+                    <FormLabel>{t('settings.lotMethod')}</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -326,8 +259,7 @@ export default function Settings() {
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      This method determines how cost basis is calculated when selling positions.
-                      Changes will apply to future calculations only.
+                      {t('settings.lotMethodDesc')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -340,128 +272,13 @@ export default function Settings() {
                   disabled={updateProfile.isPending}
                   className="min-w-24"
                 >
-                  {updateProfile.isPending ? "Saving..." : "Save Changes"}
+                  {updateProfile.isPending ? t('settings.saving') : t('settings.saveChanges')}
                 </Button>
               </div>
             </form>
           </Form>
         </CardContent>
       </Card>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Security</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Keep your account protected with strong credentials and session controls.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <Form {...passwordForm}>
-              <form onSubmit={passwordForm.handleSubmit(handlePasswordSubmit)} className="space-y-4">
-                <FormField
-                  control={passwordForm.control}
-                  name="newPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>New password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="Enter a new password" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={passwordForm.control}
-                  name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Confirm password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="Re-enter the new password" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => passwordForm.reset()}
-                    disabled={passwordForm.formState.isSubmitting}
-                  >
-                    Clear
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={passwordForm.formState.isSubmitting}
-                    className="sm:w-auto"
-                  >
-                    {passwordForm.formState.isSubmitting ? 'Updating...' : 'Update Password'}
-                  </Button>
-                </div>
-              </form>
-            </Form>
-
-            <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-              <p className="mb-1 font-medium text-foreground">Row level security</p>
-              <p>
-                All portfolio, transaction, and watchlist tables enforce Supabase row level security so only your
-                authenticated account can view or modify records.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm text-muted-foreground">
-                Revoke every active session if you notice unusual account activity.
-              </div>
-              <Button
-                variant="outline"
-                onClick={handleSignOutAll}
-                disabled={isSigningOut}
-                className="sm:w-auto"
-              >
-                {isSigningOut ? 'Signing out...' : 'Sign out on all devices'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Data Management</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Export a backup of your investment records and understand how market data is secured.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Download a JSON export containing portfolios, transactions, and saved symbols for your own archive.
-              </p>
-              <Button
-                onClick={handleExportData}
-                disabled={isExporting}
-                className="w-full sm:w-auto"
-              >
-                {isExporting ? 'Preparing export...' : 'Export data'}
-              </Button>
-            </div>
-
-            <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-              <p className="mb-1 font-medium text-foreground">Market data integrity</p>
-              <p>
-                Live pricing updates run exclusively through secured Supabase Edge Functions that use the service role
-                key. Client applications only have read access to the price cache so write operations stay protected.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }

@@ -1,35 +1,26 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { formatCurrency } from '@/lib/calculations';
 import { format } from 'date-fns';
-import { TransactionWithSymbol } from '@/lib/supabase';
-import { Button } from '@/components/ui/button';
+import { Transaction } from '@/lib/supabase';
 import { Edit, Trash2 } from 'lucide-react';
-import TransactionForm from './TransactionForm';
-import { usePortfolios } from '@/hooks/usePortfolios';
 import { useDeleteTransaction } from '@/hooks/useTransactions';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger
-} from '@/components/ui/alert-dialog';
+import TransactionForm from './TransactionForm';
+import { CSVImport } from './CSVImport';
 
 interface TransactionHistoryProps {
-  transactions: TransactionWithSymbol[];
+  transactions: Transaction[];
   title?: string;
   className?: string;
   portfolios?: Array<{ id: string; name: string }>;
+  defaultPortfolioId?: string;
 }
 
-const getTransactionTypeColor = (type: TransactionWithSymbol['type']) => {
+const getTransactionTypeColor = (type: Transaction['type']) => {
   switch (type) {
     case 'BUY':
       return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300';
@@ -48,25 +39,33 @@ const getTransactionTypeColor = (type: TransactionWithSymbol['type']) => {
   }
 };
 
-export default function TransactionHistory({
-  transactions,
+export default function TransactionHistory({ 
+  transactions, 
   title = "Transaction History",
   className,
-  portfolios
+  portfolios = [],
+  defaultPortfolioId
 }: TransactionHistoryProps) {
-  const { data: fallbackPortfolios = [] } = usePortfolios();
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
   const deleteTransaction = useDeleteTransaction();
-  const availablePortfolios = portfolios || fallbackPortfolios;
+
+  const handleDelete = async () => {
+    if (deleteId) {
+      await deleteTransaction.mutateAsync(deleteId);
+      setDeleteId(null);
+    }
+  };
 
   if (transactions.length === 0) {
     return (
       <Card className={className}>
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle className="text-lg md:text-xl">{title}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="rounded-lg border border-dashed p-8 text-center">
-            <p className="text-muted-foreground">No transactions to display</p>
+            <p className="text-sm md:text-base text-muted-foreground">No transactions to display</p>
           </div>
         </CardContent>
       </Card>
@@ -74,128 +73,121 @@ export default function TransactionHistory({
   }
 
   return (
-    <Card className={className}>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Symbol</TableHead>
-                <TableHead className="text-right">Quantity</TableHead>
-                <TableHead className="text-right">Unit Price</TableHead>
-                <TableHead className="text-right">Current Price</TableHead>
-                <TableHead className="text-right">Total Value</TableHead>
-                <TableHead className="text-right">Fee</TableHead>
-                <TableHead>Notes</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {transactions.map((transaction) => {
-                const totalValue = transaction.quantity * transaction.unit_price;
-                const currentPrice = transaction.symbol?.price_cache?.price ?? null;
-                const priceCurrency = transaction.symbol?.price_cache?.price_currency || transaction.trade_currency;
-
-                return (
-                  <TableRow key={transaction.id}>
-                    <TableCell className="font-medium">
-                      {format(new Date(transaction.trade_date), 'MMM dd, yyyy')}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getTransactionTypeColor(transaction.type)}>
-                        {transaction.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-mono font-medium">
-                      {transaction.symbol ? (
-                        <div className="flex flex-col">
-                          <span>{transaction.symbol.ticker}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {transaction.symbol.name || transaction.symbol.ticker}
-                          </span>
-                          <Badge variant="outline" className="mt-1 w-fit text-xs">
-                            {transaction.symbol.asset_type}
-                          </Badge>
+    <>
+      <Card className={className}>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <CardTitle className="text-lg md:text-xl">{title}</CardTitle>
+            {portfolios.length > 0 && (
+              <CSVImport 
+                portfolios={portfolios}
+                defaultPortfolioId={defaultPortfolioId}
+              />
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs md:text-sm">Date</TableHead>
+                  <TableHead className="text-xs md:text-sm">Type</TableHead>
+                  <TableHead className="text-xs md:text-sm">Symbol</TableHead>
+                  <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
+                  <TableHead className="text-right text-xs md:text-sm">Unit Price</TableHead>
+                  <TableHead className="text-right text-xs md:text-sm">Total Value</TableHead>
+                  <TableHead className="text-right text-xs md:text-sm">Fee</TableHead>
+                  <TableHead className="text-xs md:text-sm hidden lg:table-cell">Notes</TableHead>
+                  <TableHead className="text-xs md:text-sm">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {transactions.map((transaction) => {
+                  const totalValue = transaction.quantity * transaction.unit_price;
+                  
+                  return (
+                    <TableRow key={transaction.id}>
+                      <TableCell className="font-medium text-xs md:text-sm whitespace-nowrap">
+                        {format(new Date(transaction.trade_date), 'MMM dd, yyyy')}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={`${getTransactionTypeColor(transaction.type)} text-xs`}>
+                          {transaction.type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono font-medium text-xs md:text-sm">
+                        {transaction.symbol?.ticker || 'CASH'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs md:text-sm">
+                        {transaction.quantity.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs md:text-sm">
+                        {formatCurrency(transaction.unit_price, transaction.trade_currency)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-medium text-xs md:text-sm">
+                        {formatCurrency(totalValue, transaction.trade_currency)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-muted-foreground text-xs md:text-sm">
+                        {transaction.fee > 0 ? formatCurrency(transaction.fee, transaction.trade_currency) : '-'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs max-w-32 truncate hidden lg:table-cell">
+                        {transaction.notes || '-'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 md:h-8 md:w-8"
+                            onClick={() => setEditTransaction(transaction)}
+                          >
+                            <Edit className="h-3 w-3 md:h-4 md:w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 md:h-8 md:w-8 text-destructive"
+                            onClick={() => setDeleteId(transaction.id)}
+                          >
+                            <Trash2 className="h-3 w-3 md:h-4 md:w-4" />
+                          </Button>
                         </div>
-                      ) : (
-                        'CASH'
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {transaction.quantity.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {formatCurrency(transaction.unit_price, transaction.trade_currency)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {currentPrice ? formatCurrency(currentPrice, priceCurrency) : '-'}
-                    </TableCell>
-                    <TableCell className="text-right font-mono font-medium">
-                      {formatCurrency(totalValue, transaction.trade_currency)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-muted-foreground">
-                      {transaction.fee > 0 ? formatCurrency(transaction.fee, transaction.trade_currency) : '-'}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm max-w-32 truncate">
-                      {transaction.notes || '-'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <TransactionForm
-                          portfolios={availablePortfolios}
-                          defaultPortfolioId={transaction.portfolio_id}
-                          transaction={transaction}
-                          trigger={
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          }
-                        />
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete transaction</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This action cannot be undone. This will permanently remove the transaction
-                                from your records.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
-                                onClick={() => deleteTransaction.mutateAsync(transaction.id)}
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Transaction</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this transaction? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-                                disabled={deleteTransaction.isPending}
-                              >
-                                {deleteTransaction.isPending ? 'Deleting...' : 'Delete'}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
+      {editTransaction && portfolios.length > 0 && (
+        <TransactionForm
+          portfolios={portfolios}
+          defaultPortfolioId={editTransaction.portfolio_id}
+          existingTransaction={editTransaction}
+          onClose={() => setEditTransaction(null)}
+        />
+      )}
+    </>
   );
 }

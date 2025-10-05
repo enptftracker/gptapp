@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { SymbolSearch } from '@/components/ui/symbol-search';
 import { useCreateTransaction, useUpdateTransaction } from '@/hooks/useTransactions';
-import { symbolService, TransactionWithSymbol, Symbol as DbSymbol } from '@/lib/supabase';
+import { symbolService, Transaction } from '@/lib/supabase';
 import { MarketDataService } from '@/lib/marketData';
 import { Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -34,117 +34,118 @@ interface TransactionFormProps {
   portfolios: Array<{ id: string; name: string }>;
   defaultPortfolioId?: string;
   trigger?: React.ReactNode;
-  transaction?: TransactionWithSymbol | null;
-  onCompleted?: () => void;
+  existingTransaction?: Transaction;
+  onClose?: () => void;
 }
 
-export default function TransactionForm({
-  portfolios,
+export default function TransactionForm({ 
+  portfolios, 
   defaultPortfolioId,
   trigger,
-  transaction,
-  onCompleted
+  existingTransaction,
+  onClose
 }: TransactionFormProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!existingTransaction);
   const createTransaction = useCreateTransaction();
   const updateTransaction = useUpdateTransaction();
   const { toast } = useToast();
-  const isEditMode = Boolean(transaction);
 
-  const getDefaultValues = useCallback((): TransactionFormData => ({
-    portfolioId: defaultPortfolioId || '',
-    ticker: '',
-    type: 'BUY',
-    quantity: 0,
-    unitPrice: 0,
-    fee: 0,
-    fxRate: 1,
-    tradeCurrency: 'USD',
-    tradeDate: new Date().toISOString().split('T')[0],
-    notes: '',
-  }), [defaultPortfolioId]);
+  useEffect(() => {
+    setOpen(!!existingTransaction);
+  }, [existingTransaction]);
 
   const form = useForm<TransactionFormData>({
     resolver: zodResolver(transactionSchema),
-    defaultValues: getDefaultValues(),
+    defaultValues: existingTransaction ? {
+      portfolioId: existingTransaction.portfolio_id,
+      ticker: '', // We'll need to fetch this
+      type: existingTransaction.type === 'TRANSFER' ? 'BUY' : existingTransaction.type,
+      quantity: existingTransaction.quantity,
+      unitPrice: existingTransaction.unit_price,
+      fee: existingTransaction.fee,
+      fxRate: existingTransaction.fx_rate,
+      tradeCurrency: existingTransaction.trade_currency,
+      tradeDate: existingTransaction.trade_date,
+      notes: existingTransaction.notes || '',
+    } : {
+      portfolioId: defaultPortfolioId || '',
+      type: 'BUY',
+      quantity: 0,
+      unitPrice: 0,
+      fee: 0,
+      fxRate: 1,
+      tradeCurrency: 'USD',
+      tradeDate: new Date().toISOString().split('T')[0],
+      notes: '',
+    },
   });
 
-  useEffect(() => {
-    if (isEditMode && transaction && open) {
-      form.reset({
-        portfolioId: transaction.portfolio_id,
-        ticker: transaction.symbol?.ticker || '',
-        type: transaction.type,
-        quantity: Number(transaction.quantity),
-        unitPrice: Number(transaction.unit_price),
-        fee: Number(transaction.fee),
-        fxRate: Number(transaction.fx_rate),
-        tradeCurrency: transaction.trade_currency,
-        tradeDate: new Date(transaction.trade_date).toISOString().split('T')[0],
-        notes: transaction.notes || '',
-      });
-    }
-
-    if (!open && !isEditMode) {
-      form.reset(getDefaultValues());
-    }
-  }, [form, getDefaultValues, isEditMode, open, transaction]);
-
   const onSubmit = async (data: TransactionFormData) => {
-    let symbolId: string;
-
     try {
-      const assetType: DbSymbol['asset_type'] = transaction?.symbol?.asset_type || 'EQUITY';
+      // Find or create symbol
       const symbol = await symbolService.findOrCreate(
         data.ticker,
-        assetType,
+        'EQUITY',
         data.tradeCurrency
       );
-      symbolId = symbol.id;
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Please check the ticker and try again.';
-      toast({
-        title: 'Unable to find symbol',
-        description: message,
-        variant: 'destructive',
-      });
-      return;
-    }
 
-    try {
-      await MarketDataService.updatePriceCache(symbolId, data.ticker);
-    } catch (error) {
-      console.warn('Failed to refresh price cache:', error);
-    }
+      // Update price cache with current market data
+      await MarketDataService.updatePriceCache(symbol.id, data.ticker);
 
-    const payload = {
-      portfolio_id: data.portfolioId,
-      symbol_id: symbolId,
-      type: data.type,
-      quantity: data.quantity,
-      unit_price: data.unitPrice,
-      fee: data.fee,
-      fx_rate: data.fxRate,
-      trade_currency: data.tradeCurrency,
-      trade_date: data.tradeDate,
-      notes: data.notes || undefined,
-    };
-
-    try {
-      if (isEditMode && transaction) {
+      if (existingTransaction) {
+        // Update existing transaction
         await updateTransaction.mutateAsync({
-          id: transaction.id,
-          updates: payload,
+          id: existingTransaction.id,
+          updates: {
+            portfolio_id: data.portfolioId,
+            symbol_id: symbol.id,
+            type: data.type,
+            quantity: data.quantity,
+            unit_price: data.unitPrice,
+            fee: data.fee,
+            fx_rate: data.fxRate,
+            trade_currency: data.tradeCurrency,
+            trade_date: data.tradeDate,
+            notes: data.notes || undefined,
+          }
         });
       } else {
-        await createTransaction.mutateAsync(payload);
+        // Create new transaction
+        await createTransaction.mutateAsync({
+          portfolio_id: data.portfolioId,
+          symbol_id: symbol.id,
+          type: data.type,
+          quantity: data.quantity,
+          unit_price: data.unitPrice,
+          fee: data.fee,
+          fx_rate: data.fxRate,
+          trade_currency: data.tradeCurrency,
+          trade_date: data.tradeDate,
+          notes: data.notes || undefined,
+        });
       }
 
       setOpen(false);
-      form.reset(getDefaultValues());
-      onCompleted?.();
-    } catch (error) {
-      console.error('Transaction mutation failed:', error);
+      form.reset();
+      onClose?.();
+      
+      toast({
+        title: existingTransaction ? "Transaction updated" : "Transaction added",
+        description: `${data.type} ${data.quantity} ${data.ticker} ${existingTransaction ? 'updated' : 'recorded'} successfully`,
+      });
+    } catch (error: any) {
+      toast({
+        title: existingTransaction ? "Error updating transaction" : "Error adding transaction",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen);
+    if (!newOpen && onClose) {
+      onClose();
     }
   };
 
@@ -156,33 +157,37 @@ export default function TransactionForm({
   );
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || defaultTrigger}
-      </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      {!existingTransaction && (
+        <DialogTrigger asChild>
+          {trigger || defaultTrigger}
+        </DialogTrigger>
+      )}
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEditMode ? 'Edit Transaction' : 'Add Transaction'}</DialogTitle>
+          <DialogTitle className="text-lg md:text-xl">
+            {existingTransaction ? 'Edit Transaction' : 'Add Transaction'}
+          </DialogTitle>
         </DialogHeader>
-
+        
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 md:space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
               <FormField
                 control={form.control}
                 name="portfolioId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Portfolio</FormLabel>
+                    <FormLabel className="text-sm">Portfolio</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className="text-sm">
                           <SelectValue placeholder="Select portfolio" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
                         {portfolios.map((portfolio) => (
-                          <SelectItem key={portfolio.id} value={portfolio.id}>
+                          <SelectItem key={portfolio.id} value={portfolio.id} className="text-sm">
                             {portfolio.name}
                           </SelectItem>
                         ))}
@@ -198,7 +203,7 @@ export default function TransactionForm({
                 name="ticker"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Symbol</FormLabel>
+                    <FormLabel className="text-sm">Symbol</FormLabel>
                     <FormControl>
                       <SymbolSearch
                         value={field.value}
@@ -206,7 +211,7 @@ export default function TransactionForm({
                           field.onChange(ticker);
                         }}
                         placeholder="Search for a symbol..."
-                        className="w-full"
+                        className="w-full text-sm"
                       />
                     </FormControl>
                     <FormMessage />
@@ -215,16 +220,16 @@ export default function TransactionForm({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
               <FormField
                 control={form.control}
                 name="type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Type</FormLabel>
+                    <FormLabel className="text-sm">Type</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className="text-sm">
                           <SelectValue />
                         </SelectTrigger>
                       </FormControl>
@@ -247,11 +252,12 @@ export default function TransactionForm({
                 name="quantity"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Quantity</FormLabel>
+                    <FormLabel className="text-sm">Quantity</FormLabel>
                     <FormControl>
                       <Input 
                         type="number" 
                         step="0.000001"
+                        className="text-sm"
                         {...field}
                         onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
                       />
@@ -266,11 +272,12 @@ export default function TransactionForm({
                 name="unitPrice"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Unit Price</FormLabel>
+                    <FormLabel className="text-sm">Unit Price</FormLabel>
                     <FormControl>
                       <Input 
                         type="number" 
                         step="0.01"
+                        className="text-sm"
                         {...field}
                         onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
                       />
@@ -281,17 +288,18 @@ export default function TransactionForm({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
               <FormField
                 control={form.control}
                 name="fee"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Fee</FormLabel>
+                    <FormLabel className="text-sm">Fee</FormLabel>
                     <FormControl>
                       <Input 
                         type="number" 
                         step="0.01"
+                        className="text-sm"
                         {...field}
                         onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
                       />
@@ -306,9 +314,9 @@ export default function TransactionForm({
                 name="tradeCurrency"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Currency</FormLabel>
+                    <FormLabel className="text-sm">Currency</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="USD" />
+                      <Input {...field} placeholder="USD" className="text-sm" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -320,9 +328,9 @@ export default function TransactionForm({
                 name="tradeDate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Trade Date</FormLabel>
+                    <FormLabel className="text-sm">Trade Date</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <Input type="date" {...field} className="text-sm" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -335,10 +343,12 @@ export default function TransactionForm({
               name="notes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Notes (Optional)</FormLabel>
+                  <FormLabel className="text-sm">Notes (Optional)</FormLabel>
                   <FormControl>
                     <Textarea 
                       placeholder="Add any notes about this transaction..."
+                      className="text-sm resize-none"
+                      rows={2}
                       {...field}
                     />
                   </FormControl>
@@ -348,16 +358,18 @@ export default function TransactionForm({
             />
 
             <div className="flex justify-end space-x-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} className="text-sm">
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                disabled={isEditMode ? updateTransaction.isPending : createTransaction.isPending}
+              <Button 
+                type="submit" 
+                disabled={createTransaction.isPending || updateTransaction.isPending}
+                className="text-sm"
               >
-                {isEditMode
-                  ? updateTransaction.isPending ? 'Saving...' : 'Save Changes'
-                  : createTransaction.isPending ? 'Adding...' : 'Add Transaction'}
+                {(createTransaction.isPending || updateTransaction.isPending) 
+                  ? (existingTransaction ? 'Updating...' : 'Adding...') 
+                  : (existingTransaction ? 'Update Transaction' : 'Add Transaction')
+                }
               </Button>
             </div>
           </form>

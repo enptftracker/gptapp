@@ -1,31 +1,22 @@
-import React from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import React, { useMemo } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, TrendingUp, TrendingDown, Trash2, Plus } from 'lucide-react';
-import { usePortfolios, useDeletePortfolio } from '@/hooks/usePortfolios';
+import { ArrowLeft, Plus, TrendingUp, TrendingDown } from 'lucide-react';
+import { usePortfolios } from '@/hooks/usePortfolios';
 import { usePortfolioTransactions } from '@/hooks/useTransactions';
 import { usePortfolioHoldings, usePortfolioMetrics } from '@/hooks/useHoldings';
 import HoldingsTable from '@/components/dashboard/HoldingsTable';
 import TransactionHistory from '@/components/transactions/TransactionHistory';
 import TransactionForm from '@/components/transactions/TransactionForm';
-import TransactionImportDialog from '@/components/transactions/TransactionImportDialog';
 import MetricCard from '@/components/dashboard/MetricCard';
-import { formatPercent } from '@/lib/calculations';
-import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { formatCurrency, formatPercent } from '@/lib/calculations';
+import { HistoricalValueChart } from '@/components/analytics/HistoricalValueChart';
+import { PerformanceBreakdown } from '@/components/analytics/PerformanceBreakdown';
+import { AssetTypeBreakdown } from '@/components/analytics/AssetTypeBreakdown';
+import PortfolioChart from '@/components/portfolio/PortfolioChart';
 
 export default function PortfolioDetail() {
   const { id } = useParams<{ id: string }>();
@@ -33,23 +24,33 @@ export default function PortfolioDetail() {
   const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(id!);
   const { data: holdings = [], isLoading: holdingsLoading } = usePortfolioHoldings(id!);
   const { data: metrics, isLoading: metricsLoading } = usePortfolioMetrics(id!);
-  const deletePortfolio = useDeletePortfolio();
-  const navigate = useNavigate();
-  const { formatBaseCurrency } = useCurrencyFormatter();
 
   const portfolio = portfolios.find(p => p.id === id);
   const isLoading = transactionsLoading || holdingsLoading || metricsLoading;
 
-  const handleDeletePortfolio = async () => {
-    if (!id) return;
-
-    try {
-      await deletePortfolio.mutateAsync(id);
-      navigate('/portfolios');
-    } catch (error) {
-      console.error('Failed to delete portfolio:', error);
+  // Generate mock historical data
+  const historicalData = useMemo(() => {
+    if (!metrics || metrics.totalEquity === 0) return [];
+    
+    const days = 30;
+    const data = [];
+    const startValue = metrics.totalCost;
+    const endValue = metrics.totalEquity;
+    const step = (endValue - startValue) / days;
+    
+    for (let i = 0; i <= days; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() - (days - i));
+      const value = startValue + (step * i) + (Math.random() - 0.5) * (metrics.totalEquity * 0.02);
+      
+      data.push({
+        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        value: Math.max(0, value),
+        cost: metrics.totalCost
+      });
     }
-  };
+    return data;
+  }, [metrics]);
 
   if (!portfolio) {
     return (
@@ -115,53 +116,10 @@ export default function PortfolioDetail() {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <TransactionImportDialog
-            portfolioId={portfolio.id}
-            portfolioName={portfolio.name}
-          />
-          <TransactionForm
-            portfolios={[portfolio]}
-            defaultPortfolioId={portfolio.id}
-            trigger={(
-              <Button size="sm">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Transaction
-              </Button>
-            )}
-          />
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-destructive/30 text-destructive hover:text-destructive"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete this portfolio?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently remove the portfolio and any transactions associated with it.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    void handleDeletePortfolio();
-                  }}
-                  disabled={deletePortfolio.isPending}
-                >
-                  {deletePortfolio.isPending ? 'Deleting…' : 'Delete'}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
+        <TransactionForm 
+          portfolios={[portfolio]}
+          defaultPortfolioId={portfolio.id}
+        />
       </div>
 
       {/* Key Metrics */}
@@ -206,13 +164,13 @@ export default function PortfolioDetail() {
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Market Value</p>
                 <p className="text-lg font-mono font-semibold">
-                  {formatBaseCurrency(metrics.totalEquity)}
+                  {formatCurrency(metrics.totalEquity)}
                 </p>
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Cost Basis</p>
                 <p className="text-lg font-mono font-medium">
-                  {formatBaseCurrency(metrics.totalCost)}
+                  {formatCurrency(metrics.totalCost)}
                 </p>
               </div>
               <div className="space-y-1">
@@ -220,7 +178,7 @@ export default function PortfolioDetail() {
                 <div className={`text-lg font-mono font-semibold ${
                   metrics.totalPL >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  <p>{formatBaseCurrency(metrics.totalPL)}</p>
+                  <p>{formatCurrency(metrics.totalPL)}</p>
                   <p className="text-sm">({formatPercent(metrics.totalPLPercent)})</p>
                 </div>
               </div>
@@ -229,13 +187,28 @@ export default function PortfolioDetail() {
                 <div className={`text-lg font-mono font-semibold ${
                   metrics.dailyPL >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  <p>{formatBaseCurrency(metrics.dailyPL)}</p>
+                  <p>{formatCurrency(metrics.dailyPL)}</p>
                   <p className="text-sm">({formatPercent(metrics.dailyPLPercent)})</p>
                 </div>
               </div>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Analytics Charts */}
+      {holdings.length > 0 && (
+        <>
+          <div className="grid gap-6 md:grid-cols-2">
+            <HistoricalValueChart data={historicalData} title="Portfolio Value Over Time" />
+            <PortfolioChart holdings={holdings} title="Portfolio Allocation" />
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <PerformanceBreakdown holdings={holdings} />
+            <AssetTypeBreakdown holdings={holdings} />
+          </div>
+        </>
       )}
 
       {/* Holdings and Transactions */}
@@ -257,10 +230,11 @@ export default function PortfolioDetail() {
         </TabsContent>
         
         <TabsContent value="transactions">
-          <TransactionHistory
+          <TransactionHistory 
             transactions={transactions}
             title={`Transactions (${transactions.length})`}
             portfolios={portfolios}
+            defaultPortfolioId={id}
           />
         </TabsContent>
       </Tabs>

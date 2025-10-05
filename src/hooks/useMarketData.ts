@@ -31,11 +31,10 @@ export function useUpdatePrices() {
         description: "Market data has been refreshed.",
       });
     },
-    onError: (error: unknown) => {
-      const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+    onError: (error: any) => {
       toast({
         title: "Error updating prices",
-        description,
+        description: error.message,
         variant: "destructive",
       });
     },

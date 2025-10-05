@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { usePortfolioTransactions, useTransactions } from './useTransactions';
+import { useTransactions } from './useTransactions';
 import { usePortfolios } from './usePortfolios';
 import { symbolService, priceService, profileService } from '@/lib/supabase';
 import { PortfolioCalculations } from '@/lib/calculations';
 
 export function usePortfolioHoldings(portfolioId: string) {
-  const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(portfolioId);
+  const { data: transactions = [] } = useTransactions();
+  const { data: portfolios = [] } = usePortfolios();
 
   return useQuery({
     queryKey: ['holdings', portfolioId],
@@ -19,12 +20,12 @@ export function usePortfolioHoldings(portfolioId: string) {
 
       // Fetch symbols, prices, and user profile
       const [symbols, prices, profile] = await Promise.all([
-        symbolService.getByIds(symbolIds),
-        priceService.getLatestForSymbols(symbolIds),
+        symbolService.getAll(),
+        Promise.all(symbolIds.map(id => priceService.getLatest(id))),
         profileService.get()
       ]);
 
-      const validPrices = prices;
+      const validPrices = prices.filter(p => p !== null);
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
       return PortfolioCalculations.calculateHoldings(
@@ -35,12 +36,12 @@ export function usePortfolioHoldings(portfolioId: string) {
         lotMethod
       );
     },
-    enabled: !!portfolioId && !transactionsLoading,
+    enabled: !!portfolioId,
   });
 }
 
 export function usePortfolioMetrics(portfolioId: string) {
-  const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(portfolioId);
+  const { data: transactions = [] } = useTransactions();
 
   return useQuery({
     queryKey: ['metrics', portfolioId],
@@ -63,12 +64,12 @@ export function usePortfolioMetrics(portfolioId: string) {
       }
 
       const [symbols, prices, profile] = await Promise.all([
-        symbolService.getByIds(symbolIds),
-        priceService.getLatestForSymbols(symbolIds),
+        symbolService.getAll(),
+        Promise.all(symbolIds.map(id => priceService.getLatest(id))),
         profileService.get()
       ]);
 
-      const validPrices = prices;
+      const validPrices = prices.filter(p => p !== null);
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
       return PortfolioCalculations.calculatePortfolioMetrics(
@@ -79,16 +80,16 @@ export function usePortfolioMetrics(portfolioId: string) {
         lotMethod
       );
     },
-    enabled: !!portfolioId && !transactionsLoading,
+    enabled: !!portfolioId,
   });
 }
 
 export function useConsolidatedHoldings() {
-  const { data: portfolios = [] } = usePortfolios();
-  const { data: transactions = [] } = useTransactions();
+  const { data: portfolios = [], isLoading: portfoliosLoading } = usePortfolios();
+  const { data: transactions = [], isLoading: transactionsLoading } = useTransactions();
 
   return useQuery({
-    queryKey: ['consolidated-holdings'],
+    queryKey: ['consolidated-holdings', portfolios.length, transactions.length],
     queryFn: async () => {
       if (portfolios.length === 0) return [];
 
@@ -99,12 +100,12 @@ export function useConsolidatedHoldings() {
       if (symbolIds.length === 0) return [];
 
       const [symbols, prices, profile] = await Promise.all([
-        symbolService.getByIds(symbolIds),
-        priceService.getLatestForSymbols(symbolIds),
+        symbolService.getAll(),
+        Promise.all(symbolIds.map(id => priceService.getLatest(id))),
         profileService.get()
       ]);
 
-      const validPrices = prices;
+      const validPrices = prices.filter(p => p !== null);
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
       return PortfolioCalculations.calculateConsolidatedHoldings(
@@ -115,5 +116,6 @@ export function useConsolidatedHoldings() {
         lotMethod
       );
     },
+    enabled: !portfoliosLoading && !transactionsLoading,
   });
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import MetricCard from '@/components/dashboard/MetricCard';
 import HoldingsTable from '@/components/dashboard/HoldingsTable';
@@ -7,22 +7,29 @@ import { useTransactions } from '@/hooks/useTransactions';
 import { useConsolidatedHoldings } from '@/hooks/useHoldings';
 import { useUpdatePrices } from '@/hooks/useMarketData';
 import { Button } from '@/components/ui/button';
-import { Plus, Wallet, TrendingUp, RefreshCw } from 'lucide-react';
+import { Plus, Wallet, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
+import { formatCurrency } from '@/lib/calculations';
+import { cn } from '@/lib/utils';
 import TransactionForm from '@/components/transactions/TransactionForm';
-import AllocationChart from '@/components/dashboard/AllocationChart';
+import { HistoricalValueChart } from '@/components/analytics/HistoricalValueChart';
+import { PerformanceBreakdown } from '@/components/analytics/PerformanceBreakdown';
+import { AssetTypeBreakdown } from '@/components/analytics/AssetTypeBreakdown';
+import PortfolioChart from '@/components/portfolio/PortfolioChart';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export default function Dashboard() {
+  const { t } = useLanguage();
   const { data: portfolios = [], isLoading: portfoliosLoading } = usePortfolios();
-  const { isLoading: transactionsLoading } = useTransactions();
+  const { data: transactions = [], isLoading: transactionsLoading } = useTransactions();
   const { data: consolidatedHoldings = [], isLoading: holdingsLoading } = useConsolidatedHoldings();
   const updatePrices = useUpdatePrices();
-  const { formatBaseCurrency } = useCurrencyFormatter();
 
   const isLoading = portfoliosLoading || transactionsLoading || holdingsLoading;
 
   // Calculate real metrics from holdings
+  const totalPortfolios = portfolios.length;
+  const totalTransactions = transactions.length;
   const totalEquity = consolidatedHoldings.reduce((sum, h) => sum + h.totalMarketValue, 0);
   const totalCost = consolidatedHoldings.reduce((sum, h) => sum + (h.totalQuantity * h.blendedAvgCost), 0);
   const totalPL = consolidatedHoldings.reduce((sum, h) => sum + h.totalUnrealizedPL, 0);
@@ -32,13 +39,37 @@ export default function Dashboard() {
   const dailyPL = totalPL * 0.1;
   const dailyPLPercent = totalEquity > 0 ? (dailyPL / totalEquity) * 100 : 0;
 
+  // Generate mock historical data (in real app, this would come from database)
+  const historicalData = useMemo(() => {
+    if (totalEquity === 0) return [];
+    
+    const days = 30;
+    const data = [];
+    const startValue = totalCost;
+    const endValue = totalEquity;
+    const step = (endValue - startValue) / days;
+    
+    for (let i = 0; i <= days; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() - (days - i));
+      const value = startValue + (step * i) + (Math.random() - 0.5) * (totalEquity * 0.02);
+      
+      data.push({
+        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        value: Math.max(0, value),
+        cost: totalCost
+      });
+    }
+    return data;
+  }, [totalEquity, totalCost]);
+
   if (isLoading) {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t('dashboard.title')}</h1>
           <p className="text-muted-foreground">
-            Your portfolio performance overview
+            {t('dashboard.subtitle')}
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -58,9 +89,9 @@ export default function Dashboard() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t('dashboard.title')}</h1>
           <p className="text-muted-foreground">
-            Your portfolio performance overview
+            {t('dashboard.subtitle')}
           </p>
         </div>
         
@@ -69,14 +100,14 @@ export default function Dashboard() {
             <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-muted flex items-center justify-center">
               <Wallet className="h-6 w-6 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-semibold mb-2">No portfolios found</h3>
+            <h3 className="text-lg font-semibold mb-2">{t('dashboard.noPortfolios')}</h3>
             <p className="text-muted-foreground mb-4">
-              Create your first portfolio to start tracking your investments
+              {t('dashboard.noPortfoliosDesc')}
             </p>
             <Button asChild>
               <Link to="/portfolios">
                 <Plus className="mr-2 h-4 w-4" />
-                Create Portfolio
+                {t('dashboard.createPortfolio')}
               </Link>
             </Button>
           </CardContent>
@@ -86,15 +117,61 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Your portfolio performance overview
-          </p>
+    <div className="space-y-6 pb-8">
+      {/* Modern Header Section */}
+      <div className="space-y-6">
+        {/* Total Portfolio Value - Large Display */}
+        <div className="space-y-2">
+          <h1 className="text-5xl md:text-6xl font-bold tracking-tight">
+            {formatCurrency(totalEquity)}
+          </h1>
+          <div className={cn(
+            "flex items-center gap-2 text-lg font-medium",
+            dailyPL >= 0 ? "text-profit" : "text-loss"
+          )}>
+            <span>{dailyPL >= 0 ? '↗' : '↘'}</span>
+            <span>
+              {formatCurrency(Math.abs(dailyPL))} ({dailyPLPercent >= 0 ? '+' : ''}{dailyPLPercent.toFixed(2)}%) {t('dashboard.last24h')}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Modern Metric Cards */}
+        <div className="grid gap-3 grid-cols-2">
+          <Card className="bg-card/50 backdrop-blur border-border/50">
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground mb-1">{t('dashboard.investments')}</p>
+              <p className="text-2xl font-bold">{formatCurrency(totalCost)}</p>
+              <div className="mt-3 h-16">
+                <div className="w-full h-full flex items-end gap-1">
+                  {historicalData.slice(-10).map((_, i) => (
+                    <div 
+                      key={i} 
+                      className="flex-1 bg-primary/20 rounded-t"
+                      style={{ height: `${30 + Math.random() * 70}%` }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-card/50 backdrop-blur border-border/50">
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground mb-1">{t('dashboard.totalPL')}</p>
+              <p className="text-2xl font-bold">{formatCurrency(totalPL)}</p>
+              <p className={cn(
+                "text-sm mt-1",
+                totalPLPercent >= 0 ? "text-profit" : "text-loss"
+              )}>
+                {totalPLPercent >= 0 ? '+' : ''}{totalPLPercent.toFixed(2)}%
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-2">
           <Button 
             onClick={async () => {
               try {
@@ -104,87 +181,84 @@ export default function Dashboard() {
               }
             }}
             disabled={updatePrices.isPending}
-            variant="outline"
-            size="sm"
-            className="gap-2"
+            className="flex-1"
+            size="lg"
           >
-            <RefreshCw className={`h-4 w-4 ${updatePrices.isPending ? 'animate-spin' : ''}`} />
-            {updatePrices.isPending ? 'Updating...' : 'Refresh Prices'}
+            <RefreshCw className={`mr-2 h-4 w-4 ${updatePrices.isPending ? 'animate-spin' : ''}`} />
+            {updatePrices.isPending ? t('dashboard.updating') : t('dashboard.refreshPrices')}
           </Button>
-          <Button asChild>
+          <Button asChild variant="outline" size="lg" className="flex-1">
             <Link to="/portfolios">
               <Plus className="mr-2 h-4 w-4" />
-              Create Portfolio
+              {t('dashboard.newPortfolio')}
             </Link>
           </Button>
         </div>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Total Equity"
-          value={totalEquity}
-          changePercent={dailyPLPercent}
-        />
-        <MetricCard
-          title="Total P/L"
-          value={totalPL}
-          changePercent={totalPLPercent}
-        />
-        <MetricCard
-          title="Daily Change"
-          value={dailyPL}
-          changePercent={dailyPLPercent}
-        />
-        <MetricCard
-          title="Holdings"
-          value={consolidatedHoldings.length}
-          isCurrency={false}
-        />
-      </div>
-
       {/* Holdings Overview */}
       {consolidatedHoldings.length > 0 ? (
         <>
+          {/* Analytics Charts */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <HistoricalValueChart data={historicalData} />
+            <PortfolioChart
+              holdings={consolidatedHoldings.map(h => ({
+                portfolioId: '',
+                symbolId: h.symbolId,
+                symbol: h.symbol,
+                quantity: h.totalQuantity,
+                avgCostBase: h.blendedAvgCost,
+                marketValueBase: h.totalMarketValue,
+                unrealizedPL: h.totalUnrealizedPL,
+                unrealizedPLPercent: h.totalUnrealizedPLPercent,
+                allocationPercent: h.allocationPercent,
+                currentPrice: h.currentPrice
+              }))}
+              title={t('dashboard.portfolioAllocation')}
+            />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <PerformanceBreakdown
+              holdings={consolidatedHoldings.map(h => ({
+                portfolioId: '',
+                symbolId: h.symbolId,
+                symbol: h.symbol,
+                quantity: h.totalQuantity,
+                avgCostBase: h.blendedAvgCost,
+                marketValueBase: h.totalMarketValue,
+                unrealizedPL: h.totalUnrealizedPL,
+                unrealizedPLPercent: h.totalUnrealizedPLPercent,
+                allocationPercent: h.allocationPercent,
+                currentPrice: h.currentPrice
+              }))}
+            />
+            <AssetTypeBreakdown 
+              holdings={consolidatedHoldings.map(h => ({
+                portfolioId: '',
+                symbolId: h.symbolId,
+                symbol: h.symbol,
+                quantity: h.totalQuantity,
+                avgCostBase: h.blendedAvgCost,
+                marketValueBase: h.totalMarketValue,
+                unrealizedPL: h.totalUnrealizedPL,
+                unrealizedPLPercent: h.totalUnrealizedPLPercent,
+                allocationPercent: h.allocationPercent,
+                currentPrice: h.currentPrice
+              }))}
+            />
+          </div>
+
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Top Holdings</CardTitle>
-                <div className="flex items-center space-x-2">
-                  <TransactionForm portfolios={portfolios} />
-                  <Button variant="outline" asChild>
-                    <Link to="/consolidated">
-                      <TrendingUp className="mr-2 h-4 w-4" />
-                      View All
-                    </Link>
-                  </Button>
-                </div>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <CardTitle className="text-lg md:text-xl">{t('dashboard.topPositions')}</CardTitle>
+                <TransactionForm portfolios={portfolios} />
               </div>
             </CardHeader>
             <CardContent>
-              <HoldingsTable
-                holdings={consolidatedHoldings.slice(0, 5).map(h => ({
-                  portfolioId: '',
-                  symbolId: h.symbolId,
-                  symbol: h.symbol,
-                  quantity: h.totalQuantity,
-                  avgCostBase: h.blendedAvgCost,
-                  marketValueBase: h.totalMarketValue,
-                  unrealizedPL: h.totalUnrealizedPL,
-                  unrealizedPLPercent: h.totalUnrealizedPLPercent,
-                  allocationPercent: h.allocationPercent,
-                  currentPrice: h.currentPrice
-                }))}
-              />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Allocation Breakdown</CardTitle>
-            </CardHeader>
-            <CardContent className="h-[360px]">
-              <AllocationChart
+              <HoldingsTable 
                 holdings={consolidatedHoldings.map(h => ({
                   portfolioId: '',
                   symbolId: h.symbolId,
@@ -196,7 +270,7 @@ export default function Dashboard() {
                   unrealizedPLPercent: h.totalUnrealizedPLPercent,
                   allocationPercent: h.allocationPercent,
                   currentPrice: h.currentPrice
-                }))}
+                }))} 
               />
             </CardContent>
           </Card>
@@ -204,7 +278,7 @@ export default function Dashboard() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>Portfolio Summary</CardTitle>
+            <CardTitle>{t('dashboard.portfolioSummary')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -217,8 +291,8 @@ export default function Dashboard() {
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="font-mono font-semibold">{formatBaseCurrency(0)}</p>
-                    <p className="text-sm text-muted-foreground">0 holdings</p>
+                    <p className="font-mono font-semibold">{formatCurrency(0)}</p>
+                    <p className="text-sm text-muted-foreground">0 {t('dashboard.positions')}</p>
                   </div>
                 </div>
               ))}

@@ -6,52 +6,28 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, TrendingUp, TrendingDown, Briefcase, BarChart3, Trash2 } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, Eye, Briefcase, BarChart3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { usePortfolios, useCreatePortfolio, useDeletePortfolio } from '@/hooks/usePortfolios';
+import { usePortfolios, useCreatePortfolio } from '@/hooks/usePortfolios';
 import { usePortfolioMetrics } from '@/hooks/useHoldings';
 import { useToast } from '@/hooks/use-toast';
-import { formatPercent } from '@/lib/calculations';
+import { formatCurrency, formatPercent } from '@/lib/calculations';
 import TransactionForm from '@/components/transactions/TransactionForm';
 import { cn } from '@/lib/utils';
-import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import type { Portfolio } from '@/lib/supabase';
 
-const PortfolioCard = ({
-  portfolio,
-  portfolios,
-  onDelete,
-  isDeleting,
-}: {
-  portfolio: Portfolio;
-  portfolios: Portfolio[];
-  onDelete: () => Promise<void>;
-  isDeleting: boolean;
-}) => {
+const PortfolioCard = ({ portfolio, portfolios }: { portfolio: any; portfolios: any[] }) => {
   const { data: metrics } = usePortfolioMetrics(portfolio.id);
-  const { formatBaseCurrency } = useCurrencyFormatter();
-
+  
   const isProfit = (metrics?.totalPL || 0) >= 0;
   const hasHoldings = (metrics?.holdings.length || 0) > 0;
-
+  
   return (
     <Card className="hover:shadow-lg transition-shadow">
       <CardHeader>
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="text-lg">
-              <Link
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-base md:text-lg truncate">
+              <Link 
                 to={`/portfolios/${portfolio.id}`}
                 className="hover:underline"
               >
@@ -59,78 +35,46 @@ const PortfolioCard = ({
               </Link>
             </CardTitle>
             {portfolio.description && (
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-xs md:text-sm text-muted-foreground mt-1 line-clamp-2">
                 {portfolio.description}
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={hasHoldings ? "default" : "outline"}>
-              {metrics?.holdings.length || 0} holdings
-            </Badge>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete portfolio</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This action cannot be undone. All transactions associated with this portfolio will also be removed.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => {
-                      void onDelete();
-                    }}
-                    disabled={isDeleting}
-                  >
-                    {isDeleting ? 'Deleting…' : 'Delete'}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
+          <Badge variant={hasHoldings ? "default" : "outline"} className="flex-shrink-0 text-xs">
+            {metrics?.holdings.length || 0} holdings
+          </Badge>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Total Value</span>
-            <span className="font-mono font-semibold">
-              {formatBaseCurrency(metrics?.totalEquity || 0)}
+            <span className="text-xs md:text-sm text-muted-foreground">Total Value</span>
+            <span className="font-mono font-semibold text-sm md:text-base">
+              {formatCurrency(metrics?.totalEquity || 0)}
             </span>
           </div>
           
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Total P/L</span>
+            <span className="text-xs md:text-sm text-muted-foreground">Total P/L</span>
             <div className="flex items-center gap-2">
               {isProfit ? (
-                <TrendingUp className="h-4 w-4 text-green-600" />
+                <TrendingUp className="h-3 w-3 md:h-4 md:w-4 text-green-600" />
               ) : (
-                <TrendingDown className="h-4 w-4 text-red-600" />
+                <TrendingDown className="h-3 w-3 md:h-4 md:w-4 text-red-600" />
               )}
               <span className={cn(
-                "font-mono font-semibold",
+                "font-mono font-semibold text-sm md:text-base",
                 isProfit ? "text-green-600" : "text-red-600"
               )}>
-                {formatBaseCurrency(metrics?.totalPL || 0)}
+                {formatCurrency(metrics?.totalPL || 0)}
               </span>
             </div>
           </div>
           
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">P/L %</span>
+            <span className="text-xs md:text-sm text-muted-foreground">P/L %</span>
             <span className={cn(
-              "font-mono font-semibold",
+              "font-mono font-semibold text-sm md:text-base",
               isProfit ? "text-green-600" : "text-red-600"
             )}>
               {formatPercent(metrics?.totalPLPercent || 0)}
@@ -138,18 +82,18 @@ const PortfolioCard = ({
           </div>
           
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="flex-1" asChild>
+            <Button variant="outline" size="sm" className="flex-1 text-xs md:text-sm" asChild>
               <Link to={`/portfolios/${portfolio.id}`}>
-                <BarChart3 className="mr-2 h-4 w-4" />
+                <BarChart3 className="mr-2 h-3 w-3 md:h-4 md:w-4" />
                 Details
               </Link>
             </Button>
             <TransactionForm
-              portfolios={portfolios.map(({ id, name }) => ({ id, name }))}
+              portfolios={portfolios}
               defaultPortfolioId={portfolio.id}
               trigger={
-                <Button size="sm" className="flex-1">
-                  <Plus className="mr-2 h-4 w-4" />
+                <Button size="sm" className="flex-1 text-xs md:text-sm">
+                  <Plus className="mr-2 h-3 w-3 md:h-4 md:w-4" />
                   Trade
                 </Button>
               }
@@ -164,25 +108,12 @@ const PortfolioCard = ({
 export default function Portfolios() {
   const { data: portfolios = [], isLoading } = usePortfolios();
   const createPortfolio = useCreatePortfolio();
-  const deletePortfolio = useDeletePortfolio();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: ''
   });
   const { toast } = useToast();
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const handleDeletePortfolio = async (id: string) => {
-    setDeletingId(id);
-    try {
-      await deletePortfolio.mutateAsync(id);
-    } catch (error) {
-      console.error('Failed to delete portfolio:', error);
-    } finally {
-      setDeletingId(null);
-    }
-  };
 
   const handleCreatePortfolio = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -303,17 +234,17 @@ export default function Portfolios() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Portfolios</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Portfolios</h1>
+          <p className="text-sm md:text-base text-muted-foreground">
             Manage and track your investment portfolios
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="text-sm md:text-base w-full sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
               New Portfolio
             </Button>
@@ -356,17 +287,11 @@ export default function Portfolios() {
         </Dialog>
       </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {portfolios.map((portfolio) => (
-            <PortfolioCard
-              key={portfolio.id}
-              portfolio={portfolio}
-              portfolios={portfolios}
-              onDelete={() => handleDeletePortfolio(portfolio.id)}
-              isDeleting={deletingId === portfolio.id && deletePortfolio.isPending}
-            />
-          ))}
-        </div>
+      <div className="grid gap-4 md:gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {portfolios.map((portfolio) => (
+          <PortfolioCard key={portfolio.id} portfolio={portfolio} portfolios={portfolios} />
+        ))}
+      </div>
     </div>
   );
 }

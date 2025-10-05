@@ -59,7 +59,7 @@ export function SymbolSearch({ value, onSelect, placeholder = "Search symbols...
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0" align="start">
+      <PopoverContent className="z-50 w-[90vw] max-w-[400px] p-0 bg-popover border border-border shadow-md" align="start" side="bottom">
         <Command>
           <div className="flex items-center border-b px-3">
             <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
