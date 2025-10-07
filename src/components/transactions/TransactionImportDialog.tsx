@@ -509,7 +509,8 @@ export default function TransactionImportDialog({
           <Badge variant="secondary">{selectedCount} selected</Badge>
         </div>
         <div className="rounded-md border">
-          <Table>
+          <div className="w-full overflow-auto">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">
@@ -551,7 +552,8 @@ export default function TransactionImportDialog({
                 );
               })}
             </TableBody>
-          </Table>
+            </Table>
+          </div>
         </div>
         {totalPages > 1 && (
           <Pagination>
@@ -639,16 +641,18 @@ export default function TransactionImportDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Import Trading 212 CSV</DialogTitle>
-          <DialogDescription>
-            Upload the exported CSV file from Trading 212 to import trades, dividends, cash movements, and fees. After parsing, review
-            every supported row before confirming the import.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="flex h-full max-h-[90vh] w-full max-w-[min(100vw-2rem,48rem)] flex-col overflow-hidden p-0">
+        <div className="space-y-2 border-b px-6 pb-4 pt-6">
+          <DialogHeader className="space-y-2 text-left">
+            <DialogTitle>Import Trading 212 CSV</DialogTitle>
+            <DialogDescription>
+              Upload the exported CSV file from Trading 212 to import trades, dividends, cash movements, and fees. After parsing, review
+              every supported row before confirming the import.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <div className="space-y-4">
+        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
           <div className="rounded-md border border-dashed p-4 text-center">
             <input
               ref={fileInputRef}
@@ -676,7 +680,7 @@ export default function TransactionImportDialog({
           {renderMessages(importErrors, `Import errors (${importErrors.length})`, 'error')}
         </div>
 
-        <DialogFooter className="gap-2">
+        <DialogFooter className="gap-2 border-t px-6 py-4">
           <Button
             type="button"
             variant="outline"
