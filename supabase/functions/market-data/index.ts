@@ -52,6 +52,18 @@ const yahooRangeConfig: Record<HistoricalRange, { range: string; interval: strin
   'MAX': { range: 'max', interval: '3mo' }
 }
 
+interface HistoricalDailyPoint {
+  date: string
+  price: number
+}
+
+interface HistoricalDailyResult {
+  source: 'alphavantage' | 'yahoo'
+  points: HistoricalDailyPoint[]
+}
+
+const MAX_HISTORICAL_POINTS = 3652
+
 async function fetchYahooQuote(symbol: string): Promise<any> {
   console.log(`Fetching Yahoo Finance data for ${symbol}`)
   
@@ -95,6 +107,64 @@ async function fetchYahooQuote(symbol: string): Promise<any> {
       changePercent: 0,
       lastUpdated: new Date()
     }
+  }
+}
+
+async function fetchYahooDailySeries(symbol: string): Promise<HistoricalDailyResult> {
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=10y&interval=1d` +
+    '&includePrePost=false&events=div%2Csplits'
+
+  const response = await fetch(url)
+
+  if (!response.ok) {
+    throw new Error(`Yahoo Finance historical request failed with status ${response.status}`)
+  }
+
+  const payload = await response.json()
+  const result = payload?.chart?.result?.[0]
+
+  if (!result) {
+    throw new Error(`No Yahoo Finance historical data returned for ${symbol}`)
+  }
+
+  const timestamps: number[] | undefined = result.timestamp
+  const quoteSeries: Array<number | null> | undefined = result.indicators?.quote?.[0]?.close
+  const adjCloseSeries: Array<number | null> | undefined = result.indicators?.adjclose?.[0]?.adjclose
+
+  const series = quoteSeries && quoteSeries.some(value => typeof value === 'number')
+    ? quoteSeries
+    : adjCloseSeries
+
+  if (!timestamps || !series) {
+    throw new Error(`Incomplete Yahoo historical data for ${symbol}`)
+  }
+
+  const points: HistoricalDailyPoint[] = timestamps
+    .map((timestamp, index) => {
+      const price = series[index]
+
+      if (price === null || Number.isNaN(price)) {
+        return null
+      }
+
+      const date = new Date(timestamp * 1000).toISOString().slice(0, 10)
+
+      return {
+        date,
+        price: Number.parseFloat(Number(price).toFixed(4))
+      }
+    })
+    .filter((point): point is HistoricalDailyPoint => Boolean(point))
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  if (!points.length) {
+    throw new Error(`Yahoo historical series contained no valid data points for ${symbol}`)
+  }
+
+  return {
+    source: 'yahoo',
+    points
   }
 }
 
@@ -204,73 +274,124 @@ async function fetchAlphaVantageQuote(symbol: string): Promise<any> {
   }
 }
 
-async function fetchHistoricalData(symbol: string, client: SupabaseClient): Promise<void> {
+async function fetchAlphaVantageDailySeries(symbol: string): Promise<HistoricalDailyResult> {
   const apiKey = Deno.env.get('ALPHAVANTAGE_API_KEY')
   if (!apiKey) {
     throw new Error('AlphaVantage API key not configured')
   }
 
-  // Fetch 5 years of daily data
   const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${symbol}&outputsize=full&apikey=${apiKey}`
-  
-  console.log(`Fetching historical data for ${symbol}`)
-  
+
+  console.log(`Fetching AlphaVantage historical data for ${symbol}`)
+
   const response = await fetch(url)
+
+  if (!response.ok) {
+    throw new Error(`AlphaVantage historical request failed with status ${response.status}`)
+  }
+
   const data = await response.json()
-  
+
   if (data['Error Message']) {
     throw new Error(`AlphaVantage error: ${data['Error Message']}`)
   }
-  
+
   if (data['Note']) {
     throw new Error(`AlphaVantage rate limit: ${data['Note']}`)
   }
-  
+
   const timeSeries = data['Time Series (Daily)']
   if (!timeSeries) {
-    throw new Error(`No historical data returned for symbol ${symbol}`)
+    throw new Error(`No AlphaVantage historical data returned for symbol ${symbol}`)
   }
 
-  // Get symbol_id from database
+  const points: HistoricalDailyPoint[] = Object.entries(timeSeries)
+    .map(([date, value]) => {
+      const close = Number.parseFloat((value as Record<string, string>)['4. close'])
+      if (Number.isNaN(close)) {
+        return null
+      }
+
+      return {
+        date,
+        price: Number.parseFloat(close.toFixed(4))
+      }
+    })
+    .filter((point): point is HistoricalDailyPoint => Boolean(point))
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  if (!points.length) {
+    throw new Error(`AlphaVantage historical series contained no valid data points for ${symbol}`)
+  }
+
+  return {
+    source: 'alphavantage',
+    points
+  }
+}
+
+async function upsertHistoricalSeries(symbol: string, client: SupabaseClient): Promise<{ count: number; source: 'alphavantage' | 'yahoo' }> {
+  const normalizedSymbol = symbol.trim().toUpperCase()
+
   const { data: symbolData, error: symbolError } = await client
     .from('symbols')
     .select('id')
-    .eq('ticker', symbol.toUpperCase())
-    .single()
+    .eq('ticker', normalizedSymbol)
+    .maybeSingle()
 
-  if (symbolError || !symbolData) {
-    console.log(`Symbol ${symbol} not found in database, skipping historical data`)
-    return
+  if (symbolError) {
+    throw symbolError
   }
 
-  // Prepare historical price data for insertion
-  const historicalPrices = []
-  const dates = Object.keys(timeSeries).slice(0, 1825) // 5 years of data
+  if (!symbolData) {
+    throw new Error(`Symbol ${normalizedSymbol} not found in database`)
+  }
 
-  for (const date of dates) {
-    const dayData = timeSeries[date]
-    historicalPrices.push({
+  let fetchResult: HistoricalDailyResult
+
+  try {
+    fetchResult = await fetchAlphaVantageDailySeries(normalizedSymbol)
+  } catch (error) {
+    console.error(`AlphaVantage historical fetch failed for ${normalizedSymbol}:`, error)
+    fetchResult = await fetchYahooDailySeries(normalizedSymbol)
+  }
+
+  const tenYearsAgo = new Date()
+  tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10)
+
+  const filteredPoints = fetchResult.points
+    .filter(point => new Date(`${point.date}T00:00:00Z`) >= tenYearsAgo)
+    .slice(-MAX_HISTORICAL_POINTS)
+
+  const batches: HistoricalDailyPoint[][] = []
+  const batchSize = 200
+  for (let i = 0; i < filteredPoints.length; i += batchSize) {
+    batches.push(filteredPoints.slice(i, i + batchSize))
+  }
+
+  for (const batch of batches) {
+    const payload = batch.map(point => ({
       symbol_id: symbolData.id,
-      price: parseFloat(dayData['4. close']),
-      price_currency: 'USD',
-      asof: new Date(date + 'T00:00:00Z').toISOString()
-    })
-  }
+      date: point.date,
+      price: point.price,
+      price_currency: 'USD'
+    }))
 
-  // Insert historical data in batches
-  const batchSize = 100
-  for (let i = 0; i < historicalPrices.length; i += batchSize) {
-    const batch = historicalPrices.slice(i, i + batchSize)
     const { error } = await client
-      .from('price_cache')
-      .upsert(batch, { onConflict: 'symbol_id,asof' })
-    
+      .from('historical_price_cache')
+      .upsert(payload, { onConflict: 'symbol_id,date' })
+
     if (error) {
-      console.error(`Error inserting batch ${i}-${i + batchSize}:`, error)
+      throw error
     }
   }
 
-  console.log(`Inserted ${historicalPrices.length} historical prices for ${symbol}`)
+  console.log(`Upserted ${filteredPoints.length} historical prices for ${normalizedSymbol} from ${fetchResult.source}`)
+
+  return {
+    count: filteredPoints.length,
+    source: fetchResult.source
+  }
 }
 
 Deno.serve(async (req) => {
@@ -508,18 +629,39 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'historical') {
-      const majorIndices = ['SPY', 'QQQ', 'IWM']
+      const requestedSymbols = Array.isArray(symbols)
+        ? Array.from(
+            new Set(
+              symbols
+                .filter((item): item is string => typeof item === 'string')
+                .map(item => item.trim().toUpperCase())
+                .filter(Boolean)
+            )
+          )
+        : []
 
-      for (const index of majorIndices) {
+      const targets = requestedSymbols.length > 0 ? requestedSymbols : ['SPY', 'QQQ', 'IWM']
+      const results: Array<{ symbol: string; success: boolean; count?: number; source?: 'alphavantage' | 'yahoo'; error?: string }> = []
+
+      for (let index = 0; index < targets.length; index++) {
+        const ticker = targets[index]
         try {
-          await fetchHistoricalData(index, adminClient)
-          await new Promise(resolve => setTimeout(resolve, 12000))
+          const summary = await upsertHistoricalSeries(ticker, adminClient)
+          results.push({ symbol: ticker, success: true, count: summary.count, source: summary.source })
         } catch (error) {
-          console.error(`Error fetching historical data for ${index}:`, error)
+          const message = error instanceof Error ? error.message : String(error)
+          console.error(`Error fetching historical data for ${ticker}:`, message)
+          results.push({ symbol: ticker, success: false, error: message })
+        }
+
+        if (index < targets.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 12000))
         }
       }
 
-      return new Response(JSON.stringify({ success: true, message: 'Historical data update completed' }), {
+      const success = results.every(result => result.success)
+
+      return new Response(JSON.stringify({ success, results }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }

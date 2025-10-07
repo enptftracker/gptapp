@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUpdatePrices, UpdatePricesStatus } from "@/hooks/useMarketData";
 import { MarketDataService } from "@/lib/marketData";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -76,10 +77,39 @@ export function PriceRefreshButton() {
 
   const handleFetchHistorical = async () => {
     try {
-      await MarketDataService.fetchHistoricalData();
+      const [watchlistResponse, transactionResponse] = await Promise.all([
+        supabase
+          .from('watchlist')
+          .select('symbol:symbols(ticker)'),
+        supabase
+          .from('transactions')
+          .select('symbol:symbols(ticker)')
+          .not('symbol', 'is', null)
+      ]);
+
+      if (watchlistResponse.error) throw watchlistResponse.error;
+      if (transactionResponse.error) throw transactionResponse.error;
+
+      const symbolSet = new Set<string>();
+
+      (watchlistResponse.data || []).forEach(entry => {
+        const ticker = entry?.symbol?.ticker?.toUpperCase();
+        if (ticker) symbolSet.add(ticker);
+      });
+
+      (transactionResponse.data || []).forEach(entry => {
+        const ticker = entry?.symbol?.ticker?.toUpperCase();
+        if (ticker) symbolSet.add(ticker);
+      });
+
+      const symbols = Array.from(symbolSet);
+
+      await MarketDataService.fetchHistoricalData(symbols);
       toast({
         title: "Historical data requested",
-        description: "Fetching 5 years of historical data for major indices. This may take a few minutes.",
+        description: symbols.length
+          ? `Fetching up to 10 years of historical data for ${symbols.length} symbols. This may take a few minutes.`
+          : "Fetching historical data for default indices. This may take a few minutes.",
       });
     } catch (error) {
       toast({

@@ -278,9 +278,24 @@ export class MarketDataService {
   /**
    * Fetch historical data for major indices
    */
-  static async fetchHistoricalData(): Promise<void> {
+  static async fetchHistoricalData(symbols?: string[]): Promise<void> {
     try {
-      const data = await this.invokeMarketData<{ success: boolean; message: string }>({ action: 'historical' });
+      const sanitizedSymbols = Array.isArray(symbols)
+        ? Array.from(
+            new Set(
+              symbols
+                .map(symbol => symbol?.trim().toUpperCase())
+                .filter((symbol): symbol is string => Boolean(symbol))
+            )
+          )
+        : undefined;
+
+      const payload: Record<string, unknown> = { action: 'historical' };
+      if (sanitizedSymbols?.length) {
+        payload.symbols = sanitizedSymbols;
+      }
+
+      const data = await this.invokeMarketData<{ success?: boolean; message?: string; results?: unknown[] }>(payload);
       if (!data) {
         console.warn('Historical data fetch skipped due to missing authorization.');
         return;
@@ -296,24 +311,104 @@ export class MarketDataService {
    * Retrieve historical pricing data for a ticker and range.
    */
   static async getHistoricalPrices(ticker: string, range: HistoricalRange): Promise<HistoricalPricePoint[]> {
+    const normalizedTicker = ticker.trim().toUpperCase();
+
     try {
-      const data = await this.invokeMarketData<{ points: HistoricalPricePoint[] }>({
+      const { data: symbolData } = await supabase
+        .from('symbols')
+        .select('id')
+        .eq('ticker', normalizedTicker)
+        .maybeSingle();
+
+      const lookbackDays = MarketDataService.getLookbackDays(range);
+      const fromDate = lookbackDays
+        ? new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000)
+        : null;
+
+      const fetchFromCache = async () => {
+        if (!symbolData) {
+          return [] as Array<{ date: string; price: number }>;
+        }
+
+        let query = supabase
+          .from('historical_price_cache')
+          .select('date, price')
+          .eq('symbol_id', symbolData.id)
+          .order('date', { ascending: true });
+
+        if (fromDate) {
+          query = query.gte('date', fromDate.toISOString().slice(0, 10));
+        }
+
+        const { data } = await query;
+        return (data || []).map(entry => ({
+          date: entry.date as string,
+          price: Number(entry.price)
+        }));
+      };
+
+      let cachedSeries = await fetchFromCache();
+
+      const isCacheStale = (() => {
+        if (!cachedSeries.length) return true;
+        const latest = cachedSeries[cachedSeries.length - 1];
+        const latestDate = new Date(`${latest.date}T00:00:00Z`).getTime();
+        const now = Date.now();
+        const maxAgeMs = 1000 * 60 * 60 * 24 * 2; // 2 days
+        return now - latestDate > maxAgeMs;
+      })();
+
+      if (isCacheStale && symbolData) {
+        await MarketDataService.fetchHistoricalData([normalizedTicker]);
+        cachedSeries = await fetchFromCache();
+      }
+
+      if (cachedSeries.length) {
+        return cachedSeries.map(point => ({
+          time: `${point.date}T00:00:00Z`,
+          price: point.price
+        }));
+      }
+
+      const fallback = await this.invokeMarketData<{ points: HistoricalPricePoint[] }>({
         action: 'historical_range',
-        symbol: ticker,
+        symbol: normalizedTicker,
         range
       });
 
-      if (!data?.points) {
+      if (!fallback?.points) {
         return [];
       }
 
-      return data.points.map(point => ({
+      return fallback.points.map(point => ({
         time: point.time,
         price: Number(point.price)
       }));
     } catch (error) {
       console.error('Error fetching historical prices:', error);
       return [];
+    }
+  }
+
+  private static getLookbackDays(range: HistoricalRange): number | null {
+    switch (range) {
+      case '1D':
+        return 2;
+      case '1W':
+        return 7;
+      case '1M':
+        return 31;
+      case '3M':
+        return 93;
+      case '6M':
+        return 186;
+      case '1Y':
+        return 366;
+      case '5Y':
+        return 365 * 5;
+      case 'MAX':
+      default:
+        return null;
     }
   }
 
