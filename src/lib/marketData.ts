@@ -10,6 +10,36 @@ export interface MarketDataProvider {
   lastUpdated: Date;
 }
 
+export interface BatchUpdateErrorDetail {
+  ticker: string;
+  message?: string;
+}
+
+export interface BatchUpdateBatchResult {
+  index: number;
+  symbols: string[];
+  successCount: number;
+  errorCount: number;
+  errors: BatchUpdateErrorDetail[];
+}
+
+export interface BatchUpdateProgressState {
+  currentBatch: number;
+  totalBatches: number;
+  successCount: number;
+  errorCount: number;
+  errors: BatchUpdateErrorDetail[];
+}
+
+export interface BatchUpdateSummary {
+  totalBatches: number;
+  totalSymbols: number;
+  successCount: number;
+  errorCount: number;
+  errors: BatchUpdateErrorDetail[];
+  batches: BatchUpdateBatchResult[];
+}
+
 export type HistoricalRange = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX';
 
 export interface HistoricalPricePoint {
@@ -18,6 +48,8 @@ export interface HistoricalPricePoint {
 }
 
 export class MarketDataService {
+
+  static readonly MAX_SYMBOLS_PER_BATCH = 20;
 
   private static async invokeMarketData<T>(body: Record<string, unknown>): Promise<T | null> {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -128,18 +160,119 @@ export class MarketDataService {
   /**
    * Batch update prices for multiple symbols using real API
    */
-  static async batchUpdatePrices(symbols: Array<{ id: string; ticker: string }>): Promise<void> {
-    try {
-      const data = await this.invokeMarketData<{ results: unknown[] }>({ action: 'batch_update', symbols });
-      if (!data) {
-        console.warn('Batch update skipped due to missing authorization.');
-        return;
+  static async batchUpdatePrices(
+    symbols: Array<{ id: string; ticker: string }>,
+    onProgress?: (progress: BatchUpdateProgressState) => void
+  ): Promise<BatchUpdateSummary> {
+    const batches: BatchUpdateBatchResult[] = [];
+    const errors: BatchUpdateErrorDetail[] = [];
+    const totalSymbols = symbols.length;
+    const totalBatches = totalSymbols === 0
+      ? 0
+      : Math.ceil(totalSymbols / MarketDataService.MAX_SYMBOLS_PER_BATCH);
+
+    let cumulativeSuccessCount = 0;
+    let cumulativeErrorCount = 0;
+    let currentBatchIndex = 0;
+
+    for (let i = 0; i < symbols.length; i += MarketDataService.MAX_SYMBOLS_PER_BATCH) {
+      const batchSymbols = symbols.slice(i, i + MarketDataService.MAX_SYMBOLS_PER_BATCH);
+      currentBatchIndex += 1;
+
+      const symbolLookup = new Map(batchSymbols.map(symbol => [symbol.ticker.toUpperCase(), symbol.ticker]));
+      const batchErrors: BatchUpdateErrorDetail[] = [];
+      let batchSuccessCount = 0;
+
+      try {
+        const data = await this.invokeMarketData<{
+          results?: Array<{ ticker?: string; symbol?: string; success?: boolean; status?: string; message?: string; error?: string }>;
+        }>({ action: 'batch_update', symbols: batchSymbols });
+
+        if (!data) {
+          batchErrors.push(
+            ...batchSymbols.map(symbol => ({
+              ticker: symbol.ticker,
+              message: 'Missing authorization for batch update.'
+            }))
+          );
+        } else {
+          const results = Array.isArray(data.results) ? data.results : [];
+          if (results.length === 0) {
+            batchSuccessCount = batchSymbols.length;
+          } else {
+            const responded = new Set<string>();
+            for (const result of results) {
+              const normalizedTicker = (result.ticker ?? result.symbol ?? '').toString().toUpperCase();
+              const resolvedTicker = normalizedTicker ? symbolLookup.get(normalizedTicker) ?? normalizedTicker : '';
+              if (normalizedTicker) {
+                responded.add(normalizedTicker);
+              }
+
+              const errorMessage = typeof result.error === 'string' ? result.error : undefined;
+              const hasError =
+                result.success === false ||
+                result.status === 'error' ||
+                !!result.error;
+
+              if (hasError) {
+                batchErrors.push({
+                  ticker: resolvedTicker || 'UNKNOWN',
+                  message: errorMessage || result.message || 'Unknown error occurred.'
+                });
+              } else if (normalizedTicker) {
+                batchSuccessCount += 1;
+              }
+            }
+
+            for (const [normalizedTicker] of symbolLookup) {
+              if (!responded.has(normalizedTicker)) {
+                batchSuccessCount += 1;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unexpected error during batch update.';
+        batchErrors.push(
+          ...batchSymbols.map(symbol => ({
+            ticker: symbol.ticker,
+            message
+          }))
+        );
+        console.error('Error in batch price update:', error);
       }
 
-      console.log('Batch update results:', data);
-    } catch (error) {
-      console.error('Error in batch price update:', error);
+      cumulativeSuccessCount += batchSuccessCount;
+      cumulativeErrorCount += batchErrors.length;
+      errors.push(...batchErrors);
+
+      const batchResult: BatchUpdateBatchResult = {
+        index: currentBatchIndex,
+        symbols: batchSymbols.map(symbol => symbol.ticker),
+        successCount: batchSuccessCount,
+        errorCount: batchErrors.length,
+        errors: batchErrors
+      };
+
+      batches.push(batchResult);
+
+      onProgress?.({
+        currentBatch: currentBatchIndex,
+        totalBatches,
+        successCount: cumulativeSuccessCount,
+        errorCount: cumulativeErrorCount,
+        errors: [...errors]
+      });
     }
+
+    return {
+      totalBatches,
+      totalSymbols,
+      successCount: cumulativeSuccessCount,
+      errorCount: cumulativeErrorCount,
+      errors,
+      batches
+    };
   }
 
   /**

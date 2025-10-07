@@ -1,21 +1,76 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useUpdatePrices } from "@/hooks/useMarketData";
+import { useUpdatePrices, UpdatePricesStatus } from "@/hooks/useMarketData";
 import { MarketDataService } from "@/lib/marketData";
 import { useToast } from "@/hooks/use-toast";
+import { Progress } from "@/components/ui/progress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export function PriceRefreshButton() {
-  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
   const updatePrices = useUpdatePrices();
   const { toast } = useToast();
+  const [showCompletionDialog, setShowCompletionDialog] = useState(false);
+  const lastStatus = useRef<UpdatePricesStatus>("idle");
+
+  const isInProgress = updatePrices.status === "in-progress" || updatePrices.isPending;
+
+  useEffect(() => {
+    const status = updatePrices.status;
+    if (
+      (status === "completed" || status === "failed") &&
+      lastStatus.current === "in-progress"
+    ) {
+      setShowCompletionDialog(true);
+    }
+    lastStatus.current = status;
+  }, [updatePrices.status]);
+
+  const progressValue = useMemo(() => {
+    if (!updatePrices.progress) {
+      return 0;
+    }
+    if (updatePrices.progress.totalBatches === 0) {
+      return updatePrices.status === "completed" ? 100 : 0;
+    }
+    const percentage = (updatePrices.progress.currentBatch / updatePrices.progress.totalBatches) * 100;
+    return Math.min(100, Math.max(0, percentage));
+  }, [updatePrices.progress, updatePrices.status]);
+
+  const statusText = useMemo(() => {
+    const progress = updatePrices.progress;
+    if (!progress) {
+      return null;
+    }
+    if (progress.totalBatches === 0) {
+      return "Preparing price update...";
+    }
+    const current = Math.min(progress.currentBatch, progress.totalBatches);
+    return `Batch ${current} of ${progress.totalBatches}`;
+  }, [updatePrices.progress]);
+
+  const successErrorText = useMemo(() => {
+    const progress = updatePrices.progress;
+    if (!progress) {
+      return null;
+    }
+    return `Success: ${progress.successCount} • Errors: ${progress.errorCount}`;
+  }, [updatePrices.progress]);
 
   const handleRefreshAll = async () => {
-    setIsRefreshingAll(true);
     try {
       await updatePrices.mutateAsync();
-    } finally {
-      setIsRefreshingAll(false);
+    } catch (error) {
+      // Errors are handled through hook state.
+      console.error("Failed to refresh prices:", error);
     }
   };
 
@@ -35,26 +90,93 @@ export function PriceRefreshButton() {
     }
   };
 
+  const handleDialogChange = (open: boolean) => {
+    setShowCompletionDialog(open);
+    if (!open) {
+      updatePrices.reset();
+    }
+  };
+
+  const summary = updatePrices.summary;
+  const hasErrors = (summary?.errorCount ?? 0) > 0;
+  const dialogTitle = updatePrices.status === "failed" ? "Price update failed" : "Price update completed";
+  const dialogDescription = updatePrices.status === "failed"
+    ? updatePrices.errorMessage ?? "An unexpected error occurred while updating prices."
+    : summary
+      ? `Processed ${summary.successCount} of ${summary.totalSymbols} tickers.`
+      : "Price updates have finished.";
+
   return (
-    <div className="flex gap-2">
-      <Button
-        onClick={handleRefreshAll}
-        disabled={isRefreshingAll || updatePrices.isPending}
-        size="sm"
-        variant="outline"
-        className="flex items-center gap-2"
-      >
-        <RefreshCw className={`h-4 w-4 ${(isRefreshingAll || updatePrices.isPending) ? 'animate-spin' : ''}`} />
-        Refresh Prices
-      </Button>
-      
-      <Button
-        onClick={handleFetchHistorical}
-        size="sm"
-        variant="outline"
-      >
-        Fetch Historical Data
-      </Button>
-    </div>
+    <>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handleRefreshAll}
+            disabled={isInProgress}
+            size="sm"
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${isInProgress ? 'animate-spin' : ''}`} />
+            Refresh Prices
+          </Button>
+
+          <Button
+            onClick={handleFetchHistorical}
+            size="sm"
+            variant="outline"
+          >
+            Fetch Historical Data
+          </Button>
+        </div>
+
+        {isInProgress && (
+          <div className="w-full max-w-md space-y-2">
+            {statusText && (
+              <div className="flex justify-between text-sm text-muted-foreground">
+                <span>Updating market prices…</span>
+                <span>{statusText}</span>
+              </div>
+            )}
+            <Progress value={progressValue} />
+            {successErrorText && (
+              <div className="text-xs text-muted-foreground">{successErrorText}</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <AlertDialog open={showCompletionDialog} onOpenChange={handleDialogChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{dialogTitle}</AlertDialogTitle>
+            <AlertDialogDescription>
+              <div className="space-y-3 text-left">
+                <p>{dialogDescription}</p>
+                {updatePrices.status !== "failed" && hasErrors && summary && (
+                  <div className="space-y-1">
+                    <p className="font-medium text-foreground">Tickers with issues:</p>
+                    <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-sm">
+                      {summary.errors.map((error, index) => (
+                        <li key={`${error.ticker}-${index}`}>
+                          <span className="font-medium text-foreground">{error.ticker}</span>
+                          {error.message ? ` — ${error.message}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {updatePrices.status !== "failed" && summary && !hasErrors && (
+                  <p className="text-muted-foreground">All tickers updated successfully.</p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => handleDialogChange(false)}>Close</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
