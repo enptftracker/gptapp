@@ -236,9 +236,9 @@ CREATE TRIGGER on_auth_user_created
 CREATE INDEX idx_symbols_owner_ticker ON public.symbols(owner_id, ticker);
 CREATE INDEX idx_portfolios_owner ON public.portfolios(owner_id);
 CREATE INDEX idx_transactions_portfolio ON public.transactions(portfolio_id);
-CREATE INDEX idx_transactions_symbol ON public.transactions(symbol_id);
-CREATE INDEX idx_transactions_date ON public.transactions(trade_date);
-CREATE INDEX idx_lots_portfolio_symbol ON public.lots(portfolio_id, symbol_id);
-CREATE INDEX idx_price_cache_symbol ON public.price_cache(symbol_id);
-CREATE INDEX idx_fx_rates_currencies_date ON public.fx_rates(base_currency, quote_currency, asof);
+CREATE INDEX idx_transactions_owner_id ON public.transactions(owner_id);
+CREATE INDEX idx_lots_owner_id ON public.lots(owner_id);
+CREATE INDEX idx_lots_symbol_id ON public.lots(symbol_id);
+CREATE INDEX idx_lots_original_transaction_id ON public.lots(original_transaction_id);
+CREATE INDEX idx_watchlist_symbol_id ON public.watchlist(symbol_id);
 CREATE INDEX idx_watchlist_owner ON public.watchlist(owner_id);
