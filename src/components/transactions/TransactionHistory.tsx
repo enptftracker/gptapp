@@ -72,7 +72,15 @@ export default function TransactionHistory({
         </CardHeader>
         <CardContent>
           <div className="rounded-lg border border-dashed p-8 text-center">
-            <p className="text-sm md:text-base text-muted-foreground">No transactions to display</p>
+            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:flex-wrap">
+              <p className="text-sm md:text-base text-muted-foreground">No transactions to display</p>
+              {importPortfolio && (
+                <TransactionImportDialog
+                  portfolioId={importPortfolio.id}
+                  portfolioName={importPortfolio.name}
+                />
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
