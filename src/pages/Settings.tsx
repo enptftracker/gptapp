@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -39,6 +39,24 @@ const passwordSchema = z.object({
 });
 
 type PasswordFormData = z.infer<typeof passwordSchema>;
+
+const emailSchema = z.object({
+  new_email: z.string().email('Please provide a valid email address'),
+  confirm_email: z.string().email('Please confirm your email address'),
+  current_password: z.string().min(8, 'Current password must be at least 8 characters'),
+}).refine((data) => data.new_email === data.confirm_email, {
+  path: ['confirm_email'],
+  message: 'Email addresses do not match',
+});
+
+type EmailFormData = z.infer<typeof emailSchema>;
+
+type TotpFactor = {
+  id: string;
+  factor_type: 'totp' | string;
+  status: 'verified' | 'unverified' | 'pending' | string;
+  friendly_name?: string | null;
+};
 
 const currencies = [
   { value: 'USD', label: 'US Dollar (USD)' },
@@ -94,6 +112,16 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
+  const [isLoadingMfa, setIsLoadingMfa] = useState(true);
+  const [isEnrollingTotp, setIsEnrollingTotp] = useState(false);
+  const [isVerifyingTotp, setIsVerifyingTotp] = useState(false);
+  const [isDisablingTotp, setIsDisablingTotp] = useState(false);
+  const [isCancelingTotp, setIsCancelingTotp] = useState(false);
+  const [totpFactors, setTotpFactors] = useState<TotpFactor[]>([]);
+  const [enrollmentData, setEnrollmentData] = useState<{ id: string; qr_code: string; secret: string } | null>(null);
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [totpCode, setTotpCode] = useState('');
 
   const form = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
@@ -113,6 +141,15 @@ export default function Settings() {
     },
   });
 
+  const emailForm = useForm<EmailFormData>({
+    resolver: zodResolver(emailSchema),
+    defaultValues: {
+      new_email: '',
+      confirm_email: '',
+      current_password: '',
+    },
+  });
+
   // Update form when profile data loads
   useEffect(() => {
     if (profile) {
@@ -126,6 +163,208 @@ export default function Settings() {
 
   const onSubmit = async (data: SettingsFormData) => {
     await updateProfile.mutateAsync(data);
+  };
+
+  const fetchTotpFactors = useCallback(async () => {
+    try {
+      setIsLoadingMfa(true);
+      const { data, error } = await supabase.auth.mfa.listFactors();
+      if (error) {
+        throw error;
+      }
+      setTotpFactors((data?.factors as TotpFactor[]) ?? []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settings.twoFactorLoadFailedDesc');
+      toast({
+        title: t('settings.twoFactorLoadFailed'),
+        description: message,
+        variant: 'destructive',
+      });
+      setTotpFactors([]);
+    } finally {
+      setIsLoadingMfa(false);
+    }
+  }, [t, toast]);
+
+  useEffect(() => {
+    fetchTotpFactors();
+  }, [fetchTotpFactors]);
+
+  const verifiedTotpFactor = useMemo(
+    () => totpFactors.find((factor) => factor.factor_type === 'totp' && factor.status === 'verified') ?? null,
+    [totpFactors]
+  );
+
+  const handleEmailSubmit = emailForm.handleSubmit(async (values) => {
+    try {
+      setIsUpdatingEmail(true);
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getUser();
+      if (sessionError || !sessionData?.user?.email) {
+        throw new Error(t('settings.emailUpdateFailedDesc'));
+      }
+
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: sessionData.user.email,
+        password: values.current_password,
+      });
+
+      if (reauthError) {
+        emailForm.setError('current_password', {
+          type: 'manual',
+          message: t('settings.currentPasswordIncorrect'),
+        });
+        throw new Error(t('settings.currentPasswordIncorrect'));
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({ email: values.new_email });
+      if (updateError) {
+        throw updateError;
+      }
+
+      toast({
+        title: t('settings.emailUpdated'),
+        description: t('settings.emailUpdatedDesc'),
+      });
+      emailForm.reset();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settings.emailUpdateFailedDesc');
+      toast({
+        title: t('settings.emailUpdateFailed'),
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpdatingEmail(false);
+    }
+  });
+
+  const handleStartTotpEnrollment = async () => {
+    try {
+      setIsEnrollingTotp(true);
+      const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
+      if (error || !data?.totp?.qr_code || !data?.totp?.secret || !data?.id) {
+        throw error ?? new Error(t('settings.twoFactorEnableFailedDesc'));
+      }
+
+      setEnrollmentData({ id: data.id, qr_code: data.totp.qr_code, secret: data.totp.secret });
+
+      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({ factorId: data.id });
+      if (challengeError || !challengeData?.id) {
+        throw challengeError ?? new Error(t('settings.twoFactorEnableFailedDesc'));
+      }
+      setChallengeId(challengeData.id);
+      setTotpCode('');
+      toast({
+        title: t('settings.twoFactorEnrolling'),
+        description: t('settings.twoFactorEnrollingDesc'),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settings.twoFactorEnableFailedDesc');
+      toast({
+        title: t('settings.twoFactorEnableFailed'),
+        description: message,
+        variant: 'destructive',
+      });
+      setEnrollmentData(null);
+      setChallengeId(null);
+    } finally {
+      setIsEnrollingTotp(false);
+    }
+  };
+
+  const handleCancelTotpEnrollment = async () => {
+    if (!enrollmentData?.id) {
+      setEnrollmentData(null);
+      setChallengeId(null);
+      setTotpCode('');
+      return;
+    }
+
+    try {
+      setIsCancelingTotp(true);
+      const { error } = await supabase.auth.mfa.unenroll({ factorId: enrollmentData.id });
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settings.twoFactorCancelFailedDesc');
+      toast({
+        title: t('settings.twoFactorCancelFailed'),
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setEnrollmentData(null);
+      setChallengeId(null);
+      setTotpCode('');
+      await fetchTotpFactors();
+      setIsCancelingTotp(false);
+    }
+  };
+
+  const handleVerifyTotp = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!enrollmentData?.id || !challengeId || !totpCode) {
+      return;
+    }
+    try {
+      setIsVerifyingTotp(true);
+      const { error } = await supabase.auth.mfa.verify({
+        factorId: enrollmentData.id,
+        challengeId,
+        code: totpCode,
+      });
+      if (error) {
+        throw error;
+      }
+
+      toast({
+        title: t('settings.twoFactorEnabled'),
+        description: t('settings.twoFactorEnabledDesc'),
+      });
+      setEnrollmentData(null);
+      setChallengeId(null);
+      setTotpCode('');
+      await fetchTotpFactors();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settings.twoFactorVerifyFailedDesc');
+      toast({
+        title: t('settings.twoFactorVerifyFailed'),
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsVerifyingTotp(false);
+    }
+  };
+
+  const handleDisableTotp = async () => {
+    if (!verifiedTotpFactor) {
+      return;
+    }
+    try {
+      setIsDisablingTotp(true);
+      const { error } = await supabase.auth.mfa.unenroll({ factorId: verifiedTotpFactor.id });
+      if (error) {
+        throw error;
+      }
+
+      toast({
+        title: t('settings.twoFactorDisabled'),
+        description: t('settings.twoFactorDisabledDesc'),
+      });
+      await fetchTotpFactors();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settings.twoFactorDisableFailedDesc');
+      toast({
+        title: t('settings.twoFactorDisableFailed'),
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDisablingTotp(false);
+    }
   };
 
   const onPasswordSubmit = passwordForm.handleSubmit(async (values) => {
@@ -198,59 +437,36 @@ export default function Settings() {
             {t('settings.passwordDesc')}
           </p>
         </CardHeader>
-        <CardContent>
-          <Form {...passwordForm}>
-            <form onSubmit={onPasswordSubmit} className="space-y-6">
-              <FormField
-                control={passwordForm.control}
-                name="current_password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('settings.currentPassword')}</FormLabel>
-                    <FormControl>
-                      <Input type="password" autoComplete="current-password" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+        <CardContent className="space-y-8">
+          <div className="space-y-4">
+            <Skeleton className="h-5 w-40" />
+            <div className="space-y-3">
+              {[1, 2, 3].map((item) => (
+                <Skeleton key={item} className="h-10 w-full" />
+              ))}
+            </div>
+          </div>
 
-              <FormField
-                control={passwordForm.control}
-                name="new_password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('settings.newPassword')}</FormLabel>
-                    <FormControl>
-                      <Input type="password" autoComplete="new-password" {...field} />
-                    </FormControl>
-                    <FormDescription>{t('settings.passwordRequirements')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <Separator />
 
-              <FormField
-                control={passwordForm.control}
-                name="confirm_password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('settings.confirmPassword')}</FormLabel>
-                    <FormControl>
-                      <Input type="password" autoComplete="new-password" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <div className="space-y-4">
+            <Skeleton className="h-5 w-36" />
+            <Skeleton className="h-4 w-3/4" />
+            <div className="space-y-3">
+              {[1, 2, 3].map((item) => (
+                <Skeleton key={item} className="h-10 w-full" />
+              ))}
+            </div>
+          </div>
 
-              <div className="flex justify-end">
-                <Button type="submit" disabled={isUpdatingPassword} className="min-w-36">
-                  {isUpdatingPassword ? t('settings.updatingPassword') : t('settings.updatePassword')}
-                </Button>
-              </div>
-            </form>
-          </Form>
+          <Separator />
+
+          <div className="space-y-4">
+            <Skeleton className="h-5 w-48" />
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-10 w-40" />
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -415,6 +631,222 @@ export default function Settings() {
               </div>
             </form>
           </Form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('settings.security')}</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            {t('settings.passwordDesc')}
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-8">
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">{t('settings.passwordSectionTitle')}</h3>
+              <Form {...passwordForm}>
+                <form onSubmit={onPasswordSubmit} className="space-y-6">
+                  <FormField
+                    control={passwordForm.control}
+                    name="current_password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('settings.currentPassword')}</FormLabel>
+                        <FormControl>
+                          <Input type="password" autoComplete="current-password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={passwordForm.control}
+                    name="new_password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('settings.newPassword')}</FormLabel>
+                        <FormControl>
+                          <Input type="password" autoComplete="new-password" {...field} />
+                        </FormControl>
+                        <FormDescription>{t('settings.passwordRequirements')}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={passwordForm.control}
+                    name="confirm_password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('settings.confirmPassword')}</FormLabel>
+                        <FormControl>
+                          <Input type="password" autoComplete="new-password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex justify-end">
+                    <Button type="submit" disabled={isUpdatingPassword} className="min-w-36">
+                      {isUpdatingPassword ? t('settings.updatingPassword') : t('settings.updatePassword')}
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">{t('settings.emailSectionTitle')}</h3>
+              <p className="text-sm text-muted-foreground">{t('settings.emailDesc')}</p>
+              <Form {...emailForm}>
+                <form onSubmit={handleEmailSubmit} className="space-y-6">
+                  <FormField
+                    control={emailForm.control}
+                    name="new_email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('settings.newEmail')}</FormLabel>
+                        <FormControl>
+                          <Input type="email" autoComplete="email" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={emailForm.control}
+                    name="confirm_email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('settings.confirmEmail')}</FormLabel>
+                        <FormControl>
+                          <Input type="email" autoComplete="email" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={emailForm.control}
+                    name="current_password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('settings.currentPassword')}</FormLabel>
+                        <FormControl>
+                          <Input type="password" autoComplete="current-password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex justify-end">
+                    <Button type="submit" disabled={isUpdatingEmail} className="min-w-36">
+                      {isUpdatingEmail ? t('settings.updatingEmail') : t('settings.updateEmail')}
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">{t('settings.twoFactorTitle')}</h3>
+              <p className="text-sm text-muted-foreground">{t('settings.twoFactorDesc')}</p>
+
+              <div className="space-y-4">
+                {isLoadingMfa ? (
+                  <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+                ) : verifiedTotpFactor ? (
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">{t('settings.twoFactorEnabledHelper')}</p>
+                    <Button
+                      variant="outline"
+                      onClick={handleDisableTotp}
+                      disabled={isDisablingTotp}
+                      className="min-w-36"
+                    >
+                      {isDisablingTotp ? t('settings.twoFactorDisabling') : t('settings.disableTwoFactor')}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {!enrollmentData ? (
+                      <Button
+                        onClick={handleStartTotpEnrollment}
+                        disabled={isEnrollingTotp}
+                        className="min-w-36"
+                      >
+                        {isEnrollingTotp ? t('settings.twoFactorEnabling') : t('settings.enableTwoFactor')}
+                      </Button>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex flex-col gap-4 md:flex-row md:items-center">
+                          <div className="w-full md:w-48 flex justify-center">
+                            <img
+                              src={enrollmentData.qr_code}
+                              alt={t('settings.twoFactorQrAlt')}
+                              loading="lazy"
+                              className="rounded border"
+                            />
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <p className="text-sm text-muted-foreground">{t('settings.twoFactorScan')}</p>
+                            <div className="bg-muted rounded-md p-3 text-sm break-words">
+                              <span className="font-medium">{t('settings.twoFactorSecret')}</span>: {enrollmentData.secret}
+                            </div>
+                          </div>
+                        </div>
+
+                        <form onSubmit={handleVerifyTotp} className="space-y-4">
+                          <div>
+                            <FormLabel>{t('settings.twoFactorEnterCode')}</FormLabel>
+                            <Input
+                              value={totpCode}
+                              onChange={(event) => {
+                                const value = event.target.value.replace(/[^\d]/g, '');
+                                setTotpCode(value);
+                              }}
+                              placeholder={t('settings.twoFactorCodePlaceholder')}
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              maxLength={6}
+                            />
+                          </div>
+                          <div className="flex flex-col gap-2 md:flex-row md:justify-end">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={handleCancelTotpEnrollment}
+                              disabled={isVerifyingTotp || isCancelingTotp}
+                            >
+                              {isCancelingTotp ? t('settings.twoFactorCanceling') : t('settings.twoFactorCancel')}
+                            </Button>
+                            <Button
+                              type="submit"
+                              disabled={isVerifyingTotp || isCancelingTotp || totpCode.length < 6}
+                              className="min-w-36"
+                            >
+                              {isVerifyingTotp ? t('settings.twoFactorVerifying') : t('settings.confirmTwoFactor')}
+                            </Button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
