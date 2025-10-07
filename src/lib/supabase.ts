@@ -116,7 +116,21 @@ export const symbolService = {
       .from('symbols')
       .select('*')
       .order('ticker');
-    
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getMany(ids: string[]): Promise<Symbol[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('symbols')
+      .select('*')
+      .in('id', ids);
+
     if (error) throw error;
     return data || [];
   },
@@ -229,10 +243,39 @@ export const priceService = {
       .from('price_cache')
       .select('*')
       .eq('symbol_id', symbolId)
+      .order('asof', { ascending: false })
+      .limit(1)
       .maybeSingle();
-    
+
     if (error) throw error;
     return data;
+  },
+
+  async getManyLatest(symbolIds: string[]): Promise<PriceData[]> {
+    if (symbolIds.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('price_cache')
+      .select('*')
+      .in('symbol_id', symbolIds)
+      .order('symbol_id', { ascending: true })
+      .order('asof', { ascending: false });
+
+    if (error) throw error;
+
+    const seen = new Set<string>();
+    const latest: PriceData[] = [];
+
+    for (const price of data || []) {
+      if (!seen.has(price.symbol_id)) {
+        latest.push(price);
+        seen.add(price.symbol_id);
+      }
+    }
+
+    return latest;
   },
 
   async updatePrice(symbolId: string, price: number, currency: string = 'USD'): Promise<void> {

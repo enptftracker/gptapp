@@ -20,19 +20,18 @@ export function usePortfolioHoldings(portfolioId: string) {
 
       // Fetch symbols, prices, and user profile
       const [symbols, prices, profile] = await Promise.all([
-        symbolService.getAll(),
-        Promise.all(symbolIds.map(id => priceService.getLatest(id))),
+        symbolService.getMany(symbolIds),
+        priceService.getManyLatest(symbolIds),
         profileService.get()
       ]);
 
-      const validPrices = prices.filter(p => p !== null);
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
       return PortfolioCalculations.calculateHoldings(
         portfolioId,
         transactions,
         symbols,
-        validPrices,
+        prices,
         lotMethod
       );
     },
@@ -64,19 +63,18 @@ export function usePortfolioMetrics(portfolioId: string) {
       }
 
       const [symbols, prices, profile] = await Promise.all([
-        symbolService.getAll(),
-        Promise.all(symbolIds.map(id => priceService.getLatest(id))),
+        symbolService.getMany(symbolIds),
+        priceService.getManyLatest(symbolIds),
         profileService.get()
       ]);
 
-      const validPrices = prices.filter(p => p !== null);
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
       return PortfolioCalculations.calculatePortfolioMetrics(
         portfolioId,
         transactions,
         symbols,
-        validPrices,
+        prices,
         lotMethod
       );
     },
@@ -100,19 +98,18 @@ export function useConsolidatedHoldings() {
       if (symbolIds.length === 0) return [];
 
       const [symbols, prices, profile] = await Promise.all([
-        symbolService.getAll(),
-        Promise.all(symbolIds.map(id => priceService.getLatest(id))),
+        symbolService.getMany(symbolIds),
+        priceService.getManyLatest(symbolIds),
         profileService.get()
       ]);
 
-      const validPrices = prices.filter(p => p !== null);
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
       return PortfolioCalculations.calculateConsolidatedHoldings(
         portfolios,
         transactions,
         symbols,
-        validPrices,
+        prices,
         lotMethod
       );
     },
