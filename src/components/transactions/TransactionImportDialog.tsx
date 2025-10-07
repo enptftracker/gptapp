@@ -12,6 +12,16 @@ import {
   DialogTrigger
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious
+} from '@/components/ui/pagination';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { parseCsvFile } from '@/lib/csv';
 import { MarketDataService } from '@/lib/marketData';
 import { formatCurrency } from '@/lib/calculations';
@@ -43,6 +53,7 @@ type Trading212Row = Record<string, string>;
 type ConvertResult = { value?: ParsedTransaction; error?: string };
 
 const MAX_MESSAGES = 6;
+const ROWS_PER_PAGE = 10;
 
 function parseNumber(value?: string): number {
   if (!value) return 0;
@@ -304,6 +315,12 @@ export default function TransactionImportDialog({
   const [parsedTransactions, setParsedTransactions] = useState<ParsedTransaction[]>([]);
   const [parseMessages, setParseMessages] = useState<string[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [selectedRows, setSelectedRows] = useState<Record<number, boolean>>({});
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const selectedCount = parsedTransactions.reduce((total, _item, index) => {
+    return total + (selectedRows[index] ? 1 : 0);
+  }, 0);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -314,12 +331,22 @@ export default function TransactionImportDialog({
     setParseMessages([]);
     setImportErrors([]);
     setParsedTransactions([]);
+    setSelectedRows({});
+    setCurrentPage(1);
 
     try {
       const { rows } = await parseCsvFile(file);
       const { parsed, skipped } = parseTrading212Rows(rows);
       setParsedTransactions(parsed);
       setParseMessages(skipped);
+      if (parsed.length > 0) {
+        const initialSelection = parsed.reduce<Record<number, boolean>>((acc, _item, index) => {
+          acc[index] = true;
+          return acc;
+        }, {});
+        setSelectedRows(initialSelection);
+        setCurrentPage(1);
+      }
       if (parsed.length === 0) {
         toast({
           title: 'No supported rows found',
@@ -352,6 +379,8 @@ export default function TransactionImportDialog({
     setImportErrors([]);
     setIsParsing(false);
     setIsImporting(false);
+    setSelectedRows({});
+    setCurrentPage(1);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -367,6 +396,16 @@ export default function TransactionImportDialog({
   const handleImport = async () => {
     if (parsedTransactions.length === 0) return;
 
+    const rowsToImport = parsedTransactions.filter((_, index) => selectedRows[index]);
+    if (rowsToImport.length === 0) {
+      toast({
+        title: 'No rows selected',
+        description: 'Select at least one row to import before confirming.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsImporting(true);
     setImportErrors([]);
 
@@ -374,7 +413,7 @@ export default function TransactionImportDialog({
     let successCount = 0;
 
     try {
-      for (const item of parsedTransactions) {
+      for (const item of rowsToImport) {
         try {
           let symbolId: string | undefined;
 
@@ -440,35 +479,120 @@ export default function TransactionImportDialog({
     }
   };
 
-  const renderPreview = () => {
+  const renderReview = () => {
     if (parsedTransactions.length === 0) return null;
 
+    const totalPages = Math.max(1, Math.ceil(parsedTransactions.length / ROWS_PER_PAGE));
+    const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
+    const pageItems = parsedTransactions.slice(startIndex, startIndex + ROWS_PER_PAGE);
+
+    const handleSelectAllChange = (checked: boolean) => {
+      const updated = { ...selectedRows };
+      parsedTransactions.forEach((_item, index) => {
+        updated[index] = checked;
+      });
+      setSelectedRows(updated);
+    };
+
+    const allSelected = parsedTransactions.length > 0 && selectedCount === parsedTransactions.length;
+    const someSelected = selectedCount > 0 && selectedCount < parsedTransactions.length;
+
     return (
-      <div className="rounded-md border bg-muted/20 p-4">
-        <div className="flex items-center justify-between gap-2">
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-medium">{parsedTransactions.length} transaction{parsedTransactions.length === 1 ? '' : 's'} ready</p>
-            <p className="text-xs text-muted-foreground">Review the first few entries before importing.</p>
+            <p className="text-sm font-medium">Review parsed transactions</p>
+            <p className="text-xs text-muted-foreground">
+              Verify the details below and deselect any rows that should be excluded before confirming the import.
+            </p>
           </div>
-          <Badge variant="secondary">Preview</Badge>
+          <Badge variant="secondary">{selectedCount} selected</Badge>
         </div>
-        <ul className="mt-3 max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground">
-          {parsedTransactions.slice(0, MAX_MESSAGES).map((item, index) => {
-            const amount = formatCurrency(item.unitPrice * item.quantity, item.tradeCurrency);
-            return (
-              <li key={`${item.actionLabel}-${item.ticker ?? index}`} className="flex justify-between gap-3">
-                <span className="font-medium text-foreground">
-                  {item.tradeDate} · {item.type}
-                  {item.ticker ? ` ${item.ticker}` : ''}
-                </span>
-                <span>{amount}</span>
-              </li>
-            );
-          })}
-          {parsedTransactions.length > MAX_MESSAGES && (
-            <li className="text-xs text-muted-foreground">+ {parsedTransactions.length - MAX_MESSAGES} more…</li>
-          )}
-        </ul>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={someSelected ? 'indeterminate' : allSelected}
+                    onCheckedChange={value => handleSelectAllChange(value !== false)}
+                    aria-label="Select all rows"
+                  />
+                </TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Ticker</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pageItems.map((item, index) => {
+                const globalIndex = startIndex + index;
+                const amount = formatCurrency(item.unitPrice * item.quantity, item.tradeCurrency);
+                return (
+                  <TableRow key={`${item.actionLabel}-${item.ticker ?? globalIndex}`} data-state={selectedRows[globalIndex] ? 'selected' : undefined}>
+                    <TableCell className="w-12">
+                      <Checkbox
+                        checked={Boolean(selectedRows[globalIndex])}
+                        onCheckedChange={value =>
+                          setSelectedRows(prev => ({
+                            ...prev,
+                            [globalIndex]: Boolean(value)
+                          }))
+                        }
+                        aria-label={`Toggle row ${globalIndex + 1}`}
+                      />
+                    </TableCell>
+                    <TableCell className="font-medium">{item.type}</TableCell>
+                    <TableCell>{item.ticker ?? '—'}</TableCell>
+                    <TableCell>{item.tradeDate}</TableCell>
+                    <TableCell className="text-right">{amount}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+        {totalPages > 1 && (
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  href="#"
+                  onClick={event => {
+                    event.preventDefault();
+                    setCurrentPage(prev => (prev > 1 ? prev - 1 : prev));
+                  }}
+                  className={cn(currentPage === 1 ? 'pointer-events-none opacity-50' : undefined)}
+                />
+              </PaginationItem>
+              {Array.from({ length: totalPages }, (_, index) => index + 1).map(page => (
+                <PaginationItem key={page}>
+                  <PaginationLink
+                    href="#"
+                    isActive={page === currentPage}
+                    onClick={event => {
+                      event.preventDefault();
+                      setCurrentPage(page);
+                    }}
+                  >
+                    {page}
+                  </PaginationLink>
+                </PaginationItem>
+              ))}
+              <PaginationItem>
+                <PaginationNext
+                  href="#"
+                  onClick={event => {
+                    event.preventDefault();
+                    setCurrentPage(prev => (prev < totalPages ? prev + 1 : prev));
+                  }}
+                  className={cn(currentPage === totalPages ? 'pointer-events-none opacity-50' : undefined)}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        )}
       </div>
     );
   };
@@ -519,7 +643,8 @@ export default function TransactionImportDialog({
         <DialogHeader>
           <DialogTitle>Import Trading 212 CSV</DialogTitle>
           <DialogDescription>
-            Upload the exported CSV file from Trading 212 to import trades, dividends, cash movements, and fees.
+            Upload the exported CSV file from Trading 212 to import trades, dividends, cash movements, and fees. After parsing, review
+            every supported row before confirming the import.
           </DialogDescription>
         </DialogHeader>
 
@@ -544,7 +669,7 @@ export default function TransactionImportDialog({
             )}
           </div>
 
-          {renderPreview()}
+          {renderReview()}
 
           {renderMessages(parseMessages, `Rows skipped (${parseMessages.length})`, 'info')}
 
@@ -560,17 +685,15 @@ export default function TransactionImportDialog({
           >
             Cancel
           </Button>
-          <Button
-            type="button"
-            onClick={handleImport}
-            disabled={parsedTransactions.length === 0 || isParsing || isImporting}
-          >
-            {isImporting
-              ? 'Importing…'
-              : parsedTransactions.length > 0
-                ? `Import ${parsedTransactions.length}`
-                : 'Import'}
-          </Button>
+          {parsedTransactions.length > 0 && (
+            <Button
+              type="button"
+              onClick={handleImport}
+              disabled={isParsing || isImporting || selectedCount === 0}
+            >
+              {isImporting ? 'Importing…' : `Confirm import (${selectedCount})`}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
