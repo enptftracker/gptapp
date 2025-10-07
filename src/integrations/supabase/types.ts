@@ -129,6 +129,41 @@ export type Database = {
         }
         Relationships: []
       }
+      historical_price_cache: {
+        Row: {
+          created_at: string
+          date: string
+          price: number
+          price_currency: string
+          symbol_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          price: number
+          price_currency?: string
+          symbol_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          price?: number
+          price_currency?: string
+          symbol_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "historical_price_cache_symbol_id_fkey",
+            columns: ["symbol_id"],
+            isOneToOne: false,
+            referencedRelation: "symbols",
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       price_cache: {
         Row: {
           asof: string
