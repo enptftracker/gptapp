@@ -119,51 +119,51 @@ ALTER TABLE public.watchlist ENABLE ROW LEVEL SECURITY;
 
 -- Create RLS policies for profiles
 CREATE POLICY "Users can view their own profile" ON public.profiles
-    FOR SELECT USING (auth.uid() = owner_id);
+    FOR SELECT USING ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can create their own profile" ON public.profiles
-    FOR INSERT WITH CHECK (auth.uid() = owner_id);
+    FOR INSERT WITH CHECK ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can update their own profile" ON public.profiles
-    FOR UPDATE USING (auth.uid() = owner_id);
+    FOR UPDATE USING ((SELECT auth.uid()) = owner_id);
 
 -- Create RLS policies for symbols
 CREATE POLICY "Users can view their own symbols" ON public.symbols
-    FOR SELECT USING (auth.uid() = owner_id);
+    FOR SELECT USING ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can create their own symbols" ON public.symbols
-    FOR INSERT WITH CHECK (auth.uid() = owner_id);
+    FOR INSERT WITH CHECK ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can update their own symbols" ON public.symbols
-    FOR UPDATE USING (auth.uid() = owner_id);
+    FOR UPDATE USING ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can delete their own symbols" ON public.symbols
-    FOR DELETE USING (auth.uid() = owner_id);
+    FOR DELETE USING ((SELECT auth.uid()) = owner_id);
 
 -- Create RLS policies for portfolios
 CREATE POLICY "Users can view their own portfolios" ON public.portfolios
-    FOR SELECT USING (auth.uid() = owner_id);
+    FOR SELECT USING ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can create their own portfolios" ON public.portfolios
-    FOR INSERT WITH CHECK (auth.uid() = owner_id);
+    FOR INSERT WITH CHECK ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can update their own portfolios" ON public.portfolios
-    FOR UPDATE USING (auth.uid() = owner_id);
+    FOR UPDATE USING ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can delete their own portfolios" ON public.portfolios
-    FOR DELETE USING (auth.uid() = owner_id);
+    FOR DELETE USING ((SELECT auth.uid()) = owner_id);
 
 -- Create RLS policies for transactions
 CREATE POLICY "Users can view their own transactions" ON public.transactions
-    FOR SELECT USING (auth.uid() = owner_id);
+    FOR SELECT USING ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can create their own transactions" ON public.transactions
-    FOR INSERT WITH CHECK (auth.uid() = owner_id);
+    FOR INSERT WITH CHECK ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can update their own transactions" ON public.transactions
-    FOR UPDATE USING (auth.uid() = owner_id);
+    FOR UPDATE USING ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can delete their own transactions" ON public.transactions
-    FOR DELETE USING (auth.uid() = owner_id);
+    FOR DELETE USING ((SELECT auth.uid()) = owner_id);
 
 -- Create RLS policies for lots
 CREATE POLICY "Users can view their own lots" ON public.lots
-    FOR SELECT USING (auth.uid() = owner_id);
+    FOR SELECT USING ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can create their own lots" ON public.lots
-    FOR INSERT WITH CHECK (auth.uid() = owner_id);
+    FOR INSERT WITH CHECK ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can update their own lots" ON public.lots
-    FOR UPDATE USING (auth.uid() = owner_id);
+    FOR UPDATE USING ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can delete their own lots" ON public.lots
-    FOR DELETE USING (auth.uid() = owner_id);
+    FOR DELETE USING ((SELECT auth.uid()) = owner_id);
 
 -- Create RLS policies for price_cache (read-only for users, updated by system)
 CREATE POLICY "Users can view price cache" ON public.price_cache
@@ -175,11 +175,11 @@ CREATE POLICY "Users can view fx rates" ON public.fx_rates
 
 -- Create RLS policies for watchlist
 CREATE POLICY "Users can view their own watchlist" ON public.watchlist
-    FOR SELECT USING (auth.uid() = owner_id);
+    FOR SELECT USING ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can create their own watchlist items" ON public.watchlist
-    FOR INSERT WITH CHECK (auth.uid() = owner_id);
+    FOR INSERT WITH CHECK ((SELECT auth.uid()) = owner_id);
 CREATE POLICY "Users can delete their own watchlist items" ON public.watchlist
-    FOR DELETE USING (auth.uid() = owner_id);
+    FOR DELETE USING ((SELECT auth.uid()) = owner_id);
 
 -- Create function to update timestamps
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
@@ -236,9 +236,9 @@ CREATE TRIGGER on_auth_user_created
 CREATE INDEX idx_symbols_owner_ticker ON public.symbols(owner_id, ticker);
 CREATE INDEX idx_portfolios_owner ON public.portfolios(owner_id);
 CREATE INDEX idx_transactions_portfolio ON public.transactions(portfolio_id);
-CREATE INDEX idx_transactions_symbol ON public.transactions(symbol_id);
-CREATE INDEX idx_transactions_date ON public.transactions(trade_date);
-CREATE INDEX idx_lots_portfolio_symbol ON public.lots(portfolio_id, symbol_id);
-CREATE INDEX idx_price_cache_symbol ON public.price_cache(symbol_id);
-CREATE INDEX idx_fx_rates_currencies_date ON public.fx_rates(base_currency, quote_currency, asof);
+CREATE INDEX idx_transactions_owner_id ON public.transactions(owner_id);
+CREATE INDEX idx_lots_owner_id ON public.lots(owner_id);
+CREATE INDEX idx_lots_symbol_id ON public.lots(symbol_id);
+CREATE INDEX idx_lots_original_transaction_id ON public.lots(original_transaction_id);
+CREATE INDEX idx_watchlist_symbol_id ON public.watchlist(symbol_id);
 CREATE INDEX idx_watchlist_owner ON public.watchlist(owner_id);
