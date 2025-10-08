@@ -101,6 +101,11 @@ const translations = {
     'settings.twoFactorDisableFailedDesc': 'Something went wrong while disabling two-factor authentication.',
     'settings.twoFactorLoadFailed': 'Unable to load 2FA status',
     'settings.twoFactorLoadFailedDesc': 'Refresh the page to try again.',
+    'settings.twoFactorReauthRequired': 'Two-factor verification required',
+    'settings.twoFactorReauthRequiredDesc': 'Enter the 6-digit code from your authenticator app to continue.',
+    'settings.twoFactorReauthHint': 'Open your authenticator app and enter the current 6-digit code.',
+    'settings.twoFactorReauthSubmit': 'Verify & continue',
+    'settings.twoFactorReauthVerifying': 'Verifying code…',
 
     // Theme
     'theme.light': 'Light',
@@ -208,6 +213,11 @@ const translations = {
     'settings.twoFactorDisableFailedDesc': 'Une erreur est survenue lors de la désactivation de l’authentification à deux facteurs.',
     'settings.twoFactorLoadFailed': 'Impossible de charger l’état de l’A2F',
     'settings.twoFactorLoadFailedDesc': 'Actualisez la page pour réessayer.',
+    'settings.twoFactorReauthRequired': 'Vérification à deux facteurs requise',
+    'settings.twoFactorReauthRequiredDesc': 'Saisissez le code à 6 chiffres de votre application d’authentification pour continuer.',
+    'settings.twoFactorReauthHint': 'Ouvrez votre application d’authentification et entrez le code à 6 chiffres actuel.',
+    'settings.twoFactorReauthSubmit': 'Vérifier et continuer',
+    'settings.twoFactorReauthVerifying': 'Vérification du code…',
     
     // Theme
     'theme.light': 'Clair',
