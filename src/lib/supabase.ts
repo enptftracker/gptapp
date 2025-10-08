@@ -257,25 +257,18 @@ export const priceService = {
     }
 
     const { data, error } = await supabase
-      .from('price_cache')
-      .select('*')
-      .in('symbol_id', symbolIds)
-      .order('symbol_id', { ascending: true })
-      .order('asof', { ascending: false });
+      .from('symbols')
+      .select('id, price_cache!inner(*)')
+      .in('id', symbolIds)
+      .order('asof', { foreignTable: 'price_cache', ascending: false })
+      .limit(1, { foreignTable: 'price_cache' })
+      .returns<{ id: string; price_cache: PriceData[] }[]>();
 
     if (error) throw error;
 
-    const seen = new Set<string>();
-    const latest: PriceData[] = [];
-
-    for (const price of data || []) {
-      if (!seen.has(price.symbol_id)) {
-        latest.push(price);
-        seen.add(price.symbol_id);
-      }
-    }
-
-    return latest;
+    return (data || [])
+      .map((symbol) => symbol.price_cache?.[0])
+      .filter((price): price is PriceData => Boolean(price));
   },
 
   async updatePrice(symbolId: string, price: number, currency: string = 'USD'): Promise<void> {
