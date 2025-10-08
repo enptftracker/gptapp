@@ -122,6 +122,9 @@ export default function Settings() {
   const [enrollmentData, setEnrollmentData] = useState<{ id: string; qr_code: string; secret: string } | null>(null);
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState('');
+  const [reauthChallengeId, setReauthChallengeId] = useState<string | null>(null);
+  const [reauthContext, setReauthContext] = useState<'email' | 'password' | null>(null);
+  const [reauthTotpCode, setReauthTotpCode] = useState('');
 
   const form = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
@@ -195,29 +198,99 @@ export default function Settings() {
     [totpFactors]
   );
 
+  const isMfaRequiredError = (error: unknown) => {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+    const err = error as { code?: string; error?: string; message?: string; status?: number };
+    const message = err.message?.toLowerCase() ?? '';
+    return (
+      err.code === 'mfa_required' ||
+      err.error === 'mfa_required' ||
+      message.includes('mfa') ||
+      message.includes('multi-factor') ||
+      (err.status === 403 && message.includes('challenge'))
+    );
+  };
+
+  const resetReauthState = () => {
+    setReauthChallengeId(null);
+    setReauthContext(null);
+    setReauthTotpCode('');
+  };
+
   const handleEmailSubmit = emailForm.handleSubmit(async (values) => {
     try {
       setIsUpdatingEmail(true);
 
-      const { data: sessionData, error: sessionError } = await supabase.auth.getUser();
-      if (sessionError || !sessionData?.user?.email) {
-        throw new Error(t('settings.emailUpdateFailedDesc'));
-      }
+      let emailValues = values;
 
-      const { error: reauthError } = await supabase.auth.signInWithPassword({
-        email: sessionData.user.email,
-        password: values.current_password,
-      });
+      if (reauthContext === 'email' && reauthChallengeId) {
+        if (!verifiedTotpFactor) {
+          throw new Error(t('settings.twoFactorVerifyFailedDesc'));
+        }
 
-      if (reauthError) {
-        emailForm.setError('current_password', {
-          type: 'manual',
-          message: t('settings.currentPasswordIncorrect'),
+        if (reauthTotpCode.length < 6) {
+          return;
+        }
+
+        const { error: verifyError } = await supabase.auth.mfa.verify({
+          factorId: verifiedTotpFactor.id,
+          challengeId: reauthChallengeId,
+          code: reauthTotpCode,
         });
-        throw new Error(t('settings.currentPasswordIncorrect'));
+
+        if (verifyError) {
+          throw verifyError;
+        }
+
+        emailValues = values;
+        resetReauthState();
+      } else {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getUser();
+        if (sessionError || !sessionData?.user?.email) {
+          throw new Error(t('settings.emailUpdateFailedDesc'));
+        }
+
+        const { error: reauthError } = await supabase.auth.signInWithPassword({
+          email: sessionData.user.email,
+          password: values.current_password,
+        });
+
+        if (reauthError) {
+          if (isMfaRequiredError(reauthError)) {
+            if (!verifiedTotpFactor) {
+              throw new Error(t('settings.twoFactorVerifyFailedDesc'));
+            }
+
+            const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+              factorId: verifiedTotpFactor.id,
+            });
+
+            if (challengeError || !challengeData?.id) {
+              throw challengeError ?? new Error(t('settings.twoFactorVerifyFailedDesc'));
+            }
+
+            setReauthContext('email');
+            setReauthChallengeId(challengeData.id);
+            setReauthTotpCode('');
+
+            toast({
+              title: t('settings.twoFactorReauthRequired'),
+              description: t('settings.twoFactorReauthRequiredDesc'),
+            });
+            return;
+          }
+
+          emailForm.setError('current_password', {
+            type: 'manual',
+            message: t('settings.currentPasswordIncorrect'),
+          });
+          throw new Error(t('settings.currentPasswordIncorrect'));
+        }
       }
 
-      const { error: updateError } = await supabase.auth.updateUser({ email: values.new_email });
+      const { error: updateError } = await supabase.auth.updateUser({ email: emailValues.new_email });
       if (updateError) {
         throw updateError;
       }
@@ -227,6 +300,7 @@ export default function Settings() {
         description: t('settings.emailUpdatedDesc'),
       });
       emailForm.reset();
+      resetReauthState();
     } catch (error) {
       const message = error instanceof Error ? error.message : t('settings.emailUpdateFailedDesc');
       toast({
@@ -371,25 +445,74 @@ export default function Settings() {
     try {
       setIsUpdatingPassword(true);
 
-      const { data: sessionData, error: sessionError } = await supabase.auth.getUser();
-      if (sessionError || !sessionData?.user?.email) {
-        throw new Error(t('settings.passwordUpdateFailedDesc'));
-      }
+      let passwordValues = values;
 
-      const { error: reauthError } = await supabase.auth.signInWithPassword({
-        email: sessionData.user.email,
-        password: values.current_password,
-      });
+      if (reauthContext === 'password' && reauthChallengeId) {
+        if (!verifiedTotpFactor) {
+          throw new Error(t('settings.twoFactorVerifyFailedDesc'));
+        }
 
-      if (reauthError) {
-        passwordForm.setError('current_password', {
-          type: 'manual',
-          message: t('settings.currentPasswordIncorrect'),
+        if (reauthTotpCode.length < 6) {
+          return;
+        }
+
+        const { error: verifyError } = await supabase.auth.mfa.verify({
+          factorId: verifiedTotpFactor.id,
+          challengeId: reauthChallengeId,
+          code: reauthTotpCode,
         });
-        throw new Error(t('settings.currentPasswordIncorrect'));
+
+        if (verifyError) {
+          throw verifyError;
+        }
+
+        passwordValues = values;
+        resetReauthState();
+      } else {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getUser();
+        if (sessionError || !sessionData?.user?.email) {
+          throw new Error(t('settings.passwordUpdateFailedDesc'));
+        }
+
+        const { error: reauthError } = await supabase.auth.signInWithPassword({
+          email: sessionData.user.email,
+          password: values.current_password,
+        });
+
+        if (reauthError) {
+          if (isMfaRequiredError(reauthError)) {
+            if (!verifiedTotpFactor) {
+              throw new Error(t('settings.twoFactorVerifyFailedDesc'));
+            }
+
+            const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+              factorId: verifiedTotpFactor.id,
+            });
+
+            if (challengeError || !challengeData?.id) {
+              throw challengeError ?? new Error(t('settings.twoFactorVerifyFailedDesc'));
+            }
+
+            setReauthContext('password');
+            setReauthChallengeId(challengeData.id);
+            setReauthTotpCode('');
+
+            toast({
+              title: t('settings.twoFactorReauthRequired'),
+              description: t('settings.twoFactorReauthRequiredDesc'),
+            });
+            return;
+          }
+
+          passwordForm.setError('current_password', {
+            type: 'manual',
+            message: t('settings.currentPasswordIncorrect'),
+          });
+          throw new Error(t('settings.currentPasswordIncorrect'));
+        }
       }
 
-      const { error: updateError } = await supabase.auth.updateUser({ password: values.new_password });
+      const { error: updateError } = await supabase.auth.updateUser({ password: passwordValues.new_password });
       if (updateError) {
         throw updateError;
       }
@@ -399,6 +522,7 @@ export default function Settings() {
         description: t('settings.passwordUpdatedDesc'),
       });
       passwordForm.reset();
+      resetReauthState();
     } catch (error) {
       const message = error instanceof Error ? error.message : t('settings.passwordUpdateFailedDesc');
       toast({
@@ -690,9 +814,39 @@ export default function Settings() {
                     )}
                   />
 
+                  {reauthContext === 'password' && reauthChallengeId && (
+                    <div className="space-y-2">
+                      <FormLabel>{t('settings.twoFactorEnterCode')}</FormLabel>
+                      <FormDescription>{t('settings.twoFactorReauthHint')}</FormDescription>
+                      <Input
+                        value={reauthTotpCode}
+                        onChange={(event) => {
+                          const value = event.target.value.replace(/[^\d]/g, '');
+                          setReauthTotpCode(value);
+                        }}
+                        placeholder={t('settings.twoFactorCodePlaceholder')}
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                      />
+                    </div>
+                  )}
+
                   <div className="flex justify-end">
-                    <Button type="submit" disabled={isUpdatingPassword} className="min-w-36">
-                      {isUpdatingPassword ? t('settings.updatingPassword') : t('settings.updatePassword')}
+                    <Button
+                      type="submit"
+                      disabled={
+                        isUpdatingPassword || (reauthContext === 'password' && reauthTotpCode.length < 6)
+                      }
+                      className="min-w-36"
+                    >
+                      {reauthContext === 'password'
+                        ? isUpdatingPassword
+                          ? t('settings.twoFactorReauthVerifying')
+                          : t('settings.twoFactorReauthSubmit')
+                        : isUpdatingPassword
+                          ? t('settings.updatingPassword')
+                          : t('settings.updatePassword')}
                     </Button>
                   </div>
                 </form>
@@ -748,9 +902,39 @@ export default function Settings() {
                     )}
                   />
 
+                  {reauthContext === 'email' && reauthChallengeId && (
+                    <div className="space-y-2">
+                      <FormLabel>{t('settings.twoFactorEnterCode')}</FormLabel>
+                      <FormDescription>{t('settings.twoFactorReauthHint')}</FormDescription>
+                      <Input
+                        value={reauthTotpCode}
+                        onChange={(event) => {
+                          const value = event.target.value.replace(/[^\d]/g, '');
+                          setReauthTotpCode(value);
+                        }}
+                        placeholder={t('settings.twoFactorCodePlaceholder')}
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                      />
+                    </div>
+                  )}
+
                   <div className="flex justify-end">
-                    <Button type="submit" disabled={isUpdatingEmail} className="min-w-36">
-                      {isUpdatingEmail ? t('settings.updatingEmail') : t('settings.updateEmail')}
+                    <Button
+                      type="submit"
+                      disabled={
+                        isUpdatingEmail || (reauthContext === 'email' && reauthTotpCode.length < 6)
+                      }
+                      className="min-w-36"
+                    >
+                      {reauthContext === 'email'
+                        ? isUpdatingEmail
+                          ? t('settings.twoFactorReauthVerifying')
+                          : t('settings.twoFactorReauthSubmit')
+                        : isUpdatingEmail
+                          ? t('settings.updatingEmail')
+                          : t('settings.updateEmail')}
                     </Button>
                   </div>
                 </form>
