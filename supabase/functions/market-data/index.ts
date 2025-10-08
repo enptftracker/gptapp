@@ -1,18 +1,9 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { createCorsHeaders } from '../_shared/cors.ts'
-function getRequiredEnv(variable: string): string {
-  const value = Deno.env.get(variable)
+import { corsHeaders } from '../_shared/cors.ts'
 
-  if (!value) {
-    throw new Error(`${variable} environment variable is not set`)
-  }
-
-  return value
-}
-
-const supabaseUrl = getRequiredEnv('SUPABASE_URL')
-const serviceRoleKey = getRequiredEnv('SUPABASE_SERVICE_ROLE_KEY')
-const anonKey = getRequiredEnv('SUPABASE_ANON_KEY')
+const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 
 const adminClient = createClient(supabaseUrl, serviceRoleKey)
 
@@ -404,22 +395,6 @@ async function upsertHistoricalSeries(symbol: string, client: SupabaseClient): P
 }
 
 Deno.serve(async (req) => {
-  const requestOrigin = req.headers.get('origin') ?? undefined
-  const { headers: corsHeaders, isAllowed: isAllowedOrigin } = createCorsHeaders(requestOrigin)
-
-  if (!isAllowedOrigin) {
-    const originErrorResponse = new Response(JSON.stringify({ error: 'Origin not allowed' }), {
-      status: 403,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    })
-
-    if (req.method === 'OPTIONS') {
-      return new Response(null, { status: 403, headers: corsHeaders })
-    }
-
-    return originErrorResponse
-  }
-
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -436,6 +411,14 @@ Deno.serve(async (req) => {
 
     if (!authHeader.toLowerCase().startsWith('bearer ')) {
       return unauthorizedResponse()
+    }
+
+    if (!anonKey) {
+      console.error('SUPABASE_ANON_KEY is not configured')
+      return new Response(JSON.stringify({ error: 'Server configuration error' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
     const userClient = createClient(supabaseUrl, anonKey, {
