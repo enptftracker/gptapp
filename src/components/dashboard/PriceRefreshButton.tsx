@@ -84,7 +84,7 @@ export function PriceRefreshButton() {
         supabase
           .from('transactions')
           .select('symbol:symbols(ticker)')
-          .not('symbol_id', 'is', null)
+          .not('symbol', 'is', null)
       ]);
 
       if (watchlistResponse.error) throw watchlistResponse.error;
