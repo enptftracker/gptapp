@@ -1,5 +1,6 @@
 const defaultOrigins = [
   'https://b384bbd0-1d3b-4c79-b219-101a8a434a65.lovable.app',
+  'https://*.vercel.app',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:3000',
@@ -12,9 +13,56 @@ const parseOrigins = (value?: string | null): string[] =>
     .map(origin => origin.trim())
     .filter(Boolean)
 
+const matchesWildcard = (origin: string, pattern: string) => {
+  if (pattern === '*') {
+    return true
+  }
+
+  if (!pattern.includes('*')) {
+    return origin.toLowerCase() === pattern.toLowerCase()
+  }
+
+  const escaped = pattern
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\\\*/g, '.*')
+
+  const regex = new RegExp(`^${escaped}$`, 'i')
+  return regex.test(origin)
+}
+
 const configuredOrigins = parseOrigins(Deno.env.get('APP_ORIGIN'))
 
 const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultOrigins]))
+
+const resolveOrigin = (originHeader?: string | null) => {
+  const origin = originHeader ?? undefined
+
+  const allowAnyOrigin = allowedOrigins.includes('*')
+  const hasExplicitConfig = configuredOrigins.length > 0
+
+  if (!origin) {
+    if (hasExplicitConfig) {
+      return configuredOrigins.find(item => item !== '*') ?? configuredOrigins[0] ?? '*'
+    }
+    return '*'
+  }
+
+  if (allowAnyOrigin) {
+    return origin
+  }
+
+  const isAllowed = allowedOrigins.some(allowed => matchesWildcard(origin, allowed))
+
+  if (isAllowed) {
+    return origin
+  }
+
+  if (hasExplicitConfig) {
+    return configuredOrigins.find(item => item !== '*') ?? configuredOrigins[0] ?? '*'
+  }
+
+  return '*'
+}
 
 export const getCorsHeaders = (requestOrOrigin?: Request | string | null) => {
   const originHeader = typeof requestOrOrigin === 'string'
@@ -23,32 +71,23 @@ export const getCorsHeaders = (requestOrOrigin?: Request | string | null) => {
       ? requestOrOrigin.headers.get('origin') ?? requestOrOrigin.headers.get('Origin') ?? undefined
       : undefined
 
-  const allowAnyOrigin = allowedOrigins.includes('*')
-  const hasExplicitConfig = configuredOrigins.length > 0
-  const fallbackOrigin = '*'
+  const resolvedOrigin = resolveOrigin(originHeader ?? undefined)
 
-  if (allowAnyOrigin) {
+  const baseHeaders = {
+    'Access-Control-Allow-Origin': resolvedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Vary': 'Origin'
+  }
+
+  if (resolvedOrigin !== '*') {
     return {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS'
+      ...baseHeaders,
+      'Access-Control-Allow-Credentials': 'true'
     }
   }
 
-  const normalizedOrigin = originHeader?.toLowerCase()
-  const isAllowed = normalizedOrigin
-    ? allowedOrigins.some(allowed => allowed.toLowerCase() === normalizedOrigin)
-    : false
-
-  const resolvedOrigin = hasExplicitConfig
-    ? (isAllowed && originHeader ? originHeader : configuredOrigins[0] ?? fallbackOrigin)
-    : originHeader ?? fallbackOrigin
-
-  return {
-    'Access-Control-Allow-Origin': resolvedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS'
-  }
+  return baseHeaders
 }
 
 export const corsHeaders = getCorsHeaders()
