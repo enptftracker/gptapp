@@ -47,6 +47,17 @@ export interface HistoricalPricePoint {
   price: number;
 }
 
+const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: string }> = {
+  '1D': { range: '1d', interval: '15m' },
+  '1W': { range: '5d', interval: '1h' },
+  '1M': { range: '1mo', interval: '1d' },
+  '3M': { range: '3mo', interval: '1d' },
+  '6M': { range: '6mo', interval: '1d' },
+  '1Y': { range: '1y', interval: '1wk' },
+  '5Y': { range: '5y', interval: '1mo' },
+  'MAX': { range: 'max', interval: '3mo' }
+};
+
 export class MarketDataService {
 
   static readonly MAX_SYMBOLS_PER_BATCH = 20;
@@ -93,12 +104,13 @@ export class MarketDataService {
    * Get current market data for a symbol using real API
    */
   static async getMarketData(ticker: string): Promise<MarketDataProvider | null> {
+    const normalizedTicker = ticker.trim().toUpperCase();
     try {
       // First try to get from cache
       const { data: symbolData } = await supabase
         .from('symbols')
         .select('id')
-        .eq('ticker', ticker.toUpperCase())
+        .eq('ticker', normalizedTicker)
         .single();
 
       if (symbolData) {
@@ -122,9 +134,19 @@ export class MarketDataService {
       }
 
       // If no cached data, fetch from API
-      const data = await this.invokeMarketData<MarketDataProvider>({ action: 'quote', symbol: ticker });
-      if (!data) return null;
-      return data;
+      let data: MarketDataProvider | null = null;
+      try {
+        data = await this.invokeMarketData<MarketDataProvider>({ action: 'quote', symbol: normalizedTicker });
+      } catch (error) {
+        console.error('Edge quote fetch failed:', error);
+      }
+
+      if (data) {
+        return data;
+      }
+
+      const fallback = await this.fetchYahooQuoteFallback(normalizedTicker);
+      return fallback;
     } catch (error) {
       console.error('Error fetching market data:', error);
       return null;
@@ -374,25 +396,144 @@ export class MarketDataService {
         }));
       }
 
-      const fallback = await this.invokeMarketData<{ points?: HistoricalPricePoint[] }>({
-        action: 'historical_range',
-        symbol: normalizedTicker,
-        range
-      });
+      let remoteSeries: HistoricalPricePoint[] | null = null;
 
-      if (!fallback || !Array.isArray(fallback.points)) {
-        throw new Error('Unable to fetch historical prices. Please reauthenticate and try again.');
+      try {
+        const fallback = await this.invokeMarketData<{ points?: HistoricalPricePoint[] }>({
+          action: 'historical_range',
+          symbol: normalizedTicker,
+          range
+        });
+
+        if (fallback && Array.isArray(fallback.points)) {
+          remoteSeries = fallback.points.map(point => ({
+            time: point.time,
+            price: Number(point.price)
+          }));
+        }
+      } catch (edgeError) {
+        console.error('Edge historical fetch failed:', edgeError);
       }
 
-      return fallback.points.map(point => ({
-        time: point.time,
-        price: Number(point.price)
-      }));
+      if (remoteSeries && remoteSeries.length) {
+        return remoteSeries;
+      }
+
+      const yahooSeries = await this.fetchYahooHistoricalRange(normalizedTicker, range);
+
+      if (yahooSeries.length) {
+        return yahooSeries;
+      }
+
+      throw new Error('Unable to fetch historical prices. Please reauthenticate and try again.');
     } catch (error) {
       console.error('Error fetching historical prices:', error);
       throw error instanceof Error
         ? error
         : new Error('An unknown error occurred while fetching historical prices.');
+    }
+  }
+
+  private static async fetchYahooQuoteFallback(ticker: string): Promise<MarketDataProvider | null> {
+    try {
+      const response = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`
+      );
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const payload = await response.json();
+      const result = payload?.chart?.result?.[0];
+      const meta = result?.meta;
+
+      if (!result || !meta) {
+        return null;
+      }
+
+      const price = Number(meta.regularMarketPrice ?? meta.previousClose);
+      const previousClose = Number(meta.previousClose ?? price);
+
+      if (!Number.isFinite(price)) {
+        return null;
+      }
+
+      const change = Number.isFinite(previousClose) ? price - previousClose : 0;
+      const changePercent = Number.isFinite(previousClose) && previousClose !== 0
+        ? (change / previousClose) * 100
+        : 0;
+
+      return {
+        symbol: ticker,
+        price,
+        change,
+        changePercent,
+        volume: typeof meta.regularMarketVolume === 'number' ? meta.regularMarketVolume : undefined,
+        lastUpdated: new Date()
+      };
+    } catch (error) {
+      console.error('Yahoo fallback quote error:', error);
+      return null;
+    }
+  }
+
+  private static async fetchYahooHistoricalRange(ticker: string, range: HistoricalRange): Promise<HistoricalPricePoint[]> {
+    try {
+      const config = YAHOO_RANGE_CONFIG[range];
+      if (!config) {
+        return [];
+      }
+
+      const response = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=${config.range}&interval=${config.interval}&includePrePost=false&events=div%2Csplits`
+      );
+
+      if (!response.ok) {
+        return [];
+      }
+
+      const payload = await response.json();
+      const result = payload?.chart?.result?.[0];
+
+      if (!result) {
+        return [];
+      }
+
+      const timestamps: Array<number | null> | undefined = result.timestamp;
+      const quoteSeries: Array<number | null> | undefined = result.indicators?.quote?.[0]?.close;
+      const adjCloseSeries: Array<number | null> | undefined = result.indicators?.adjclose?.[0]?.adjclose;
+
+      const series = quoteSeries && quoteSeries.some(value => typeof value === 'number')
+        ? quoteSeries
+        : adjCloseSeries;
+
+      if (!Array.isArray(timestamps) || !Array.isArray(series)) {
+        return [];
+      }
+
+      const points: HistoricalPricePoint[] = [];
+
+      timestamps.forEach((timestamp, index) => {
+        if (typeof timestamp !== 'number') {
+          return;
+        }
+
+        const price = series[index];
+        if (typeof price !== 'number' || Number.isNaN(price)) {
+          return;
+        }
+
+        points.push({
+          time: new Date(timestamp * 1000).toISOString(),
+          price: Number(price.toFixed(4))
+        });
+      });
+
+      return points;
+    } catch (error) {
+      console.error('Yahoo fallback historical error:', error);
+      return [];
     }
   }
 

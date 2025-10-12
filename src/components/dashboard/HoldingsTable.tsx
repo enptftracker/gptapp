@@ -25,7 +25,7 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="text-xs md:text-sm">Symbol</TableHead>
+            <TableHead className="text-xs md:text-sm">Ticker</TableHead>
             <TableHead className="text-xs md:text-sm">Instrument</TableHead>
             <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
             <TableHead className="text-right text-xs md:text-sm hidden sm:table-cell">Avg Cost</TableHead>
@@ -38,7 +38,7 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
           {holdings.map((holding) => {
             const isProfit = holding.unrealizedPL >= 0;
             const ticker = holding.symbol.ticker.toUpperCase();
-            const name = holding.symbol.name || ticker;
+            const name = holding.symbol.name || '—';
 
             return (
               <TableRow key={`${holding.portfolioId}-${holding.symbolId}`}>
@@ -58,9 +58,11 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
                     <InstrumentIcon ticker={ticker} name={name} size="sm" className="flex-shrink-0" />
                     <div className="min-w-0">
                       <p className="font-medium text-sm md:text-base truncate">{name}</p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {holding.symbol.exchange || holding.symbol.assetType}
-                      </p>
+                      {holding.symbol.exchange && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {holding.symbol.exchange}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </TableCell>

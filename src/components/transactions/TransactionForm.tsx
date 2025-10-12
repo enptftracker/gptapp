@@ -203,14 +203,14 @@ export default function TransactionForm({
                 name="ticker"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-sm">Symbol</FormLabel>
+                    <FormLabel className="text-sm">Ticker</FormLabel>
                     <FormControl>
                       <SymbolSearch
                         value={field.value}
                         onSelect={(ticker, name, assetType) => {
                           field.onChange(ticker);
                         }}
-                        placeholder="Search for a symbol..."
+                        placeholder="Search for a ticker..."
                         className="w-full text-sm"
                       />
                     </FormControl>

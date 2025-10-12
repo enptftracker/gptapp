@@ -217,7 +217,7 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
             target="_blank"
             rel="noopener noreferrer"
           >
-            View full symbol details
+            View full ticker details
             <ExternalLink className="ml-2 h-4 w-4" />
           </Link>
         </Button>

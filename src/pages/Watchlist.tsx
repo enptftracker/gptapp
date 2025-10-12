@@ -63,10 +63,10 @@ export default function Watchlist() {
         <div className="flex flex-col gap-3">
           <h1 className="text-2xl md:text-3xl font-bold">Watchlist</h1>
           
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg md:text-xl">Add Symbol to Watchlist</CardTitle>
-            </CardHeader>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg md:text-xl">Add Ticker to Watchlist</CardTitle>
+              </CardHeader>
             <CardContent>
               <SymbolSearch
                 onSelect={handleAddSymbol}
@@ -80,7 +80,7 @@ export default function Watchlist() {
         {watchlist?.length === 0 ? (
           <Card>
             <CardContent className="text-center py-8 md:py-12">
-              <p className="text-sm md:text-base text-muted-foreground">Start by searching for a symbol above</p>
+              <p className="text-sm md:text-base text-muted-foreground">Start by searching for a ticker above</p>
             </CardContent>
           </Card>
         ) : (
