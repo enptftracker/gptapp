@@ -109,7 +109,7 @@ export default function TransactionHistory({
                 <TableRow>
                   <TableHead className="text-xs md:text-sm">Date</TableHead>
                   <TableHead className="text-xs md:text-sm">Type</TableHead>
-                  <TableHead className="text-xs md:text-sm">Symbol</TableHead>
+                  <TableHead className="text-xs md:text-sm">Ticker</TableHead>
                   <TableHead className="text-xs md:text-sm">Instrument</TableHead>
                   <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
                   <TableHead className="text-right text-xs md:text-sm">Unit Price</TableHead>
@@ -123,11 +123,9 @@ export default function TransactionHistory({
                 {transactions.map((transaction) => {
                   const totalValue = transaction.quantity * transaction.unit_price;
                   const ticker = (transaction.symbol?.ticker || 'CASH').toUpperCase();
-                  const name = transaction.symbol?.name || (ticker === 'CASH' ? 'Cash' : ticker);
-                  const assetType = transaction.symbol?.asset_type || (ticker === 'CASH' ? 'CASH' : '—');
-                  const secondaryLabel =
-                    transaction.symbol?.exchange ||
-                    (assetType !== '—' ? assetType : '');
+                  const name = transaction.symbol?.name || (ticker === 'CASH' ? 'Cash' : '—');
+                  const assetType = transaction.symbol?.asset_type || (ticker === 'CASH' ? 'CASH' : '');
+                  const secondaryLabel = transaction.symbol?.exchange || '';
 
                   return (
                     <TableRow key={transaction.id}>
@@ -143,7 +141,9 @@ export default function TransactionHistory({
                         <span className="font-mono font-medium truncate block">
                           {ticker}
                         </span>
-                        <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">{assetType}</p>
+                        {assetType && (
+                          <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">{assetType}</p>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs md:text-sm">
                         <div className="flex items-center gap-2 min-w-0">
