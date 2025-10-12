@@ -6,28 +6,52 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, TrendingUp, TrendingDown, Eye, Briefcase, BarChart3 } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, Briefcase, BarChart3, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { usePortfolios, useCreatePortfolio } from '@/hooks/usePortfolios';
+import { usePortfolios, useCreatePortfolio, useDeletePortfolio } from '@/hooks/usePortfolios';
 import { usePortfolioMetrics } from '@/hooks/useHoldings';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import TransactionForm from '@/components/transactions/TransactionForm';
 import { cn } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 const PortfolioCard = ({ portfolio, portfolios }: { portfolio: any; portfolios: any[] }) => {
   const { data: metrics } = usePortfolioMetrics(portfolio.id);
-  
+  const deletePortfolio = useDeletePortfolio();
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
   const isProfit = (metrics?.totalPL || 0) >= 0;
   const hasHoldings = (metrics?.holdings.length || 0) > 0;
-  
+
+  const handleDelete = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+
+    try {
+      await deletePortfolio.mutateAsync(portfolio.id);
+      setIsDeleteDialogOpen(false);
+    } catch (error) {
+      console.error('Failed to delete portfolio:', error);
+    }
+  };
+
   return (
     <Card className="hover:shadow-lg transition-shadow">
       <CardHeader>
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <CardTitle className="text-base md:text-lg truncate">
-              <Link 
+              <Link
                 to={`/portfolios/${portfolio.id}`}
                 className="hover:underline"
               >
@@ -40,9 +64,44 @@ const PortfolioCard = ({ portfolio, portfolios }: { portfolio: any; portfolios: 
               </p>
             )}
           </div>
-          <Badge variant={hasHoldings ? "default" : "outline"} className="flex-shrink-0 text-xs">
-            {metrics?.holdings.length || 0} holdings
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={hasHoldings ? "default" : "outline"} className="flex-shrink-0 text-xs">
+              {metrics?.holdings.length || 0} holdings
+            </Badge>
+            <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsDeleteDialogOpen(true);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete portfolio</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the portfolio and its associated data.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={deletePortfolio.isPending}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={handleDelete}
+                    disabled={deletePortfolio.isPending}
+                  >
+                    {deletePortfolio.isPending ? 'Deleting...' : 'Delete'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
