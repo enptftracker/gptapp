@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, TrendingUp, TrendingDown, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Plus, TrendingUp, TrendingDown, Trash2, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,12 +7,36 @@ import { SymbolSearch } from "@/components/ui/symbol-search";
 import { useWatchlist, useAddToWatchlist, useRemoveFromWatchlist, WatchlistItem } from "@/hooks/useWatchlist";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StockDetail } from "@/components/watchlist/StockDetail";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
+import { format, formatDistanceToNow } from "date-fns";
 
 export default function Watchlist() {
   const [selectedStock, setSelectedStock] = useState<WatchlistItem | null>(null);
-  const { data: watchlist, isLoading } = useWatchlist();
+  const {
+    data: watchlist,
+    isLoading,
+    isFetching,
+    error,
+    refetch,
+    dataUpdatedAt,
+  } = useWatchlist();
   const addToWatchlist = useAddToWatchlist();
   const removeFromWatchlist = useRemoveFromWatchlist();
+  const { toast } = useToast();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (progressTimerRef.current) {
+        clearInterval(progressTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleAddSymbol = async (ticker: string, name: string, assetType: string) => {
     try {
@@ -25,6 +49,66 @@ export default function Watchlist() {
   const handleRemoveSymbol = async (symbolId: string) => {
     await removeFromWatchlist.mutateAsync(symbolId);
   };
+
+  const handleRefresh = async () => {
+    if (isRefreshing || isFetching) return;
+
+    setRefreshError(null);
+    setIsRefreshing(true);
+    setProgress(0);
+
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+    }
+
+    progressTimerRef.current = setInterval(() => {
+      setProgress((current) => {
+        if (current >= 90) return current;
+        const increment = 5 + Math.random() * 10;
+        return Math.min(90, current + increment);
+      });
+    }, 250);
+
+    try {
+      await refetch({ throwOnError: true });
+      setProgress(100);
+      toast({
+        title: "Watchlist updated",
+        description: "Latest market data fetched successfully.",
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to refresh the watchlist.";
+      setRefreshError(message);
+      setProgress(100);
+    } finally {
+      if (progressTimerRef.current) {
+        clearInterval(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+
+      setTimeout(() => {
+        setIsRefreshing(false);
+        setProgress(0);
+      }, 600);
+    }
+  };
+
+  const lastUpdatedAt = useMemo(() => {
+    const latestPriceUpdate = watchlist?.reduce((latest, item) => {
+      const priceUpdatedAt = item.price?.lastUpdated ?? 0;
+      return priceUpdatedAt > latest ? priceUpdatedAt : latest;
+    }, 0) ?? 0;
+
+    if (latestPriceUpdate) {
+      return latestPriceUpdate;
+    }
+
+    return dataUpdatedAt ?? 0;
+  }, [watchlist, dataUpdatedAt]);
+
+  const formattedLastUpdated = lastUpdatedAt
+    ? `${format(new Date(lastUpdatedAt), "PPpp")} (${formatDistanceToNow(new Date(lastUpdatedAt), { addSuffix: true })})`
+    : null;
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -60,13 +144,35 @@ export default function Watchlist() {
   return (
     <>
       <div className="container mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
-        <div className="flex flex-col gap-3">
-          <h1 className="text-2xl md:text-3xl font-bold">Watchlist</h1>
-          
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg md:text-xl">Add Ticker to Watchlist</CardTitle>
-              </CardHeader>
+        <div className="space-y-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-1">
+              <h1 className="text-2xl md:text-3xl font-bold">Watchlist</h1>
+              {formattedLastUpdated && (
+                <p className="text-xs md:text-sm text-muted-foreground">
+                  Last updated {formattedLastUpdated}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Button
+                onClick={handleRefresh}
+                disabled={isRefreshing || isFetching}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRefreshing || isFetching ? 'animate-spin' : ''}`} />
+                {isRefreshing || isFetching ? 'Refreshing data…' : 'Refresh data'}
+              </Button>
+            </div>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg md:text-xl">Add Ticker to Watchlist</CardTitle>
+            </CardHeader>
             <CardContent>
               <SymbolSearch
                 onSelect={handleAddSymbol}
@@ -76,6 +182,25 @@ export default function Watchlist() {
             </CardContent>
           </Card>
         </div>
+
+        {(isRefreshing || progress > 0) && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs md:text-sm text-muted-foreground">
+              <span>Refreshing market data…</span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <Progress value={progress} />
+          </div>
+        )}
+
+        {(error || refreshError) && (
+          <Alert variant="destructive">
+            <AlertTitle>Unable to refresh data</AlertTitle>
+            <AlertDescription>
+              {refreshError || (error instanceof Error ? error.message : 'An unexpected error occurred while loading your watchlist.')}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {watchlist?.length === 0 ? (
           <Card>
@@ -95,12 +220,21 @@ export default function Watchlist() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-base md:text-lg truncate">{item.symbol.ticker}</h3>
+                        <h3 className="font-semibold text-base md:text-lg truncate">
+                          {item.symbol.name || item.symbol.ticker}
+                        </h3>
+                        <Badge variant="secondary" className="text-xs flex-shrink-0">
+                          {item.symbol.ticker}
+                        </Badge>
                         <Badge variant="outline" className="text-xs flex-shrink-0">
                           {item.symbol.asset_type}
                         </Badge>
                       </div>
-                      <p className="text-xs md:text-sm text-muted-foreground truncate">{item.symbol.name}</p>
+                      {item.price?.lastUpdated && (
+                        <p className="text-[11px] md:text-xs text-muted-foreground">
+                          Updated {formatDistanceToNow(new Date(item.price.lastUpdated), { addSuffix: true })}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 md:gap-6">

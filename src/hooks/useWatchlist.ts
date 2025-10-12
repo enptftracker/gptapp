@@ -17,6 +17,7 @@ export interface WatchlistItem {
     price: number;
     change_24h: number;
     change_percent_24h: number;
+    lastUpdated?: number;
   };
 }
 
@@ -75,6 +76,7 @@ export function useWatchlist() {
                 price: cached.price,
                 change_24h: cached.change_24h,
                 change_percent_24h: cached.change_percent_24h,
+                lastUpdated: cached.asof,
               }
             : undefined;
 
@@ -87,6 +89,7 @@ export function useWatchlist() {
                 price: fresh.price,
                 change_24h: fresh.change,
                 change_percent_24h: fresh.changePercent,
+                lastUpdated: fresh.lastUpdated?.getTime() ?? Date.now(),
               };
             }
           }
