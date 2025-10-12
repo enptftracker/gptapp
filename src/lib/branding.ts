@@ -1,4 +1,4 @@
-const logoDomains: Record<string, string> = {
+const clearbitDomains: Record<string, string> = {
   AAPL: 'apple.com',
   MSFT: 'microsoft.com',
   AMZN: 'amazon.com',
@@ -17,22 +17,98 @@ const logoDomains: Record<string, string> = {
   KO: 'coca-colacompany.com',
   PEP: 'pepsico.com',
   WMT: 'walmart.com',
+  MCD: 'mcdonalds.com',
+  DIS: 'thewaltdisneycompany.com',
   SPY: 'ssga.com',
   QQQ: 'invesco.com',
   VTI: 'vanguard.com',
   IWM: 'ishares.com',
   EFA: 'ishares.com',
+  GLD: 'spdrgoldshares.com',
+  SLV: 'ishares.com',
+  ARKK: 'ark-funds.com',
+  XLK: 'ssga.com',
+  XLF: 'ssga.com',
+  XLY: 'ssga.com',
+  XLE: 'ssga.com',
+  XLV: 'ssga.com',
+  VT: 'vanguard.com',
   COIN: 'coinbase.com',
   MSTR: 'microstrategy.com',
+  BITO: 'proshares.com',
 };
 
-export function getLogoUrl(ticker: string, name?: string) {
-  const domain = logoDomains[ticker.toUpperCase()];
-  if (domain) {
-    return `https://logo.clearbit.com/${domain}?size=80`;
+const directLogos: Record<string, string> = {
+  'BTC-USD': 'https://assets.coingecko.com/coins/images/1/thumb/bitcoin.png?1547033579',
+  'ETH-USD': 'https://assets.coingecko.com/coins/images/279/thumb/ethereum.png?1595348880',
+  'SOL-USD': 'https://assets.coingecko.com/coins/images/4128/thumb/solana.png?1696492354',
+  'ADA-USD': 'https://assets.coingecko.com/coins/images/975/thumb/cardano.png?1547034860',
+  'DOGE-USD': 'https://assets.coingecko.com/coins/images/5/thumb/dogecoin.png?1547792256',
+  'BNB-USD': 'https://assets.coingecko.com/coins/images/825/thumb/bnb-icon2_2x.png?1644979850',
+  'MATIC-USD': 'https://assets.coingecko.com/coins/images/4713/thumb/polygon.png?1698233745',
+};
+
+function buildFallbackLabel(ticker: string, name?: string) {
+  const normalized = ticker.trim().toUpperCase();
+  if (!normalized) {
+    return '—';
   }
 
-  const fallbackLabel = encodeURIComponent(name || ticker);
-  return `https://ui-avatars.com/api/?name=${fallbackLabel}&background=random&color=ffffff&length=3`;
+  if (normalized === 'CASH') {
+    return 'CA$';
+  }
+
+  const source = (name || normalized)
+    .replace(/[^A-Za-z0-9\s]/g, ' ')
+    .trim();
+
+  if (!source) {
+    return normalized.slice(0, 3) || normalized;
+  }
+
+  const words = source.split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return normalized.slice(0, 3) || normalized;
+  }
+
+  const initials = words.slice(0, 2).map((word) => word.charAt(0)).join('');
+  return initials.toUpperCase();
+}
+
+export interface InstrumentBranding {
+  logoUrl: string | null;
+  fallbackLabel: string;
+}
+
+export function getInstrumentBranding(ticker: string, name?: string): InstrumentBranding {
+  const normalizedTicker = (ticker || '').trim().toUpperCase();
+
+  if (!normalizedTicker) {
+    return {
+      logoUrl: null,
+      fallbackLabel: '—',
+    };
+  }
+
+  const directLogo = directLogos[normalizedTicker];
+  if (directLogo) {
+    return {
+      logoUrl: directLogo,
+      fallbackLabel: buildFallbackLabel(normalizedTicker, name),
+    };
+  }
+
+  const domain = clearbitDomains[normalizedTicker];
+  if (domain) {
+    return {
+      logoUrl: `https://logo.clearbit.com/${domain}?size=128`,
+      fallbackLabel: buildFallbackLabel(normalizedTicker, name),
+    };
+  }
+
+  return {
+    logoUrl: null,
+    fallbackLabel: buildFallbackLabel(normalizedTicker, name),
+  };
 }
 

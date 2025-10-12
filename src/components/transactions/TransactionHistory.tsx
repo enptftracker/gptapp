@@ -11,8 +11,7 @@ import { Edit, Trash2 } from 'lucide-react';
 import { useDeleteTransaction } from '@/hooks/useTransactions';
 import TransactionForm from './TransactionForm';
 import TransactionImportDialog from './TransactionImportDialog';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { getLogoUrl } from '@/lib/branding';
+import { InstrumentIcon } from '@/components/shared/InstrumentIcon';
 
 interface TransactionHistoryProps {
   transactions: Transaction[];
@@ -40,36 +39,6 @@ const getTransactionTypeColor = (type: Transaction['type']) => {
       return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300';
   }
 };
-
-interface SymbolAvatarProps {
-  transaction: Transaction;
-}
-
-function SymbolAvatar({ transaction }: SymbolAvatarProps) {
-  const ticker = transaction.symbol?.ticker?.toUpperCase();
-  const isCash = !ticker || ticker === 'CASH';
-
-  if (isCash) {
-    return (
-      <Avatar className="h-7 w-7 flex-shrink-0 md:h-8 md:w-8">
-        <AvatarFallback className="text-[0.625rem] font-semibold uppercase md:text-xs">
-          CA$
-        </AvatarFallback>
-      </Avatar>
-    );
-  }
-
-  const logoUrl = getLogoUrl(ticker, transaction.symbol?.name);
-
-  return (
-    <Avatar className="h-7 w-7 flex-shrink-0 md:h-8 md:w-8">
-      <AvatarImage src={logoUrl} alt={`${ticker} logo`} />
-      <AvatarFallback className="text-[0.625rem] font-semibold uppercase md:text-xs">
-        {ticker.slice(0, 3)}
-      </AvatarFallback>
-    </Avatar>
-  );
-}
 
 export default function TransactionHistory({
   transactions,
@@ -141,6 +110,7 @@ export default function TransactionHistory({
                   <TableHead className="text-xs md:text-sm">Date</TableHead>
                   <TableHead className="text-xs md:text-sm">Type</TableHead>
                   <TableHead className="text-xs md:text-sm">Symbol</TableHead>
+                  <TableHead className="text-xs md:text-sm">Instrument</TableHead>
                   <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
                   <TableHead className="text-right text-xs md:text-sm">Unit Price</TableHead>
                   <TableHead className="text-right text-xs md:text-sm">Total Value</TableHead>
@@ -152,7 +122,13 @@ export default function TransactionHistory({
               <TableBody>
                 {transactions.map((transaction) => {
                   const totalValue = transaction.quantity * transaction.unit_price;
-                  
+                  const ticker = (transaction.symbol?.ticker || 'CASH').toUpperCase();
+                  const name = transaction.symbol?.name || (ticker === 'CASH' ? 'Cash' : ticker);
+                  const assetType = transaction.symbol?.asset_type || (ticker === 'CASH' ? 'CASH' : '—');
+                  const secondaryLabel =
+                    transaction.symbol?.exchange ||
+                    (assetType !== '—' ? assetType : '');
+
                   return (
                     <TableRow key={transaction.id}>
                       <TableCell className="font-medium text-xs md:text-sm whitespace-nowrap">
@@ -164,11 +140,20 @@ export default function TransactionHistory({
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs md:text-sm">
+                        <span className="font-mono font-medium truncate block">
+                          {ticker}
+                        </span>
+                        <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">{assetType}</p>
+                      </TableCell>
+                      <TableCell className="text-xs md:text-sm">
                         <div className="flex items-center gap-2 min-w-0">
-                          <SymbolAvatar transaction={transaction} />
-                          <span className="font-mono font-medium truncate">
-                            {(transaction.symbol?.ticker || 'CASH').toUpperCase()}
-                          </span>
+                          <InstrumentIcon ticker={ticker} name={name} size="sm" className="flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{name}</p>
+                            {secondaryLabel && (
+                              <p className="text-[0.65rem] text-muted-foreground truncate">{secondaryLabel}</p>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs md:text-sm">

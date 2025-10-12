@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { Holding } from '@/lib/types';
+import { InstrumentIcon } from '@/components/shared/InstrumentIcon';
 
 interface HoldingsTableProps {
   holdings: Holding[];
@@ -25,6 +26,7 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
         <TableHeader>
           <TableRow>
             <TableHead className="text-xs md:text-sm">Symbol</TableHead>
+            <TableHead className="text-xs md:text-sm">Instrument</TableHead>
             <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
             <TableHead className="text-right text-xs md:text-sm hidden sm:table-cell">Avg Cost</TableHead>
             <TableHead className="text-right text-xs md:text-sm">Market Value</TableHead>
@@ -35,18 +37,31 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
         <TableBody>
           {holdings.map((holding) => {
             const isProfit = holding.unrealizedPL >= 0;
-            
+            const ticker = holding.symbol.ticker.toUpperCase();
+            const name = holding.symbol.name || ticker;
+
             return (
               <TableRow key={`${holding.portfolioId}-${holding.symbolId}`}>
                 <TableCell>
                   <div className="flex flex-col gap-1">
                     <span className="font-medium text-sm md:text-base">{holding.symbol.ticker}</span>
-                    <Badge 
-                      variant="outline" 
+                    <Badge
+                      variant="outline"
                       className="w-fit text-xs"
                     >
                       {holding.symbol.assetType}
                     </Badge>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <InstrumentIcon ticker={ticker} name={name} size="sm" className="flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm md:text-base truncate">{name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {holding.symbol.exchange || holding.symbol.assetType}
+                      </p>
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs md:text-sm whitespace-nowrap">
@@ -59,10 +74,12 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
                   {formatCurrency(holding.marketValueBase)}
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className={cn(
-                    "flex flex-col text-xs md:text-sm font-medium",
-                    isProfit ? "text-profit" : "text-loss"
-                  )}>
+                  <div
+                    className={cn(
+                      'flex flex-col text-xs md:text-sm font-medium',
+                      isProfit ? 'text-profit' : 'text-loss'
+                    )}
+                  >
                     <span className="font-mono whitespace-nowrap">
                       {formatCurrency(holding.unrealizedPL)}
                     </span>

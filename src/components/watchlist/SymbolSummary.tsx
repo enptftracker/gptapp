@@ -5,11 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useHistoricalPrices, useMarketData } from '@/hooks/useMarketData';
 import type { HistoricalRange } from '@/lib/marketData';
 import { WatchlistItem } from '@/hooks/useWatchlist';
-import { getLogoUrl } from '@/lib/branding';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -22,6 +20,7 @@ import {
 import { TrendingDown, TrendingUp, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { InstrumentIcon } from '@/components/shared/InstrumentIcon';
 
 const rangeOptions: HistoricalRange[] = ['1D', '1W', '1M', '3M', '1Y', '5Y', 'MAX'];
 
@@ -88,16 +87,11 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
   const rangeHigh = historicalPrices.length ? Math.max(...historicalPrices.map((point) => point.price)) : null;
   const isPositive = change >= 0;
 
-  const logoUrl = getLogoUrl(item.symbol.ticker, item.symbol.name);
-
   return (
     <Card className="h-full lg:min-h-[560px]">
       <CardHeader className="space-y-6">
         <div className="flex items-start gap-4">
-          <Avatar className="h-12 w-12">
-            <AvatarImage src={logoUrl} alt={`${item.symbol.ticker} logo`} />
-            <AvatarFallback>{item.symbol.ticker.slice(0, 3).toUpperCase()}</AvatarFallback>
-          </Avatar>
+          <InstrumentIcon ticker={item.symbol.ticker} name={item.symbol.name} size="lg" />
           <div className="space-y-1">
             <CardTitle className="text-xl">{item.symbol.ticker}</CardTitle>
             <p className="text-sm text-muted-foreground">{item.symbol.name}</p>

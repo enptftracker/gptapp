@@ -79,7 +79,11 @@ export class MarketDataService {
     }
 
     if (error) {
-      throw error;
+      const message = typeof error === 'string'
+        ? error
+        : (error as { message?: string; error?: string }).message || (error as { message?: string; error?: string }).error;
+
+      throw new Error(message || 'Failed to fetch market data from the edge function.');
     }
 
     return (data as T | null) ?? null;
@@ -420,42 +424,57 @@ export class MarketDataService {
   static async searchSymbols(query: string): Promise<Array<{ ticker: string; name: string; type: string }>> {
     // Enhanced symbol database with real symbols
     const symbols = [
-      // Tech Stocks
-      { ticker: 'AAPL', name: 'Apple Inc.', type: 'STOCK' },
-      { ticker: 'GOOGL', name: 'Alphabet Inc.', type: 'STOCK' },
-      { ticker: 'GOOG', name: 'Alphabet Inc. Class A', type: 'STOCK' },
-      { ticker: 'TSLA', name: 'Tesla Inc.', type: 'STOCK' },
-      { ticker: 'MSFT', name: 'Microsoft Corporation', type: 'STOCK' },
-      { ticker: 'AMZN', name: 'Amazon.com Inc.', type: 'STOCK' },
-      { ticker: 'NVDA', name: 'NVIDIA Corporation', type: 'STOCK' },
-      { ticker: 'META', name: 'Meta Platforms Inc.', type: 'STOCK' },
-      { ticker: 'NFLX', name: 'Netflix Inc.', type: 'STOCK' },
-      
-      // Major ETFs
+      // Major equities
+      { ticker: 'AAPL', name: 'Apple Inc.', type: 'EQUITY' },
+      { ticker: 'GOOGL', name: 'Alphabet Inc.', type: 'EQUITY' },
+      { ticker: 'GOOG', name: 'Alphabet Inc. Class A', type: 'EQUITY' },
+      { ticker: 'TSLA', name: 'Tesla Inc.', type: 'EQUITY' },
+      { ticker: 'MSFT', name: 'Microsoft Corporation', type: 'EQUITY' },
+      { ticker: 'AMZN', name: 'Amazon.com Inc.', type: 'EQUITY' },
+      { ticker: 'NVDA', name: 'NVIDIA Corporation', type: 'EQUITY' },
+      { ticker: 'META', name: 'Meta Platforms Inc.', type: 'EQUITY' },
+      { ticker: 'NFLX', name: 'Netflix Inc.', type: 'EQUITY' },
+      { ticker: 'JPM', name: 'JPMorgan Chase & Co.', type: 'EQUITY' },
+      { ticker: 'BAC', name: 'Bank of America Corp', type: 'EQUITY' },
+      { ticker: 'WFC', name: 'Wells Fargo & Company', type: 'EQUITY' },
+      { ticker: 'JNJ', name: 'Johnson & Johnson', type: 'EQUITY' },
+      { ticker: 'UNH', name: 'UnitedHealth Group Inc.', type: 'EQUITY' },
+      { ticker: 'PFE', name: 'Pfizer Inc.', type: 'EQUITY' },
+      { ticker: 'KO', name: 'The Coca-Cola Company', type: 'EQUITY' },
+      { ticker: 'PEP', name: 'PepsiCo Inc.', type: 'EQUITY' },
+      { ticker: 'WMT', name: 'Walmart Inc.', type: 'EQUITY' },
+      { ticker: 'MCD', name: 'McDonald\'s Corporation', type: 'EQUITY' },
+      { ticker: 'DIS', name: 'The Walt Disney Company', type: 'EQUITY' },
+
+      // Sector and thematic ETFs
       { ticker: 'SPY', name: 'SPDR S&P 500 ETF Trust', type: 'ETF' },
       { ticker: 'QQQ', name: 'Invesco QQQ Trust', type: 'ETF' },
       { ticker: 'VTI', name: 'Vanguard Total Stock Market ETF', type: 'ETF' },
       { ticker: 'IWM', name: 'iShares Russell 2000 ETF', type: 'ETF' },
       { ticker: 'EFA', name: 'iShares MSCI EAFE ETF', type: 'ETF' },
-      
-      // Financial
-      { ticker: 'JPM', name: 'JPMorgan Chase & Co.', type: 'STOCK' },
-      { ticker: 'BAC', name: 'Bank of America Corp', type: 'STOCK' },
-      { ticker: 'WFC', name: 'Wells Fargo & Company', type: 'STOCK' },
-      
-      // Healthcare
-      { ticker: 'JNJ', name: 'Johnson & Johnson', type: 'STOCK' },
-      { ticker: 'UNH', name: 'UnitedHealth Group Inc.', type: 'STOCK' },
-      { ticker: 'PFE', name: 'Pfizer Inc.', type: 'STOCK' },
-      
-      // Consumer
-      { ticker: 'KO', name: 'The Coca-Cola Company', type: 'STOCK' },
-      { ticker: 'PEP', name: 'PepsiCo Inc.', type: 'STOCK' },
-      { ticker: 'WMT', name: 'Walmart Inc.', type: 'STOCK' },
-      
-      // Crypto-related
-      { ticker: 'COIN', name: 'Coinbase Global Inc.', type: 'STOCK' },
-      { ticker: 'MSTR', name: 'MicroStrategy Inc.', type: 'STOCK' },
+      { ticker: 'GLD', name: 'SPDR Gold Shares', type: 'ETF' },
+      { ticker: 'SLV', name: 'iShares Silver Trust', type: 'ETF' },
+      { ticker: 'ARKK', name: 'ARK Innovation ETF', type: 'ETF' },
+      { ticker: 'XLK', name: 'Technology Select Sector SPDR Fund', type: 'ETF' },
+      { ticker: 'XLF', name: 'Financial Select Sector SPDR Fund', type: 'ETF' },
+      { ticker: 'XLY', name: 'Consumer Discretionary Select Sector SPDR Fund', type: 'ETF' },
+      { ticker: 'XLE', name: 'Energy Select Sector SPDR Fund', type: 'ETF' },
+      { ticker: 'XLV', name: 'Health Care Select Sector SPDR Fund', type: 'ETF' },
+      { ticker: 'BITO', name: 'ProShares Bitcoin Strategy ETF', type: 'ETF' },
+      { ticker: 'VT', name: 'Vanguard Total World Stock ETF', type: 'ETF' },
+
+      // Cryptocurrencies
+      { ticker: 'BTC-USD', name: 'Bitcoin', type: 'CRYPTO' },
+      { ticker: 'ETH-USD', name: 'Ethereum', type: 'CRYPTO' },
+      { ticker: 'SOL-USD', name: 'Solana', type: 'CRYPTO' },
+      { ticker: 'ADA-USD', name: 'Cardano', type: 'CRYPTO' },
+      { ticker: 'DOGE-USD', name: 'Dogecoin', type: 'CRYPTO' },
+      { ticker: 'BNB-USD', name: 'BNB', type: 'CRYPTO' },
+      { ticker: 'MATIC-USD', name: 'Polygon', type: 'CRYPTO' },
+
+      // Crypto-related equities
+      { ticker: 'COIN', name: 'Coinbase Global Inc.', type: 'EQUITY' },
+      { ticker: 'MSTR', name: 'MicroStrategy Inc.', type: 'EQUITY' },
     ];
 
     const lowerQuery = query.toLowerCase();
