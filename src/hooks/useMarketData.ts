@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient, UseMutateFunction } from '@tanstack/react-query';
 import {
   HistoricalRange,
+  HistoricalPricePoint,
   MarketDataService,
   BatchUpdateProgressState,
   BatchUpdateSummary
@@ -21,7 +22,7 @@ export function useMarketData(ticker: string) {
 export const HISTORICAL_RANGES: HistoricalRange[] = ['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'MAX'];
 
 export function useHistoricalPrices(ticker: string, range: HistoricalRange) {
-  return useQuery({
+  return useQuery<HistoricalPricePoint[], Error>({
     queryKey: ['market-data', 'historical', ticker, range],
     queryFn: () => MarketDataService.getHistoricalPrices(ticker, range),
     enabled: !!ticker,

@@ -49,9 +49,18 @@ export function StockChart({ ticker, currency }: StockChartProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>('1Y');
 
   const historicalRange = rangeMap[timeRange];
-  const { data: historicalPrices = [], isLoading } = useHistoricalPrices(ticker, historicalRange);
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isSuccess,
+  } = useHistoricalPrices(ticker, historicalRange);
 
-  const data = useMemo(
+  const historicalPrices = data ?? [];
+
+  const chartData = useMemo(
     () =>
       historicalPrices.map((point) => ({
         date: format(new Date(point.time), rangeDisplayFormat[historicalRange]),
@@ -60,6 +69,8 @@ export function StockChart({ ticker, currency }: StockChartProps) {
       })),
     [historicalPrices, historicalRange]
   );
+
+  const showNoData = isSuccess && historicalPrices.length === 0;
 
   const prices = historicalPrices.map(point => point.price);
   const minPrice = prices.length ? Math.min(...prices) : 0;
@@ -107,9 +118,17 @@ export function StockChart({ ticker, currency }: StockChartProps) {
             <div className="flex h-full items-center justify-center">
               <Skeleton className="h-full w-full" />
             </div>
-          ) : data.length ? (
+          ) : isError && error ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-muted-foreground">
+              <p>Unable to load historical data.</p>
+              <p className="text-[11px] text-destructive">{error instanceof Error ? error.message : 'An unexpected error occurred.'}</p>
+              <Button size="sm" variant="outline" onClick={() => refetch()}>
+                Retry
+              </Button>
+            </div>
+          ) : chartData.length ? (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+              <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
                   dataKey="date"
@@ -134,11 +153,11 @@ export function StockChart({ ticker, currency }: StockChartProps) {
                 />
               </LineChart>
             </ResponsiveContainer>
-          ) : (
+          ) : showNoData ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
               No historical data available
             </div>
-          )}
+          ) : null}
         </div>
       </CardContent>
     </Card>
