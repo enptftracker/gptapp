@@ -138,37 +138,38 @@ export function PriceRefreshButton() {
 
   return (
     <>
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-4 w-full">
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
           <Button
             onClick={handleRefreshAll}
             disabled={isInProgress}
-            size="sm"
-            variant="outline"
-            className="flex items-center gap-2"
+            size="lg"
+            className="w-full justify-center gap-2 sm:w-auto sm:justify-start sm:px-6"
+            aria-busy={isInProgress}
           >
             <RefreshCw className={`h-4 w-4 ${isInProgress ? 'animate-spin' : ''}`} />
-            Refresh Prices
+            <span className="font-semibold">Refresh Prices</span>
           </Button>
 
           <Button
             onClick={handleFetchHistorical}
-            size="sm"
+            size="lg"
             variant="outline"
+            className="w-full justify-center gap-2 sm:w-auto sm:justify-start sm:px-6"
           >
             Fetch Historical Data
           </Button>
         </div>
 
         {isInProgress && (
-          <div className="w-full max-w-md space-y-2">
+          <div className="w-full max-w-xl space-y-3 rounded-lg border border-border/60 bg-card/80 p-4 shadow-sm">
             {statusText && (
-              <div className="flex justify-between text-sm text-muted-foreground">
-                <span>Updating market prices…</span>
+              <div className="flex flex-col gap-1 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                <span className="font-medium text-foreground">Updating market prices…</span>
                 <span>{statusText}</span>
               </div>
             )}
-            <Progress value={progressValue} />
+            <Progress value={progressValue} className="h-2" />
             {successErrorText && (
               <div className="text-xs text-muted-foreground">{successErrorText}</div>
             )}
@@ -177,7 +178,7 @@ export function PriceRefreshButton() {
       </div>
 
       <AlertDialog open={showCompletionDialog} onOpenChange={handleDialogChange}>
-        <AlertDialogContent>
+        <AlertDialogContent className="w-[min(calc(100vw-2rem),34rem)] max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>{dialogTitle}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -202,8 +203,13 @@ export function PriceRefreshButton() {
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => handleDialogChange(false)}>Close</AlertDialogAction>
+          <AlertDialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogAction
+              onClick={() => handleDialogChange(false)}
+              className="w-full sm:w-auto"
+            >
+              Close
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
