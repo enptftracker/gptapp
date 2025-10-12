@@ -11,6 +11,8 @@ import { Edit, Trash2 } from 'lucide-react';
 import { useDeleteTransaction } from '@/hooks/useTransactions';
 import TransactionForm from './TransactionForm';
 import TransactionImportDialog from './TransactionImportDialog';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { getLogoUrl } from '@/lib/branding';
 
 interface TransactionHistoryProps {
   transactions: Transaction[];
@@ -38,6 +40,36 @@ const getTransactionTypeColor = (type: Transaction['type']) => {
       return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300';
   }
 };
+
+interface SymbolAvatarProps {
+  transaction: Transaction;
+}
+
+function SymbolAvatar({ transaction }: SymbolAvatarProps) {
+  const ticker = transaction.symbol?.ticker?.toUpperCase();
+  const isCash = !ticker || ticker === 'CASH';
+
+  if (isCash) {
+    return (
+      <Avatar className="h-7 w-7 flex-shrink-0 md:h-8 md:w-8">
+        <AvatarFallback className="text-[0.625rem] font-semibold uppercase md:text-xs">
+          CA$
+        </AvatarFallback>
+      </Avatar>
+    );
+  }
+
+  const logoUrl = getLogoUrl(ticker, transaction.symbol?.name);
+
+  return (
+    <Avatar className="h-7 w-7 flex-shrink-0 md:h-8 md:w-8">
+      <AvatarImage src={logoUrl} alt={`${ticker} logo`} />
+      <AvatarFallback className="text-[0.625rem] font-semibold uppercase md:text-xs">
+        {ticker.slice(0, 3)}
+      </AvatarFallback>
+    </Avatar>
+  );
+}
 
 export default function TransactionHistory({
   transactions,
@@ -131,8 +163,13 @@ export default function TransactionHistory({
                           {transaction.type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-mono font-medium text-xs md:text-sm">
-                        {transaction.symbol?.ticker || 'CASH'}
+                      <TableCell className="text-xs md:text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <SymbolAvatar transaction={transaction} />
+                          <span className="font-mono font-medium truncate">
+                            {(transaction.symbol?.ticker || 'CASH').toUpperCase()}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs md:text-sm">
                         {transaction.quantity.toLocaleString()}
