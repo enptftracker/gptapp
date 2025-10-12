@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp } from 'lucide-react';
 import { useMarketData } from '@/hooks/useMarketData';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useSymbolNews } from '@/hooks/useSymbolNews';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -16,107 +17,15 @@ import {
 } from 'recharts';
 import { format, formatDistanceToNow } from 'date-fns';
 
-interface NewsItem {
-  title: string;
-  url: string;
-  publisher: string;
-  publishedAt: string;
-  summary: string;
-}
-
-interface YahooNewsItem {
-  title?: string;
-  link?: string;
-  url?: string;
-  publisher?: string;
-  provider?: { name?: string };
-  pubDate?: string;
-  published_at?: string;
-  summary?: string;
-  excerpt?: string;
-}
-
-interface YahooNewsResponse {
-  news?: YahooNewsItem[];
-}
-
-const createFallbackNews = (ticker: string): NewsItem[] => [
-  {
-    title: `${ticker} latest market coverage`,
-    url: `https://www.google.com/search?q=${ticker}+stock+news`,
-    publisher: 'Google News',
-    publishedAt: new Date().toISOString(),
-    summary: `Explore the most recent headlines and analysis for ${ticker}.`
-  },
-  {
-    title: `${ticker} analyst commentary roundup`,
-    url: `https://www.google.com/search?q=${ticker}+analyst+commentary`,
-    publisher: 'Market Commentary',
-    publishedAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-    summary: `Get a quick overview of how analysts are reacting to ${ticker}'s performance.`
-  },
-  {
-    title: `${ticker} sector highlights`,
-    url: `https://www.google.com/search?q=${ticker}+sector+news`,
-    publisher: 'Sector Watch',
-    publishedAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
-    summary: `Review the latest developments impacting ${ticker} and its peers.`
-  }
-];
-
 const SymbolDetail: React.FC = () => {
   const { ticker } = useParams<{ ticker: string }>();
   const normalizedTicker = (ticker || '').toUpperCase();
   const { data: marketData, isLoading } = useMarketData(normalizedTicker);
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [newsLoading, setNewsLoading] = useState(true);
-
-  useEffect(() => {
-    if (!normalizedTicker) return;
-
-    let isMounted = true;
-    const fetchNews = async () => {
-      setNewsLoading(true);
-      try {
-        const response = await fetch(
-          `https://query1.finance.yahoo.com/v1/finance/search?q=${normalizedTicker}&newsCount=6`
-        );
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch news');
-        }
-
-        const payload: YahooNewsResponse = await response.json();
-        const articles = Array.isArray(payload.news)
-          ? payload.news.slice(0, 6).map((item): NewsItem => ({
-              title: item.title || `${normalizedTicker} update`,
-              url: item.link || item.url || `https://www.google.com/search?q=${normalizedTicker}+stock`,
-              publisher: item.publisher || item.provider?.name || 'Market News',
-              publishedAt: item.pubDate || item.published_at || new Date().toISOString(),
-              summary: item.summary || item.excerpt || `Latest update related to ${normalizedTicker}.`
-            }))
-          : createFallbackNews(normalizedTicker);
-
-        if (isMounted) {
-          setNews(articles.length > 0 ? articles : createFallbackNews(normalizedTicker));
-        }
-      } catch (error) {
-        if (isMounted) {
-          setNews(createFallbackNews(normalizedTicker));
-        }
-      } finally {
-        if (isMounted) {
-          setNewsLoading(false);
-        }
-      }
-    };
-
-    fetchNews();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [normalizedTicker]);
+  const {
+    data: news,
+    isLoading: newsLoading,
+    error: newsError
+  } = useSymbolNews(normalizedTicker);
 
   const chartData = useMemo(() => {
     const basePrice = marketData?.price ?? 0;
@@ -239,6 +148,11 @@ const SymbolDetail: React.FC = () => {
             <CardTitle>Recent News</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {newsError && (
+              <p className="text-xs text-muted-foreground">
+                Showing fallback headlines while we reconnect to live news.
+              </p>
+            )}
             {newsLoading ? (
               [1, 2, 3].map((item) => (
                 <div key={item} className="space-y-2">
