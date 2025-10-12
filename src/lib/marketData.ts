@@ -370,14 +370,14 @@ export class MarketDataService {
         }));
       }
 
-      const fallback = await this.invokeMarketData<{ points: HistoricalPricePoint[] }>({
+      const fallback = await this.invokeMarketData<{ points?: HistoricalPricePoint[] }>({
         action: 'historical_range',
         symbol: normalizedTicker,
         range
       });
 
-      if (!fallback?.points) {
-        return [];
+      if (!fallback || !Array.isArray(fallback.points)) {
+        throw new Error('Unable to fetch historical prices. Please reauthenticate and try again.');
       }
 
       return fallback.points.map(point => ({
@@ -386,7 +386,9 @@ export class MarketDataService {
       }));
     } catch (error) {
       console.error('Error fetching historical prices:', error);
-      return [];
+      throw error instanceof Error
+        ? error
+        : new Error('An unknown error occurred while fetching historical prices.');
     }
   }
 
