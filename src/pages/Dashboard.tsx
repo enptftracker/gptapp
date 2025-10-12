@@ -5,9 +5,9 @@ import HoldingsTable from '@/components/dashboard/HoldingsTable';
 import { usePortfolios } from '@/hooks/usePortfolios';
 import { useTransactions } from '@/hooks/useTransactions';
 import { useConsolidatedHoldings } from '@/hooks/useHoldings';
-import { useUpdatePrices } from '@/hooks/useMarketData';
+import { PriceRefreshButton } from '@/components/dashboard/PriceRefreshButton';
 import { Button } from '@/components/ui/button';
-import { Plus, Wallet, RefreshCw } from 'lucide-react';
+import { Plus, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatCurrency } from '@/lib/calculations';
 import { cn } from '@/lib/utils';
@@ -23,7 +23,6 @@ export default function Dashboard() {
   const { data: portfolios = [], isLoading: portfoliosLoading } = usePortfolios();
   const { data: transactions = [], isLoading: transactionsLoading } = useTransactions();
   const { data: consolidatedHoldings = [], isLoading: holdingsLoading } = useConsolidatedHoldings();
-  const updatePrices = useUpdatePrices();
 
   const isLoading = portfoliosLoading || transactionsLoading || holdingsLoading;
 
@@ -171,23 +170,11 @@ export default function Dashboard() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-2">
-          <Button 
-            onClick={async () => {
-              try {
-                await updatePrices.mutateAsync();
-              } catch (error) {
-                console.error('Error updating prices:', error);
-              }
-            }}
-            disabled={updatePrices.isPending}
-            className="flex-1"
-            size="lg"
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${updatePrices.isPending ? 'animate-spin' : ''}`} />
-            {updatePrices.isPending ? t('dashboard.updating') : t('dashboard.refreshPrices')}
-          </Button>
-          <Button asChild variant="outline" size="lg" className="flex-1">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start">
+          <div className="flex-1">
+            <PriceRefreshButton />
+          </div>
+          <Button asChild variant="outline" size="lg" className="flex-1 md:self-stretch">
             <Link to="/portfolios">
               <Plus className="mr-2 h-4 w-4" />
               {t('dashboard.newPortfolio')}
