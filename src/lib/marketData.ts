@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { SUPABASE_ANON_KEY, SUPABASE_FUNCTION_URL } from '@/integrations/supabase/env';
+import { SUPABASE_ANON_KEY, resolveSupabaseFunctionUrl } from '@/integrations/supabase/env';
 import {
   FunctionsFetchError,
   FunctionsHttpError,
@@ -76,6 +76,8 @@ class MarketDataAuthorizationError extends Error {
 }
 
 class MarketDataServiceImpl {
+  static readonly PROVIDER_STORAGE_KEY = 'market-data-provider';
+
   private static async getAccessToken(): Promise<string> {
     const { data, error } = await supabase.auth.getSession();
     if (error) {
@@ -124,13 +126,7 @@ class MarketDataServiceImpl {
   }
 
   private static getFunctionUrl(): string {
-    const trimmed = SUPABASE_FUNCTION_URL?.trim();
-    if (!trimmed) {
-      throw new Error('Supabase function URL is not configured.');
-    }
-
-    const base = trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
-    return new URL('market-data', base).toString();
+    return resolveSupabaseFunctionUrl('market-data');
   }
 
   private static extractErrorMessage(payload: unknown): string | null {

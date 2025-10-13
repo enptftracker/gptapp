@@ -12,3 +12,37 @@ export const SUPABASE_ANON_KEY = anon;
 
 const functionUrl = normalizeUrl(import.meta.env.VITE_SUPABASE_FUNCTION_URL, `${SUPABASE_URL}/functions/v1`);
 export const SUPABASE_FUNCTION_URL = functionUrl;
+
+const trimSlashes = (value: string) => value.replace(/\/+$/, '').replace(/^\/+/, '');
+
+export const resolveSupabaseFunctionUrl = (functionName: string): string => {
+  const trimmed = SUPABASE_FUNCTION_URL?.trim();
+  if (!trimmed) {
+    throw new Error('Supabase function URL is not configured.');
+  }
+
+  const normalizedName = trimSlashes(functionName);
+  if (!normalizedName) {
+    throw new Error('Function name is required to resolve Supabase function URL.');
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    const url = new URL(trimmed);
+    const pathname = url.pathname.replace(/\/+$/, '');
+    if (pathname === `/${normalizedName}` || pathname.endsWith(`/${normalizedName}`)) {
+      return url.toString();
+    }
+
+    const basePath = pathname.length ? pathname : '';
+    url.pathname = `${basePath}/${normalizedName}`.replace(/\/+/g, '/');
+    return url.toString();
+  }
+
+  const normalizedBase = trimSlashes(trimmed);
+  if (normalizedBase === normalizedName || normalizedBase.endsWith(`/${normalizedName}`)) {
+    return trimmed.startsWith('/') ? `/${normalizedBase}` : normalizedBase;
+  }
+
+  const prefix = trimmed.startsWith('/') ? '' : '/';
+  return `${prefix}${normalizedBase}/${normalizedName}`;
+};
