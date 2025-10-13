@@ -1,73 +1,62 @@
-# Welcome to your Lovable project
+# Portfolio Opus
 
-## Project info
+Portfolio Opus is an investment operations workspace that brings together portfolio tracking, cash flow planning, and performance analytics. The web application is built with Vite, React, TypeScript, and Tailwind CSS, and integrates directly with Supabase for authentication, data storage, and edge functions.
 
-**URL**: https://lovable.dev/projects/b384bbd0-1d3b-4c79-b219-101a8a434a65
+## Project structure
 
-## How can I edit this code?
+- **src/** – React application code, feature modules, and reusable UI components.
+- **supabase/** – Database schema migrations and edge functions that power authenticated API access.
+- **public/** – Static assets served with the application shell defined in `index.html`.
 
-There are several ways of editing your application.
+## Local workflow
 
-**Use Lovable**
+1. **Install dependencies**
+   ```sh
+   npm install
+   ```
+2. **Configure environment** – Copy your Supabase credentials into a `.env.local` file. At minimum you need:
+   ```ini
+   VITE_SUPABASE_URL=<your-project-url>
+   VITE_SUPABASE_ANON_KEY=<your-anon-key>
+   VITE_SUPABASE_FUNCTION_URL=<optional-custom-functions-url>
+   ```
+3. **Start Supabase (optional for local edge functions)** – If you need to run the Supabase functions locally, use the Supabase CLI:
+   ```sh
+   supabase start
+   ```
+4. **Run the app**
+   ```sh
+   npm run dev
+   ```
+   The development server listens on [http://localhost:5173](http://localhost:5173) and will automatically reload as files change.
+5. **Lint and test before committing**
+   ```sh
+   npm run lint
+   npm run test
+   ```
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/b384bbd0-1d3b-4c79-b219-101a8a434a65) and start prompting.
+## Supabase functions
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
+Edge functions live in `supabase/functions`. Each function imports shared utilities from `_shared`. Deploy the latest changes by running:
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+supabase functions deploy <function-name>
 ```
+When invoking from the frontend, use the helper exported by `src/integrations/supabase/env.ts` to resolve the correct function URL.
 
-**Edit a file directly in GitHub**
+## Deployment
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+Portfolio Opus is optimized for deployment on Vercel:
 
-**Use GitHub Codespaces**
+1. Push the latest code to the main branch.
+2. Ensure the following environment variables are configured in your Vercel project:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_SUPABASE_FUNCTION_URL` (if different from the default Supabase value)
+3. Trigger a Vercel deployment. The build step runs `npm install` and `npm run build`.
+4. Deploy Supabase database migrations and functions using the Supabase CLI or dashboard to keep backend resources in sync.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Continuous improvement
 
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/b384bbd0-1d3b-4c79-b219-101a8a434a65) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+- Keep feature branches small and focused. Open a pull request once tests pass locally.
+- Use the React Query Devtools and Supabase logs during development to validate data flows.
+- Update documentation whenever you introduce a new environment variable, Supabase resource, or CLI workflow so the team can onboard quickly.
