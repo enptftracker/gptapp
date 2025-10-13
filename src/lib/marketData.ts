@@ -67,6 +67,18 @@ export class MarketDataService {
   static readonly DEFAULT_PROVIDER: MarketDataSource = 'alphavantage';
   static readonly PROVIDER_STORAGE_KEY = 'marketDataProvider';
 
+  private static setPreferredProvider(provider: MarketDataSource): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(MarketDataService.PROVIDER_STORAGE_KEY, provider);
+    } catch (error) {
+      console.error('Unable to persist provider preference:', error);
+    }
+  }
+
   private static getPreferredProvider(): MarketDataSource {
     if (typeof window === 'undefined') {
       return this.DEFAULT_PROVIDER;
@@ -98,30 +110,49 @@ export class MarketDataService {
       return this.getPreferredProvider();
     })();
 
-    const payload = { ...body, provider };
-
-    const { data, error } = await supabase.functions.invoke<T>('market-data', {
-      body: payload,
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    });
-
-    const status = (error as { status?: number } | null)?.status;
-    if (status === 401) {
-      console.warn('Market data request returned 401. Please reauthenticate.');
+    if (provider === 'yfinance') {
       return null;
     }
 
-    if (error) {
-      const message = typeof error === 'string'
-        ? error
-        : (error as { message?: string; error?: string }).message || (error as { message?: string; error?: string }).error;
+    const payload = { ...body, provider };
+    try {
+      const { data, error } = await supabase.functions.invoke<T>('market-data', {
+        body: payload,
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      });
 
-      throw new Error(message || 'Failed to fetch market data from the edge function.');
+      const status = (error as { status?: number } | null)?.status;
+      if (status === 401) {
+        console.warn('Market data request returned 401. Please reauthenticate.');
+        return null;
+      }
+
+      if (error) {
+        const message = typeof error === 'string'
+          ? error
+          : (error as { message?: string; error?: string }).message || (error as { message?: string; error?: string }).error;
+
+        if (!status || status >= 500) {
+          this.setPreferredProvider('yfinance');
+        }
+
+        throw new Error(message || 'Failed to fetch market data from the edge function.');
+      }
+
+      const payloadData = (data as T | null) ?? null;
+
+      if (payloadData !== null) {
+        this.setPreferredProvider('alphavantage');
+      }
+
+      return payloadData;
+    } catch (error) {
+      console.error('Edge function invocation failed:', error);
+      this.setPreferredProvider('yfinance');
+      return null;
     }
-
-    return (data as T | null) ?? null;
   }
 
   /**
