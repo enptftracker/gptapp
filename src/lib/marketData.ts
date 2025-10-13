@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { SUPABASE_ANON_KEY } from '@/integrations/supabase/env';
+import { SUPABASE_ANON_KEY, SUPABASE_FUNCTION_URL } from '@/integrations/supabase/env';
 import {
   FunctionsFetchError,
   FunctionsHttpError,
@@ -152,7 +152,44 @@ class MarketDataServiceImpl {
       }
 
       if (error instanceof FunctionsFetchError) {
-        throw new Error('Unable to reach the market data service. Please check your connection and try again.');
+        try {
+          const response = await fetch(`${SUPABASE_FUNCTION_URL}/market-data`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+              apikey: SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify(body)
+          });
+
+          if (!response.ok) {
+            let message = `Market data request failed (${response.status}).`;
+            try {
+              const details = await response.json();
+              if (details && typeof details === 'object' && 'error' in details) {
+                const detailMessage = (details as { error?: unknown }).error;
+                if (typeof detailMessage === 'string' && detailMessage.trim().length > 0) {
+                  message = detailMessage;
+                }
+              }
+            } catch (parseError) {
+              console.error('Failed to parse market data error response:', parseError);
+            }
+
+            throw new Error(message);
+          }
+
+          const fallbackData = (await response.json()) as T | null;
+          if (fallbackData == null) {
+            throw new Error('Market data response was empty.');
+          }
+
+          return fallbackData;
+        } catch (fetchError) {
+          console.error('Fallback market data request failed:', fetchError);
+          throw new Error('Unable to reach the market data service. Please check your connection and try again.');
+        }
       }
 
       if (error instanceof FunctionsRelayError) {
