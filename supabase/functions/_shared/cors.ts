@@ -1,5 +1,6 @@
 const defaultOrigins = [
   'https://b384bbd0-1d3b-4c79-b219-101a8a434a65.lovable.app',
+  'https://gptapp-khaki.vercel.app',
   'https://*.vercel.app',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -9,25 +10,30 @@ const defaultOrigins = [
 
 const parseOrigins = (value?: string | null): string[] =>
   (value ?? '')
-    .split(',')
+    .split(/[\s,]+/)
     .map(origin => origin.trim())
     .filter(Boolean)
 
+const stripTrailingSlashes = (value: string) => value.replace(/\/+$/g, '')
+
 const matchesWildcard = (origin: string, pattern: string) => {
-  if (pattern === '*') {
+  const normalizedOrigin = stripTrailingSlashes(origin)
+  const normalizedPattern = stripTrailingSlashes(pattern)
+
+  if (normalizedPattern === '*') {
     return true
   }
 
-  if (!pattern.includes('*')) {
-    return origin.toLowerCase() === pattern.toLowerCase()
+  if (!normalizedPattern.includes('*')) {
+    return normalizedOrigin.toLowerCase() === normalizedPattern.toLowerCase()
   }
 
-  const escaped = pattern
+  const escaped = normalizedPattern
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     .replace(/\\\*/g, '.*')
 
   const regex = new RegExp(`^${escaped}$`, 'i')
-  return regex.test(origin)
+  return regex.test(normalizedOrigin)
 }
 
 const configuredOrigins = parseOrigins(Deno.env.get('APP_ORIGIN'))
