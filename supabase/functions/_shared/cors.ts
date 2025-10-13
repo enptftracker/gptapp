@@ -49,7 +49,16 @@ const resolveOrigin = (originHeader?: string | null) => {
     if (hasExplicitConfig) {
       return configuredOrigins.find(item => item !== '*') ?? configuredOrigins[0] ?? '*'
     }
-    return '*'
+
+    const fallbackOrigin = allowedOrigins.find(
+      item => item !== '*' && !item.includes('*')
+    )
+
+    if (fallbackOrigin) {
+      return fallbackOrigin
+    }
+
+    return allowedOrigins.find(item => item !== '*') ?? '*'
   }
 
   if (allowAnyOrigin) {

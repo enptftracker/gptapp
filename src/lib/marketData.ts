@@ -1,10 +1,4 @@
 import { supabase } from '@/integrations/supabase/client';
-import { SUPABASE_ANON_KEY, resolveSupabaseFunctionUrl } from '@/integrations/supabase/env';
-import {
-  FunctionsFetchError,
-  FunctionsHttpError,
-  FunctionsRelayError
-} from '@supabase/supabase-js';
 
 export interface LiveQuote {
   symbol: string;
@@ -39,46 +33,28 @@ export interface HistoricalPricePoint {
   price: number;
 }
 
-interface QuoteResponse {
-  symbol: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  volume?: number;
-  marketCap?: number;
-  lastUpdated: string;
-  provider?: string;
-}
-
-interface RefreshResponse {
-  provider: 'yahoo';
-  totalSymbols: number;
-  updated: number;
-  failed: number;
-  errors?: PriceUpdateErrorDetail[];
-  startedAt: string;
-  completedAt: string;
-}
-
-interface PortfolioRefreshResponse extends RefreshResponse {
-  portfolioId: string;
-  quotes?: QuoteResponse[];
-}
-
-interface HistoricalResponse {
-  symbol: string;
-  range: HistoricalRange;
-  provider: 'yahoo';
-  points?: HistoricalPricePoint[];
-  error?: string;
-}
-
 export interface PortfolioPriceUpdateSummary extends PriceUpdateSummary {
   portfolioId: string;
   quotes: LiveQuote[];
 }
 
 export type PriceUpdateSummaryLike = PriceUpdateSummary | PortfolioPriceUpdateSummary;
+
+interface SymbolRecord {
+  id: string;
+  ticker: string;
+}
+
+const YAHOO_HISTORICAL_CONFIG: Record<HistoricalRange, { range: string; interval: string }> = {
+  '1D': { range: '1d', interval: '5m' },
+  '1W': { range: '5d', interval: '30m' },
+  '1M': { range: '1mo', interval: '1d' },
+  '3M': { range: '3mo', interval: '1d' },
+  '6M': { range: '6mo', interval: '1d' },
+  '1Y': { range: '1y', interval: '1d' },
+  '5Y': { range: '5y', interval: '1wk' },
+  'MAX': { range: 'max', interval: '1mo' }
+};
 
 class MarketDataAuthorizationError extends Error {
   constructor(message: string) {
@@ -89,8 +65,9 @@ class MarketDataAuthorizationError extends Error {
 
 class MarketDataServiceImpl {
   static readonly PROVIDER_STORAGE_KEY = 'market-data-provider';
+  private static readonly YAHOO_QUOTE_URL = 'https://query1.finance.yahoo.com/v7/finance/quote';
 
-  private static async getAccessToken(): Promise<string> {
+  private static async requireAuth(): Promise<void> {
     const { data, error } = await supabase.auth.getSession();
     if (error) {
       throw new MarketDataAuthorizationError('Unable to retrieve active session.');
@@ -100,214 +77,327 @@ class MarketDataServiceImpl {
     if (!token) {
       throw new MarketDataAuthorizationError('Please sign in to update market data.');
     }
-
-    return token;
   }
 
-  private static parseQuote(payload: QuoteResponse): LiveQuote {
-    return {
-      symbol: payload.symbol,
-      price: Number(payload.price),
-      change: Number(payload.change ?? 0),
-      changePercent: Number(payload.changePercent ?? 0),
-      volume: typeof payload.volume === 'number' ? payload.volume : undefined,
-      marketCap: typeof payload.marketCap === 'number' ? payload.marketCap : undefined,
-      lastUpdated: new Date(payload.lastUpdated),
-      provider: payload.provider
-    };
-  }
-
-  private static parseRefreshSummary(payload: RefreshResponse): PriceUpdateSummary {
-    return {
-      provider: 'yahoo',
-      totalSymbols: Number(payload.totalSymbols ?? 0),
-      updated: Number(payload.updated ?? 0),
-      failed: Number(payload.failed ?? 0),
-      errors: Array.isArray(payload.errors) ? payload.errors : [],
-      startedAt: new Date(payload.startedAt),
-      completedAt: new Date(payload.completedAt)
-    };
-  }
-
-  private static parsePortfolioRefreshSummary(payload: PortfolioRefreshResponse): PortfolioPriceUpdateSummary {
-    const summary = this.parseRefreshSummary(payload);
-
-    return {
-      ...summary,
-      portfolioId: payload.portfolioId,
-      quotes: Array.isArray(payload.quotes) ? payload.quotes.map(quote => this.parseQuote(quote)) : []
-    };
-  }
-
-  private static getFunctionHeaders(token: string): Record<string, string> {
-    return {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      apikey: SUPABASE_ANON_KEY
-    };
-  }
-
-  private static getFunctionUrl(): string {
-    return resolveSupabaseFunctionUrl('market-data');
-  }
-
-  private static extractErrorMessage(payload: unknown): string | null {
-    if (payload && typeof payload === 'object') {
-      const record = payload as Record<string, unknown>;
-      const errorMessage = record.error;
-      const message = record.message;
-
-      if (typeof errorMessage === 'string' && errorMessage.trim().length > 0) {
-        return errorMessage;
-      }
-
-      if (typeof message === 'string' && message.trim().length > 0) {
-        return message;
-      }
+  private static normalizeTickers(tickers?: string[]): string[] {
+    if (!Array.isArray(tickers)) {
+      return [];
     }
 
-    return null;
+    return Array.from(new Set(
+      tickers
+        .map(ticker => ticker?.toString().trim().toUpperCase())
+        .filter((ticker): ticker is string => Boolean(ticker))
+    ));
   }
 
-  private static async extractHttpErrorMessage(error: FunctionsHttpError): Promise<string | null> {
-    try {
-      if (error.context && typeof error.context.json === 'function') {
-        const details = await error.context.json();
-        return this.extractErrorMessage(details);
-      }
-    } catch (parseError) {
-      console.error('Failed to parse market data error response:', parseError);
+  private static toNumber(value: unknown): number | undefined {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : undefined;
     }
 
-    return null;
+    if (typeof value === 'string') {
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+
+    return undefined;
   }
 
-  private static tryParseJson(raw: string | null): unknown | null {
-    if (!raw) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(raw);
-    } catch (error) {
-      console.error('Failed to parse market data response JSON:', error);
-      return null;
-    }
+  private static round(value: number, digits = 4): number {
+    return Number.parseFloat(value.toFixed(digits));
   }
 
-  private static async directFunctionRequest<T>(
-    body: Record<string, unknown>,
-    token: string,
-    fallbackMessage?: string
-  ): Promise<T> {
-    const requestUrl = this.getFunctionUrl();
+  private static async fetchYahooQuote(symbol: string): Promise<LiveQuote> {
+    const url = `${this.YAHOO_QUOTE_URL}?symbols=${encodeURIComponent(symbol)}`;
     let response: Response;
 
     try {
-      response = await fetch(requestUrl, {
-        method: 'POST',
-        headers: this.getFunctionHeaders(token),
-        body: JSON.stringify(body)
-      });
-    } catch (networkError) {
-      console.error('Direct market data request failed:', networkError);
-      throw new Error(
-        fallbackMessage ?? 'Unable to reach the market data service. Please check your connection and try again.'
-      );
-    }
-
-    if (response.status === 401) {
-      throw new MarketDataAuthorizationError('Please sign in to update market data.');
-    }
-
-    const contentType = response.headers.get('content-type') ?? '';
-    let payload: unknown | null = null;
-
-    if (contentType.includes('application/json')) {
-      try {
-        payload = await response.json();
-      } catch (parseError) {
-        console.error('Failed to parse market data JSON response:', parseError);
-      }
-    } else {
-      try {
-        const textBody = await response.text();
-        payload = this.tryParseJson(textBody) ?? textBody;
-      } catch (readError) {
-        console.error('Failed to read market data response body:', readError);
-      }
+      response = await fetch(url);
+    } catch (error) {
+      console.error('Yahoo Finance quote request failed:', error);
+      throw new Error('Unable to reach the market data provider.');
     }
 
     if (!response.ok) {
-      const message = this.extractErrorMessage(payload) ??
-        fallbackMessage ??
-        `Market data request failed (${response.status}).`;
-      throw new Error(message);
+      throw new Error(`Yahoo Finance request failed (${response.status}).`);
     }
 
-    if (payload == null || typeof payload === 'string') {
-      throw new Error('Market data response was empty.');
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      console.error('Failed to parse Yahoo Finance quote response:', error);
+      throw new Error('Yahoo Finance returned an invalid response.');
     }
 
-    return payload as T;
+    const result = (payload as { quoteResponse?: { result?: unknown[] } })?.quoteResponse?.result?.[0];
+
+    if (!result) {
+      throw new Error('Yahoo Finance returned no data for the requested symbol.');
+    }
+
+    const record = result as Record<string, unknown>;
+
+    const priceCandidate = this.toNumber(
+      record['regularMarketPrice'] ?? record['postMarketPrice'] ?? record['preMarketPrice']
+    );
+
+    if (typeof priceCandidate !== 'number') {
+      throw new Error('Yahoo Finance returned an invalid price.');
+    }
+
+    const changeCandidate = this.toNumber(record['regularMarketChange']) ?? 0;
+    const changePercentCandidate = this.toNumber(record['regularMarketChangePercent']) ?? 0;
+    const volumeCandidate = this.toNumber(record['regularMarketVolume']);
+    const marketCapCandidate = this.toNumber(record['marketCap']);
+
+    const lastUpdatedSeconds = this.toNumber(
+      record['regularMarketTime'] ?? record['postMarketTime'] ?? Date.now() / 1000
+    );
+    const lastUpdated = typeof lastUpdatedSeconds === 'number'
+      ? new Date(lastUpdatedSeconds * 1000)
+      : new Date();
+
+    return {
+      symbol,
+      price: this.round(priceCandidate),
+      change: this.round(changeCandidate),
+      changePercent: this.round(changePercentCandidate),
+      volume: typeof volumeCandidate === 'number' ? volumeCandidate : undefined,
+      marketCap: typeof marketCapCandidate === 'number' ? marketCapCandidate : undefined,
+      lastUpdated,
+      provider: 'yahoo'
+    };
   }
 
-  private static async invokeFunction<T>(body: Record<string, unknown>): Promise<T> {
-    const token = await this.getAccessToken();
-    let response;
+  private static async fetchYahooHistorical(symbol: string, range: HistoricalRange): Promise<HistoricalPricePoint[]> {
+    const config = YAHOO_HISTORICAL_CONFIG[range];
+    if (!config) {
+      throw new Error('Invalid historical range supplied.');
+    }
+
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${config.range}&interval=${config.interval}&includePrePost=false&events=div%2Csplits`;
+    let response: Response;
+
     try {
-      response = await supabase.functions.invoke<T>('market-data', {
-        body,
-        headers: this.getFunctionHeaders(token)
-      });
-    } catch (invokeError) {
-      if (invokeError instanceof MarketDataAuthorizationError) {
-        throw invokeError;
-      }
-
-      console.error('Supabase function invocation failed, attempting direct fetch:', invokeError);
-      return this.directFunctionRequest<T>(body, token);
+      response = await fetch(url);
+    } catch (error) {
+      console.error('Yahoo Finance historical request failed:', error);
+      throw new Error('Unable to reach the market data provider.');
     }
 
-    const { data, error } = response;
-
-    if (!error) {
-      if (data == null) {
-        throw new Error('Market data response was empty.');
-      }
-
-      return data;
+    if (!response.ok) {
+      throw new Error(`Yahoo Finance historical request failed (${response.status}).`);
     }
 
-    if (error instanceof FunctionsHttpError) {
-      if (error.status === 401) {
-        throw new MarketDataAuthorizationError('Please sign in to update market data.');
-      }
-
-      const message = await this.extractHttpErrorMessage(error);
-      console.warn('Supabase function responded with an error, attempting direct fetch:', {
-        status: error.status,
-        message
-      });
-
-      return this.directFunctionRequest<T>(
-        body,
-        token,
-        message ?? `Market data request failed (${error.status}).`
-      );
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      console.error('Failed to parse Yahoo Finance historical response:', error);
+      throw new Error('Yahoo Finance returned an invalid response.');
     }
 
-    if (error instanceof FunctionsFetchError || error instanceof FunctionsRelayError) {
-      console.warn('Supabase function could not reach the market data service, attempting direct fetch:', error);
-      return this.directFunctionRequest<T>(body, token);
+    const result = (payload as { chart?: { result?: unknown[] } })?.chart?.result?.[0];
+
+    if (!result) {
+      throw new Error('Yahoo Finance returned no historical data.');
     }
 
-    const fallbackMessage = error && typeof error === 'object' && 'message' in error
-      ? (error as { message?: unknown }).message
+    const record = result as Record<string, unknown>;
+    const timestamps = Array.isArray(record['timestamp']) ? record['timestamp'] : [];
+    const indicators = record['indicators'] as Record<string, unknown> | undefined;
+    const quoteIndicator = indicators?.['quote'] as Array<Record<string, unknown>> | undefined;
+    const adjIndicator = indicators?.['adjclose'] as Array<Record<string, unknown>> | undefined;
+    const quoteSeries = Array.isArray(quoteIndicator?.[0]?.['close'])
+      ? (quoteIndicator![0]!['close'] as Array<number | null>)
+      : undefined;
+    const adjSeries = Array.isArray(adjIndicator?.[0]?.['adjclose'])
+      ? (adjIndicator![0]!['adjclose'] as Array<number | null>)
       : undefined;
 
-    console.warn('Unexpected Supabase function error, attempting direct fetch:', error);
-    return this.directFunctionRequest<T>(body, token, typeof fallbackMessage === 'string' ? fallbackMessage : undefined);
+    const series = Array.isArray(quoteSeries) && quoteSeries.some(value => typeof value === 'number')
+      ? quoteSeries
+      : adjSeries;
+
+    if (!Array.isArray(series)) {
+      throw new Error('Yahoo Finance returned incomplete historical data.');
+    }
+
+    const points: HistoricalPricePoint[] = [];
+
+    timestamps.forEach((timestamp, index) => {
+      if (typeof timestamp !== 'number') {
+        return;
+      }
+
+      const price = series[index];
+      if (typeof price !== 'number' || Number.isNaN(price)) {
+        return;
+      }
+
+      points.push({
+        time: new Date(timestamp * 1000).toISOString(),
+        price: this.round(price)
+      });
+    });
+
+    return points;
+  }
+
+  private static async persistQuote(symbolId: string, quote: LiveQuote): Promise<void> {
+    const { error } = await supabase.rpc('upsert_price_cache_entry', {
+      p_symbol_id: symbolId,
+      p_price: quote.price,
+      p_price_currency: 'USD',
+      p_change_24h: quote.change,
+      p_change_percent_24h: quote.changePercent,
+      p_asof: quote.lastUpdated.toISOString()
+    });
+
+    if (error) {
+      throw new Error(error.message ?? 'Failed to persist quote.');
+    }
+  }
+
+  private static mapSymbolRecords(records: Array<{ id?: string | null; ticker?: string | null }> | null): SymbolRecord[] {
+    return (records ?? [])
+      .filter((record): record is { id: string; ticker: string } =>
+        typeof record?.id === 'string' &&
+        record.id.length > 0 &&
+        typeof record?.ticker === 'string' &&
+        record.ticker.length > 0
+      )
+      .map(record => ({
+        id: record.id,
+        ticker: record.ticker.toUpperCase()
+      }));
+  }
+
+  private static async loadSymbolsByIds(ids: string[]): Promise<SymbolRecord[]> {
+    if (!ids.length) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('symbols')
+      .select('id, ticker')
+      .in('id', ids)
+      .order('ticker');
+
+    if (error) {
+      console.error('Failed to load symbols by id:', error);
+      throw new Error('Unable to load symbols for the current user.');
+    }
+
+    return this.mapSymbolRecords(data);
+  }
+
+  private static async loadSymbolsForTickers(tickers: string[]): Promise<{ symbols: SymbolRecord[]; missing: string[] }> {
+    if (!tickers.length) {
+      return { symbols: [], missing: [] };
+    }
+
+    const { data, error } = await supabase
+      .from('symbols')
+      .select('id, ticker')
+      .in('ticker', tickers)
+      .order('ticker');
+
+    if (error) {
+      console.error('Failed to load symbols for tickers:', error);
+      throw new Error('Unable to load symbols for the current user.');
+    }
+
+    const symbols = this.mapSymbolRecords(data);
+    const foundTickers = new Set(symbols.map(symbol => symbol.ticker.toUpperCase()));
+    const missing = tickers.filter(ticker => !foundTickers.has(ticker.toUpperCase()));
+
+    return { symbols, missing };
+  }
+
+  private static async loadSymbolsFromPositions(): Promise<SymbolRecord[]> {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('symbol_id')
+      .not('symbol_id', 'is', null);
+
+    if (error) {
+      console.error('Failed to load positions for price refresh:', error);
+      throw new Error('Unable to load portfolio positions.');
+    }
+
+    const ids = Array.from(new Set(
+      (data ?? [])
+        .map(entry => (entry as { symbol_id?: string | null }).symbol_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    ));
+
+    return this.loadSymbolsByIds(ids);
+  }
+
+  private static async loadSymbolsForPortfolio(portfolioId: string): Promise<SymbolRecord[]> {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('symbol_id')
+      .eq('portfolio_id', portfolioId)
+      .not('symbol_id', 'is', null);
+
+    if (error) {
+      console.error(`Failed to load symbols for portfolio ${portfolioId}:`, error);
+      throw new Error('Unable to load portfolio symbols.');
+    }
+
+    const ids = Array.from(new Set(
+      (data ?? [])
+        .map(entry => (entry as { symbol_id?: string | null }).symbol_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    ));
+
+    return this.loadSymbolsByIds(ids);
+  }
+
+  private static async refreshQuotesForSymbols(
+    symbols: SymbolRecord[],
+    options?: { includeQuotes?: boolean; missingTickers?: string[] }
+  ): Promise<{ summary: PriceUpdateSummary; quotes: LiveQuote[] }> {
+    const startedAt = new Date();
+    const errors: PriceUpdateErrorDetail[] = (options?.missingTickers ?? []).map(ticker => ({
+      ticker,
+      message: 'Symbol not found for current user.'
+    }));
+    const quotes: LiveQuote[] = [];
+    let updated = 0;
+
+    for (const symbol of symbols) {
+      try {
+        const quote = await this.fetchYahooQuote(symbol.ticker);
+        await this.persistQuote(symbol.id, quote);
+        updated += 1;
+        if (options?.includeQuotes) {
+          quotes.push(quote);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to refresh quote.';
+        errors.push({ ticker: symbol.ticker, message });
+        console.error(`Failed to refresh ${symbol.ticker}:`, message);
+      }
+    }
+
+    const completedAt = new Date();
+
+    const summary: PriceUpdateSummary = {
+      provider: 'yahoo',
+      totalSymbols: symbols.length,
+      updated,
+      failed: errors.length,
+      errors,
+      startedAt,
+      completedAt
+    };
+
+    return { summary, quotes };
   }
 
   static async getMarketData(ticker: string): Promise<LiveQuote | null> {
@@ -316,21 +406,36 @@ class MarketDataServiceImpl {
       return null;
     }
 
+    await this.requireAuth();
+
+    const { data: symbolRecord, error: symbolError } = await supabase
+      .from('symbols')
+      .select('id')
+      .eq('ticker', normalized)
+      .maybeSingle();
+
+    if (symbolError) {
+      console.error(`Failed to load symbol record for ${normalized}:`, symbolError);
+    }
+
     try {
-      const payload = await this.invokeFunction<QuoteResponse>({ action: 'quote', symbol: normalized });
-      return this.parseQuote(payload);
+      const quote = await this.fetchYahooQuote(normalized);
+
+      if (symbolRecord?.id) {
+        try {
+          await this.persistQuote(symbolRecord.id, quote);
+        } catch (persistError) {
+          console.warn(`Failed to persist quote for ${normalized}:`, persistError);
+        }
+      }
+
+      return quote;
     } catch (error) {
       if (error instanceof MarketDataAuthorizationError) {
         throw error;
       }
 
       console.error('Live quote fetch failed, attempting to load cached data:', error);
-
-      const { data: symbolRecord } = await supabase
-        .from('symbols')
-        .select('id')
-        .eq('ticker', normalized)
-        .maybeSingle();
 
       if (!symbolRecord?.id) {
         return null;
@@ -359,21 +464,18 @@ class MarketDataServiceImpl {
   }
 
   static async refreshPrices(tickers?: string[]): Promise<PriceUpdateSummary> {
-    const normalized = Array.isArray(tickers)
-      ? Array.from(new Set(
-          tickers
-            .map(ticker => ticker?.toString().trim().toUpperCase())
-            .filter((ticker): ticker is string => Boolean(ticker))
-        ))
-      : [];
+    await this.requireAuth();
 
-    const payload: Record<string, unknown> = { action: 'refresh_prices' };
+    const normalized = this.normalizeTickers(tickers);
     if (normalized.length) {
-      payload.symbols = normalized;
+      const { symbols, missing } = await this.loadSymbolsForTickers(normalized);
+      const { summary } = await this.refreshQuotesForSymbols(symbols, { missingTickers: missing });
+      return summary;
     }
 
-    const response = await this.invokeFunction<RefreshResponse>(payload);
-    return this.parseRefreshSummary(response);
+    const symbols = await this.loadSymbolsFromPositions();
+    const { summary } = await this.refreshQuotesForSymbols(symbols);
+    return summary;
   }
 
   static async refreshAllPrices(): Promise<PriceUpdateSummary> {
@@ -390,12 +492,16 @@ class MarketDataServiceImpl {
       throw new Error('Portfolio ID is required for refreshing prices.');
     }
 
-    const response = await this.invokeFunction<PortfolioRefreshResponse>({
-      action: 'portfolio_prices',
-      portfolioId: normalized
-    });
+    await this.requireAuth();
 
-    return this.parsePortfolioRefreshSummary(response);
+    const symbols = await this.loadSymbolsForPortfolio(normalized);
+    const { summary, quotes } = await this.refreshQuotesForSymbols(symbols, { includeQuotes: true });
+
+    return {
+      ...summary,
+      portfolioId: normalized,
+      quotes
+    };
   }
 
   static async getHistoricalPrices(ticker: string, range: HistoricalRange): Promise<HistoricalPricePoint[]> {
@@ -404,17 +510,9 @@ class MarketDataServiceImpl {
       return [];
     }
 
-    const payload = await this.invokeFunction<HistoricalResponse>({
-      action: 'historical',
-      symbol: normalized,
-      range
-    });
+    await this.requireAuth();
 
-    if (payload.error) {
-      throw new Error(payload.error);
-    }
-
-    return Array.isArray(payload.points) ? payload.points : [];
+    return this.fetchYahooHistorical(normalized, range);
   }
 
   static async searchSymbols(query: string): Promise<Array<{ ticker: string; name: string; type: string }>> {
@@ -474,3 +572,4 @@ class MarketDataServiceImpl {
 }
 
 export const MarketDataService = MarketDataServiceImpl;
+
