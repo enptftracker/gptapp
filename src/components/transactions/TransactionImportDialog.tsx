@@ -317,6 +317,7 @@ export default function TransactionImportDialog({
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [selectedRows, setSelectedRows] = useState<Record<number, boolean>>({});
   const [currentPage, setCurrentPage] = useState(1);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
   const selectedCount = parsedTransactions.reduce((total, _item, index) => {
     return total + (selectedRows[index] ? 1 : 0);
@@ -330,6 +331,7 @@ export default function TransactionImportDialog({
     setIsParsing(true);
     setParseMessages([]);
     setImportErrors([]);
+    setImportWarnings([]);
     setParsedTransactions([]);
     setSelectedRows({});
     setCurrentPage(1);
@@ -377,6 +379,7 @@ export default function TransactionImportDialog({
     setParsedTransactions([]);
     setParseMessages([]);
     setImportErrors([]);
+    setImportWarnings([]);
     setIsParsing(false);
     setIsImporting(false);
     setSelectedRows({});
@@ -408,19 +411,30 @@ export default function TransactionImportDialog({
 
     setIsImporting(true);
     setImportErrors([]);
+    setImportWarnings([]);
 
     const failures: string[] = [];
+    const warnings: string[] = [];
     let successCount = 0;
 
     try {
       for (const item of rowsToImport) {
         try {
+          const identifier = item.ticker ? `${item.actionLabel} ${item.ticker}` : item.actionLabel;
+          const rowWarnings: string[] = [];
+
           let symbolId: string | undefined;
 
           if (item.ticker) {
             const symbol = await symbolService.findOrCreate(item.ticker, 'EQUITY', item.tradeCurrency);
             symbolId = symbol.id;
-            await MarketDataService.updatePriceCache(symbolId, item.ticker);
+            try {
+              await MarketDataService.updatePriceCache(symbolId, item.ticker);
+            } catch (error) {
+              console.error('Price refresh failed during import', error);
+              const reason = error instanceof Error ? error.message : 'Unknown error';
+              rowWarnings.push(`Unable to refresh price data: ${reason}`);
+            }
           }
 
           await transactionService.create({
@@ -437,6 +451,12 @@ export default function TransactionImportDialog({
           });
 
           successCount += 1;
+
+          if (rowWarnings.length > 0) {
+            rowWarnings.forEach(warning => {
+              warnings.push(`${identifier}: ${warning}`);
+            });
+          }
         } catch (error) {
           console.error('Transaction import failed', error);
           const reason = error instanceof Error ? error.message : 'Unknown error';
@@ -464,6 +484,14 @@ export default function TransactionImportDialog({
         });
       }
 
+      if (warnings.length > 0) {
+        setImportWarnings(warnings);
+        toast({
+          title: 'Import completed with warnings',
+          description: `${warnings.length} price update${warnings.length === 1 ? '' : 's'} failed during import.`
+        });
+      }
+
       if (failures.length > 0) {
         setImportErrors(failures);
         toast({
@@ -471,7 +499,7 @@ export default function TransactionImportDialog({
           description: `${failures.length} row${failures.length === 1 ? '' : 's'} failed.`,
           variant: 'destructive'
         });
-      } else {
+      } else if (warnings.length === 0) {
         handleOpenChange(false);
       }
     } finally {
@@ -599,7 +627,7 @@ export default function TransactionImportDialog({
     );
   };
 
-  const renderMessages = (messages: string[], title: string, variant: 'info' | 'error') => {
+  const renderMessages = (messages: string[], title: string, variant: 'info' | 'warning' | 'error') => {
     if (messages.length === 0) return null;
 
     const displayMessages = messages.slice(0, MAX_MESSAGES);
@@ -610,13 +638,19 @@ export default function TransactionImportDialog({
         className={
           variant === 'error'
             ? 'rounded-md border border-destructive/40 bg-destructive/10 p-3'
-            : 'rounded-md border border-muted p-3'
+            : variant === 'warning'
+              ? 'rounded-md border border-amber-200 bg-amber-50 p-3'
+              : 'rounded-md border border-muted p-3'
         }
       >
         <p
           className={cn(
             'text-sm font-medium',
-            variant === 'error' ? 'text-destructive' : 'text-foreground'
+            variant === 'error'
+              ? 'text-destructive'
+              : variant === 'warning'
+                ? 'text-amber-900'
+                : 'text-foreground'
           )}
         >
           {title}
@@ -676,6 +710,8 @@ export default function TransactionImportDialog({
           {renderReview()}
 
           {renderMessages(parseMessages, `Rows skipped (${parseMessages.length})`, 'info')}
+
+          {renderMessages(importWarnings, `Import warnings (${importWarnings.length})`, 'warning')}
 
           {renderMessages(importErrors, `Import errors (${importErrors.length})`, 'error')}
         </div>
