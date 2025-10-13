@@ -485,25 +485,19 @@ Deno.serve(async (req) => {
       return withCors(jsonResponse({ error: 'Invalid JSON body.' }, { status: 400 }), corsHeaders);
     }
 
-    if (action === 'status') {
-      return new Response(
-        JSON.stringify({
-          alphaConfigured: Boolean(Deno.env.get('ALPHAVANTAGE_API_KEY')),
-          serviceRoleConfigured: Boolean(serviceRoleKey),
-          anonKeyConfigured: Boolean(anonKey)
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
-    }
+    const providerInput = (payload as { provider?: string }).provider;
+    const preferredProvider = normalizeProvider(providerInput) ?? undefined;
 
-    if (action === 'quote') {
-      if (typeof symbol !== 'string' || symbol.trim().length === 0) {
-        return new Response(JSON.stringify({ error: 'Symbol is required' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+    switch (payload.action) {
+      case 'status': {
+        return withCors(
+          jsonResponse({
+            alphaConfigured: Boolean(Deno.env.get('ALPHAVANTAGE_API_KEY')),
+            serviceRoleConfigured: Boolean(serviceRoleKey),
+            anonKeyConfigured: Boolean(anonKey)
+          }),
+          corsHeaders
+        );
       }
 
       case 'quote': {
