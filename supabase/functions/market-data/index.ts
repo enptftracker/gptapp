@@ -62,7 +62,20 @@ interface HistoricalDailyResult {
   points: HistoricalDailyPoint[]
 }
 
+type MarketProvider = 'alphavantage' | 'yfinance'
+
 const MAX_HISTORICAL_POINTS = 3652
+
+const ALPHAVANTAGE_RANGE_DAY_LIMIT: Record<HistoricalRange, number | null> = {
+  '1D': 1,
+  '1W': 7,
+  '1M': 31,
+  '3M': 93,
+  '6M': 186,
+  '1Y': 372,
+  '5Y': 1860,
+  'MAX': null
+}
 
 async function fetchYahooQuote(symbol: string): Promise<any> {
   console.log(`Fetching Yahoo Finance data for ${symbol}`)
@@ -233,6 +246,61 @@ async function fetchYahooHistoricalRange(symbol: string, range: HistoricalRange)
   }
 }
 
+function normalizeProvider(input: unknown): MarketProvider {
+  return input === 'yfinance' ? 'yfinance' : 'alphavantage'
+}
+
+function mapAlphaVantageSeriesToRange(
+  series: HistoricalDailyPoint[],
+  range: HistoricalRange
+): { time: string; price: number }[] {
+  const limit = ALPHAVANTAGE_RANGE_DAY_LIMIT[range]
+  const trimmed = limit ? series.slice(-limit) : series
+
+  return trimmed.map(point => ({
+    time: `${point.date}T00:00:00Z`,
+    price: point.price
+  }))
+}
+
+async function fetchAlphaVantageHistoricalRange(symbol: string, range: HistoricalRange) {
+  const daily = await fetchAlphaVantageDailySeries(symbol)
+  const points = mapAlphaVantageSeriesToRange(daily.points, range)
+
+  if (!points.length) {
+    throw new Error(`AlphaVantage returned no data points for ${symbol}`)
+  }
+
+  return {
+    symbol: symbol.toUpperCase(),
+    currency: 'USD',
+    range,
+    points: points.slice(-800)
+  }
+}
+
+async function fetchPreferredQuote(symbol: string, provider: MarketProvider) {
+  if (provider === 'yfinance') {
+    try {
+      const yahooData = await fetchYahooQuote(symbol)
+      return { data: yahooData, source: 'yahoo' as const }
+    } catch (error) {
+      console.error(`Yahoo Finance quote failed for ${symbol}, retrying with AlphaVantage:`, error)
+      const alphaData = await fetchAlphaVantageQuote(symbol)
+      return { data: alphaData, source: 'alphavantage' as const }
+    }
+  }
+
+  try {
+    const alphaData = await fetchAlphaVantageQuote(symbol)
+    return { data: alphaData, source: 'alphavantage' as const }
+  } catch (error) {
+    console.error(`AlphaVantage quote failed for ${symbol}, retrying with Yahoo Finance:`, error)
+    const yahooData = await fetchYahooQuote(symbol)
+    return { data: yahooData, source: 'yahoo' as const }
+  }
+}
+
 async function fetchAlphaVantageQuote(symbol: string): Promise<any> {
   const apiKey = Deno.env.get('ALPHAVANTAGE_API_KEY')
   if (!apiKey) {
@@ -330,7 +398,11 @@ async function fetchAlphaVantageDailySeries(symbol: string): Promise<HistoricalD
   }
 }
 
-async function upsertHistoricalSeries(symbol: string, client: SupabaseClient): Promise<{ count: number; source: 'alphavantage' | 'yahoo' }> {
+async function upsertHistoricalSeries(
+  symbol: string,
+  client: SupabaseClient,
+  preferredProvider: MarketProvider
+): Promise<{ count: number; source: 'alphavantage' | 'yahoo' }> {
   const normalizedSymbol = symbol.trim().toUpperCase()
 
   const { data: symbolData, error: symbolError } = await client
@@ -349,11 +421,20 @@ async function upsertHistoricalSeries(symbol: string, client: SupabaseClient): P
 
   let fetchResult: HistoricalDailyResult
 
-  try {
-    fetchResult = await fetchAlphaVantageDailySeries(normalizedSymbol)
-  } catch (error) {
-    console.error(`AlphaVantage historical fetch failed for ${normalizedSymbol}:`, error)
-    fetchResult = await fetchYahooDailySeries(normalizedSymbol)
+  if (preferredProvider === 'yfinance') {
+    try {
+      fetchResult = await fetchYahooDailySeries(normalizedSymbol)
+    } catch (error) {
+      console.error(`Yahoo historical fetch failed for ${normalizedSymbol}:`, error)
+      fetchResult = await fetchAlphaVantageDailySeries(normalizedSymbol)
+    }
+  } else {
+    try {
+      fetchResult = await fetchAlphaVantageDailySeries(normalizedSymbol)
+    } catch (error) {
+      console.error(`AlphaVantage historical fetch failed for ${normalizedSymbol}:`, error)
+      fetchResult = await fetchYahooDailySeries(normalizedSymbol)
+    }
   }
 
   const tenYearsAgo = new Date()
@@ -436,7 +517,9 @@ Deno.serve(async (req) => {
       return unauthorizedResponse()
     }
 
-    const { action, symbol, symbols, range } = await req.json()
+    const { action, symbol, symbols, range, provider } = await req.json()
+
+    const preferredProvider = normalizeProvider(provider)
 
     if (typeof action !== 'string') {
       return new Response(JSON.stringify({ error: 'Invalid action' }), {
@@ -455,13 +538,7 @@ Deno.serve(async (req) => {
 
       const normalizedSymbol = symbol.trim().toUpperCase()
 
-      let marketData
-      try {
-        marketData = await fetchAlphaVantageQuote(normalizedSymbol)
-      } catch (error) {
-        console.error(`AlphaVantage failed for ${normalizedSymbol}, trying Yahoo:`, error)
-        marketData = await fetchYahooQuote(normalizedSymbol)
-      }
+      const { data: marketData } = await fetchPreferredQuote(normalizedSymbol, preferredProvider)
 
       const { data: symbolData } = await adminClient
         .from('symbols')
@@ -534,7 +611,7 @@ Deno.serve(async (req) => {
       for (let index = 0; index < sanitizedSymbols.length; index++) {
         const symbolItem = sanitizedSymbols[index]
         try {
-          const marketData = await fetchAlphaVantageQuote(symbolItem.ticker)
+          const { data: marketData, source } = await fetchPreferredQuote(symbolItem.ticker, preferredProvider)
 
           const { error } = await adminClient
             .from('price_cache')
@@ -551,36 +628,14 @@ Deno.serve(async (req) => {
             console.error(`Error updating price cache for ${symbolItem.ticker}:`, error)
           }
 
-          results.push({ symbol: symbolItem.ticker, success: true, data: marketData })
+          results.push({ symbol: symbolItem.ticker, success: true, data: marketData, source })
 
           if (index < sanitizedSymbols.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 12000))
           }
         } catch (error) {
-          console.error(`Error fetching data for ${symbolItem.ticker}:`, error)
-          try {
-            const yahooData = await fetchYahooQuote(symbolItem.ticker)
-
-            const { error: updateError } = await adminClient
-              .from('price_cache')
-              .upsert({
-                symbol_id: symbolItem.id,
-                price: yahooData.price,
-                price_currency: 'USD',
-                change_24h: yahooData.change,
-                change_percent_24h: yahooData.changePercent,
-                asof: new Date().toISOString()
-              }, { onConflict: 'symbol_id' })
-
-            if (updateError) {
-              console.error(`Error updating price cache for ${symbolItem.ticker} (Yahoo):`, updateError)
-            }
-
-            results.push({ symbol: symbolItem.ticker, success: true, data: yahooData, source: 'yahoo' })
-          } catch (yahooError) {
-            const fallbackError = yahooError instanceof Error ? yahooError.message : String(yahooError)
-            results.push({ symbol: symbolItem.ticker, success: false, error: fallbackError })
-          }
+          const fallbackError = error instanceof Error ? error.message : String(error)
+          results.push({ symbol: symbolItem.ticker, success: false, error: fallbackError })
         }
       }
 
@@ -616,18 +671,28 @@ Deno.serve(async (req) => {
       const normalizedSymbol = symbol.trim().toUpperCase()
       const normalizedRange = normalizedRangeInput as HistoricalRange
 
-      try {
-        const historical = await fetchYahooHistoricalRange(normalizedSymbol, normalizedRange)
-        return new Response(JSON.stringify(historical), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
-      } catch (error) {
-        console.error(`Historical data fetch failed for ${normalizedSymbol}:`, error)
-        return new Response(JSON.stringify({ error: (error as Error).message }), {
-          status: 502,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+      const providerOrder: MarketProvider[] = preferredProvider === 'yfinance'
+        ? ['yfinance', 'alphavantage']
+        : ['alphavantage', 'yfinance']
+
+      for (const providerOption of providerOrder) {
+        try {
+          const historical = providerOption === 'alphavantage'
+            ? await fetchAlphaVantageHistoricalRange(normalizedSymbol, normalizedRange)
+            : await fetchYahooHistoricalRange(normalizedSymbol, normalizedRange)
+
+          return new Response(JSON.stringify(historical), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (error) {
+          console.error(`Historical data fetch failed for ${normalizedSymbol} via ${providerOption}:`, error)
+        }
       }
+
+      return new Response(JSON.stringify({ error: 'Unable to fetch historical data from available providers.' }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
     if (action === 'historical') {
@@ -648,7 +713,7 @@ Deno.serve(async (req) => {
       for (let index = 0; index < targets.length; index++) {
         const ticker = targets[index]
         try {
-          const summary = await upsertHistoricalSeries(ticker, adminClient)
+          const summary = await upsertHistoricalSeries(ticker, adminClient, preferredProvider)
           results.push({ symbol: ticker, success: true, count: summary.count, source: summary.source })
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)

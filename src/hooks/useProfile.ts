@@ -8,6 +8,7 @@ export interface UserProfile {
   base_currency: string;
   timezone: string;
   default_lot_method: 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
+  market_data_provider: 'alphavantage' | 'yfinance';
   created_at: string;
   updated_at: string;
 }
