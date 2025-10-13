@@ -11,7 +11,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { SymbolSearch } from '@/components/ui/symbol-search';
 import { useCreateTransaction, useUpdateTransaction } from '@/hooks/useTransactions';
 import { symbolService, Transaction } from '@/lib/supabase';
-import { MarketDataService } from '@/lib/marketData';
 import { Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -88,9 +87,6 @@ export default function TransactionForm({
         'EQUITY',
         data.tradeCurrency
       );
-
-      // Update price cache with current market data
-      await MarketDataService.updatePriceCache(symbol.id, data.ticker);
 
       if (existingTransaction) {
         // Update existing transaction

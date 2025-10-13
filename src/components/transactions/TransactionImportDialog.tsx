@@ -23,7 +23,6 @@ import {
 } from '@/components/ui/pagination';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { parseCsvFile } from '@/lib/csv';
-import { MarketDataService } from '@/lib/marketData';
 import { formatCurrency } from '@/lib/calculations';
 import { useToast } from '@/hooks/use-toast';
 import { symbolService, transactionService, Transaction } from '@/lib/supabase';
@@ -317,7 +316,6 @@ export default function TransactionImportDialog({
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [selectedRows, setSelectedRows] = useState<Record<number, boolean>>({});
   const [currentPage, setCurrentPage] = useState(1);
-  const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
   const selectedCount = parsedTransactions.reduce((total, _item, index) => {
     return total + (selectedRows[index] ? 1 : 0);
@@ -331,7 +329,6 @@ export default function TransactionImportDialog({
     setIsParsing(true);
     setParseMessages([]);
     setImportErrors([]);
-    setImportWarnings([]);
     setParsedTransactions([]);
     setSelectedRows({});
     setCurrentPage(1);
@@ -379,7 +376,6 @@ export default function TransactionImportDialog({
     setParsedTransactions([]);
     setParseMessages([]);
     setImportErrors([]);
-    setImportWarnings([]);
     setIsParsing(false);
     setIsImporting(false);
     setSelectedRows({});
@@ -411,30 +407,20 @@ export default function TransactionImportDialog({
 
     setIsImporting(true);
     setImportErrors([]);
-    setImportWarnings([]);
 
     const failures: string[] = [];
-    const warnings: string[] = [];
     let successCount = 0;
 
     try {
       for (const item of rowsToImport) {
         try {
           const identifier = item.ticker ? `${item.actionLabel} ${item.ticker}` : item.actionLabel;
-          const rowWarnings: string[] = [];
 
           let symbolId: string | undefined;
 
           if (item.ticker) {
             const symbol = await symbolService.findOrCreate(item.ticker, 'EQUITY', item.tradeCurrency);
             symbolId = symbol.id;
-            try {
-              await MarketDataService.updatePriceCache(symbolId, item.ticker);
-            } catch (error) {
-              console.error('Price refresh failed during import', error);
-              const reason = error instanceof Error ? error.message : 'Unknown error';
-              rowWarnings.push(`Unable to refresh price data: ${reason}`);
-            }
           }
 
           await transactionService.create({
@@ -452,11 +438,6 @@ export default function TransactionImportDialog({
 
           successCount += 1;
 
-          if (rowWarnings.length > 0) {
-            rowWarnings.forEach(warning => {
-              warnings.push(`${identifier}: ${warning}`);
-            });
-          }
         } catch (error) {
           console.error('Transaction import failed', error);
           const reason = error instanceof Error ? error.message : 'Unknown error';
@@ -484,14 +465,6 @@ export default function TransactionImportDialog({
         });
       }
 
-      if (warnings.length > 0) {
-        setImportWarnings(warnings);
-        toast({
-          title: 'Import completed with warnings',
-          description: `${warnings.length} price update${warnings.length === 1 ? '' : 's'} failed during import.`
-        });
-      }
-
       if (failures.length > 0) {
         setImportErrors(failures);
         toast({
@@ -499,7 +472,7 @@ export default function TransactionImportDialog({
           description: `${failures.length} row${failures.length === 1 ? '' : 's'} failed.`,
           variant: 'destructive'
         });
-      } else if (warnings.length === 0) {
+      } else {
         handleOpenChange(false);
       }
     } finally {
@@ -710,8 +683,6 @@ export default function TransactionImportDialog({
           {renderReview()}
 
           {renderMessages(parseMessages, `Rows skipped (${parseMessages.length})`, 'info')}
-
-          {renderMessages(importWarnings, `Import warnings (${importWarnings.length})`, 'warning')}
 
           {renderMessages(importErrors, `Import errors (${importErrors.length})`, 'error')}
         </div>

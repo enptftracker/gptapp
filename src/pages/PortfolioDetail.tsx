@@ -11,7 +11,6 @@ import { usePortfolioHoldings, usePortfolioMetrics } from '@/hooks/useHoldings';
 import HoldingsTable from '@/components/dashboard/HoldingsTable';
 import TransactionHistory from '@/components/transactions/TransactionHistory';
 import TransactionForm from '@/components/transactions/TransactionForm';
-import { PriceRefreshButton } from '@/components/dashboard/PriceRefreshButton';
 import MetricCard from '@/components/dashboard/MetricCard';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { HistoricalValueChart } from '@/components/analytics/HistoricalValueChart';
@@ -118,7 +117,6 @@ export default function PortfolioDetail() {
           </div>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <PriceRefreshButton portfolioId={portfolio.id} />
           <TransactionForm
             portfolios={[portfolio]}
             defaultPortfolioId={portfolio.id}
