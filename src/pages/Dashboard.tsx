@@ -5,7 +5,6 @@ import HoldingsTable from '@/components/dashboard/HoldingsTable';
 import { usePortfolios } from '@/hooks/usePortfolios';
 import { useTransactions } from '@/hooks/useTransactions';
 import { useConsolidatedHoldings } from '@/hooks/useHoldings';
-import { PriceRefreshButton } from '@/components/dashboard/PriceRefreshButton';
 import { Button } from '@/components/ui/button';
 import { Plus, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -171,10 +170,7 @@ export default function Dashboard() {
 
         {/* Action Buttons */}
         <div className="flex flex-col gap-3 md:flex-row md:items-start">
-          <div className="flex-1">
-            <PriceRefreshButton />
-          </div>
-          <Button asChild variant="outline" size="lg" className="flex-1 md:self-stretch">
+          <Button asChild variant="outline" size="lg" className="w-full md:w-auto md:self-stretch">
             <Link to="/portfolios">
               <Plus className="mr-2 h-4 w-4" />
               {t('dashboard.newPortfolio')}

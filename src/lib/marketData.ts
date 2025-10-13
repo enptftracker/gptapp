@@ -11,38 +11,11 @@ export interface LiveQuote {
   provider?: string;
 }
 
-export interface PriceUpdateErrorDetail {
-  ticker: string;
-  message: string;
-}
-
-export interface PriceUpdateSummary {
-  provider: 'alphavantage';
-  totalSymbols: number;
-  updated: number;
-  failed: number;
-  errors: PriceUpdateErrorDetail[];
-  startedAt: Date;
-  completedAt: Date;
-}
-
 export type HistoricalRange = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX';
 
 export interface HistoricalPricePoint {
   time: string;
   price: number;
-}
-
-export interface PortfolioPriceUpdateSummary extends PriceUpdateSummary {
-  portfolioId: string;
-  quotes: LiveQuote[];
-}
-
-export type PriceUpdateSummaryLike = PriceUpdateSummary | PortfolioPriceUpdateSummary;
-
-interface SymbolRecord {
-  id: string;
-  ticker: string;
 }
 
 class MarketDataAuthorizationError extends Error {
@@ -67,18 +40,6 @@ class MarketDataServiceImpl {
     if (!token) {
       throw new MarketDataAuthorizationError('Please sign in to update market data.');
     }
-  }
-
-  private static normalizeTickers(tickers?: string[]): string[] {
-    if (!Array.isArray(tickers)) {
-      return [];
-    }
-
-    return Array.from(new Set(
-      tickers
-        .map(ticker => ticker?.toString().trim().toUpperCase())
-        .filter((ticker): ticker is string => Boolean(ticker))
-    ));
   }
 
   private static toNumber(value: unknown): number | undefined {
@@ -313,8 +274,6 @@ class MarketDataServiceImpl {
       console.error('Alpha Vantage daily request failed:', error);
       throw new Error('Unable to reach the market data provider.');
     }
-  }
-
     if (!response.ok) {
       throw new Error(`Alpha Vantage daily request failed (${response.status}).`);
     }
@@ -356,160 +315,6 @@ class MarketDataServiceImpl {
     return entries;
   }
 
-  private static async persistQuote(symbolId: string, quote: LiveQuote): Promise<void> {
-    const { error } = await supabase.rpc('upsert_price_cache_entry', {
-      p_symbol_id: symbolId,
-      p_price: quote.price,
-      p_price_currency: 'USD',
-      p_change_24h: quote.change,
-      p_change_percent_24h: quote.changePercent,
-      p_asof: quote.lastUpdated.toISOString()
-    });
-
-    if (error) {
-      throw new Error(error.message ?? 'Failed to persist quote.');
-    }
-  }
-
-  private static mapSymbolRecords(records: Array<{ id?: string | null; ticker?: string | null }> | null): SymbolRecord[] {
-    return (records ?? [])
-      .filter((record): record is { id: string; ticker: string } =>
-        typeof record?.id === 'string' &&
-        record.id.length > 0 &&
-        typeof record?.ticker === 'string' &&
-        record.ticker.length > 0
-      )
-      .map(record => ({
-        id: record.id,
-        ticker: record.ticker.toUpperCase()
-      }));
-  }
-
-  private static async loadSymbolsByIds(ids: string[]): Promise<SymbolRecord[]> {
-    if (!ids.length) {
-      return [];
-    }
-
-    const { data, error } = await supabase
-      .from('symbols')
-      .select('id, ticker')
-      .in('id', ids)
-      .order('ticker');
-
-    if (error) {
-      console.error('Failed to load symbols by id:', error);
-      throw new Error('Unable to load symbols for the current user.');
-    }
-
-    return this.mapSymbolRecords(data);
-  }
-
-  private static async loadSymbolsForTickers(tickers: string[]): Promise<{ symbols: SymbolRecord[]; missing: string[] }> {
-    if (!tickers.length) {
-      return { symbols: [], missing: [] };
-    }
-
-    const { data, error } = await supabase
-      .from('symbols')
-      .select('id, ticker')
-      .in('ticker', tickers)
-      .order('ticker');
-
-    if (error) {
-      console.error('Failed to load symbols for tickers:', error);
-      throw new Error('Unable to load symbols for the current user.');
-    }
-
-    const symbols = this.mapSymbolRecords(data);
-    const foundTickers = new Set(symbols.map(symbol => symbol.ticker.toUpperCase()));
-    const missing = tickers.filter(ticker => !foundTickers.has(ticker.toUpperCase()));
-
-    return { symbols, missing };
-  }
-
-  private static async loadSymbolsFromPositions(): Promise<SymbolRecord[]> {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('symbol_id')
-      .not('symbol_id', 'is', null);
-
-    if (error) {
-      console.error('Failed to load positions for price refresh:', error);
-      throw new Error('Unable to load portfolio positions.');
-    }
-
-    const ids = Array.from(new Set(
-      (data ?? [])
-        .map(entry => (entry as { symbol_id?: string | null }).symbol_id)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0)
-    ));
-
-    return this.loadSymbolsByIds(ids);
-  }
-
-  private static async loadSymbolsForPortfolio(portfolioId: string): Promise<SymbolRecord[]> {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('symbol_id')
-      .eq('portfolio_id', portfolioId)
-      .not('symbol_id', 'is', null);
-
-    if (error) {
-      console.error(`Failed to load symbols for portfolio ${portfolioId}:`, error);
-      throw new Error('Unable to load portfolio symbols.');
-    }
-
-    const ids = Array.from(new Set(
-      (data ?? [])
-        .map(entry => (entry as { symbol_id?: string | null }).symbol_id)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0)
-    ));
-
-    return this.loadSymbolsByIds(ids);
-  }
-
-  private static async refreshQuotesForSymbols(
-    symbols: SymbolRecord[],
-    options?: { includeQuotes?: boolean; missingTickers?: string[] }
-  ): Promise<{ summary: PriceUpdateSummary; quotes: LiveQuote[] }> {
-    const startedAt = new Date();
-    const errors: PriceUpdateErrorDetail[] = (options?.missingTickers ?? []).map(ticker => ({
-      ticker,
-      message: 'Symbol not found for current user.'
-    }));
-    const quotes: LiveQuote[] = [];
-    let updated = 0;
-
-    for (const symbol of symbols) {
-      try {
-        const quote = await this.fetchAlphaQuote(symbol.ticker);
-        await this.persistQuote(symbol.id, quote);
-        updated += 1;
-        if (options?.includeQuotes) {
-          quotes.push(quote);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to refresh quote.';
-        errors.push({ ticker: symbol.ticker, message });
-        console.error(`Failed to refresh ${symbol.ticker}:`, message);
-      }
-    }
-
-    const completedAt = new Date();
-
-    const summary: PriceUpdateSummary = {
-      provider: 'alphavantage',
-      totalSymbols: symbols.length,
-      updated,
-      failed: errors.length,
-      errors,
-      startedAt,
-      completedAt
-    };
-
-    return { summary, quotes };
-  }
-
   static async getMarketData(ticker: string): Promise<LiveQuote | null> {
     const normalized = ticker.trim().toUpperCase();
     if (!normalized) {
@@ -530,15 +335,6 @@ class MarketDataServiceImpl {
 
     try {
       const quote = await this.fetchAlphaQuote(normalized);
-
-      if (symbolRecord?.id) {
-        try {
-          await this.persistQuote(symbolRecord.id, quote);
-        } catch (persistError) {
-          console.warn(`Failed to persist quote for ${normalized}:`, persistError);
-        }
-      }
-
       return quote;
     } catch (error) {
       if (error instanceof MarketDataAuthorizationError) {
@@ -571,47 +367,6 @@ class MarketDataServiceImpl {
         lastUpdated: new Date(cached.asof)
       };
     }
-  }
-
-  static async refreshPrices(tickers?: string[]): Promise<PriceUpdateSummary> {
-    await this.requireAuth();
-
-    const normalized = this.normalizeTickers(tickers);
-    if (normalized.length) {
-      const { symbols, missing } = await this.loadSymbolsForTickers(normalized);
-      const { summary } = await this.refreshQuotesForSymbols(symbols, { missingTickers: missing });
-      return summary;
-    }
-
-    const symbols = await this.loadSymbolsFromPositions();
-    const { summary } = await this.refreshQuotesForSymbols(symbols);
-    return summary;
-  }
-
-  static async refreshAllPrices(): Promise<PriceUpdateSummary> {
-    return this.refreshPrices();
-  }
-
-  static async updatePriceCache(_symbolId: string, ticker: string): Promise<void> {
-    await this.refreshPrices([ticker]);
-  }
-
-  static async refreshPortfolioPrices(portfolioId: string): Promise<PortfolioPriceUpdateSummary> {
-    const normalized = portfolioId.trim();
-    if (!normalized) {
-      throw new Error('Portfolio ID is required for refreshing prices.');
-    }
-
-    await this.requireAuth();
-
-    const symbols = await this.loadSymbolsForPortfolio(normalized);
-    const { summary, quotes } = await this.refreshQuotesForSymbols(symbols, { includeQuotes: true });
-
-    return {
-      ...summary,
-      portfolioId: normalized,
-      quotes
-    };
   }
 
   static async getHistoricalPrices(ticker: string, range: HistoricalRange): Promise<HistoricalPricePoint[]> {
