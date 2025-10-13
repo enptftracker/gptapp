@@ -241,79 +241,66 @@ export class MarketDataService {
         originalTicker: symbol.ticker,
         normalizedTicker: symbol.ticker.trim().toUpperCase()
       }));
-      const statusByTicker = new Map<string, { success: boolean; error?: string }>();
-      for (const entry of normalizedEntries) {
-        statusByTicker.set(entry.normalizedTicker, { success: false });
-      }
-
+      const successTickers = new Set<string>();
+      const errorMessageByTicker = new Map<string, string>();
       let edgeError: unknown = null;
-      let edgeData: {
-        results?: Array<{ ticker?: string; symbol?: string; success?: boolean; status?: string; message?: string; error?: string }>;
-      } | null = null;
 
       try {
-        edgeData = await this.invokeMarketData<{
+        const data = await this.invokeMarketData<{
           results?: Array<{ ticker?: string; symbol?: string; success?: boolean; status?: string; message?: string; error?: string }>;
         }>({ action: 'batch_update', symbols: batchSymbols });
-      } catch (error) {
-        edgeError = error;
-        console.error('Edge batch price update failed, falling back to direct quotes:', error);
-      }
 
-      if (edgeData) {
-        const results = Array.isArray(edgeData.results) ? edgeData.results : [];
-        if (results.length === 0) {
-          for (const { normalizedTicker } of normalizedEntries) {
-            statusByTicker.set(normalizedTicker, { success: true });
+        if (!data) {
+          console.warn('Edge batch update unavailable; attempting direct Yahoo Finance fallback.');
+          for (const entry of normalizedEntries) {
+            errorMessageByTicker.set(entry.normalizedTicker, 'Missing authorization for batch update.');
           }
         } else {
-          const responded = new Set<string>();
-          for (const result of results) {
-            const normalizedTicker = (result.ticker ?? result.symbol ?? '').toString().toUpperCase();
-            if (!normalizedTicker) {
-              continue;
+          const results = Array.isArray(data.results) ? data.results : [];
+          if (results.length === 0) {
+            normalizedEntries.forEach(entry => successTickers.add(entry.normalizedTicker));
+          } else {
+            const responded = new Set<string>();
+            for (const result of results) {
+              const normalizedTicker = (result.ticker ?? result.symbol ?? '').toString().toUpperCase();
+              if (!normalizedTicker) {
+                continue;
+              }
+
+              responded.add(normalizedTicker);
+              const errorMessage = typeof result.error === 'string' ? result.error : undefined;
+              const hasError =
+                result.success === false ||
+                result.status === 'error' ||
+                !!result.error;
+
+              if (hasError) {
+                errorMessageByTicker.set(
+                  normalizedTicker,
+                  errorMessage || result.message || 'Unknown error occurred.'
+                );
+              } else {
+                successTickers.add(normalizedTicker);
+              }
             }
 
-            responded.add(normalizedTicker);
-            const errorMessage = typeof result.error === 'string' ? result.error : undefined;
-            const hasError =
-              result.success === false ||
-              result.status === 'error' ||
-              !!result.error;
-
-            if (hasError) {
-              statusByTicker.set(normalizedTicker, {
-                success: false,
-                error: errorMessage || result.message || 'Unknown error occurred.'
-              });
-            } else {
-              statusByTicker.set(normalizedTicker, { success: true });
-            }
-          }
-
-          for (const { normalizedTicker } of normalizedEntries) {
-            if (!responded.has(normalizedTicker)) {
-              const existing = statusByTicker.get(normalizedTicker);
-              if (!existing || existing.success) {
-                statusByTicker.set(normalizedTicker, { success: true });
+            for (const entry of normalizedEntries) {
+              if (!responded.has(entry.normalizedTicker)) {
+                successTickers.add(entry.normalizedTicker);
               }
             }
           }
         }
-      } else {
-        console.warn('Edge batch update unavailable; attempting direct Yahoo Finance fallback.');
-        for (const { normalizedTicker } of normalizedEntries) {
-          statusByTicker.set(normalizedTicker, {
-            success: false,
-            error: 'Missing authorization for batch update. Falling back to direct fetch.'
-          });
+      } catch (error) {
+        edgeError = error;
+        const message = error instanceof Error ? error.message : 'Unexpected error during batch update.';
+        for (const entry of normalizedEntries) {
+          errorMessageByTicker.set(entry.normalizedTicker, message);
         }
+        console.error('Error in batch price update:', error);
       }
 
-      const fallbackTargets = normalizedEntries.filter(({ normalizedTicker }) => {
-        const status = statusByTicker.get(normalizedTicker);
-        return !status?.success;
-      });
+      const fallbackTargets = normalizedEntries.filter(entry => !successTickers.has(entry.normalizedTicker));
 
       if (fallbackTargets.length > 0) {
         const fallbackQuotes = await this.fetchYahooBatchQuotes(
@@ -325,23 +312,20 @@ export class MarketDataService {
           if (quote) {
             try {
               await this.persistPriceCache(target.symbolId, quote);
-              statusByTicker.set(target.normalizedTicker, { success: true });
+              successTickers.add(target.normalizedTicker);
+              errorMessageByTicker.delete(target.normalizedTicker);
             } catch (persistError) {
               const message = persistError instanceof Error
                 ? persistError.message
                 : 'Unknown error while saving fallback quote.';
-              statusByTicker.set(target.normalizedTicker, {
-                success: false,
-                error: message
-              });
+              errorMessageByTicker.set(target.normalizedTicker, message);
               console.error('Failed to persist fallback quote:', persistError);
             }
-          } else {
-            const existing = statusByTicker.get(target.normalizedTicker);
-            statusByTicker.set(target.normalizedTicker, {
-              success: false,
-              error: existing?.error || 'Unable to fetch quote from Yahoo Finance.'
-            });
+          } else if (!errorMessageByTicker.has(target.normalizedTicker)) {
+            errorMessageByTicker.set(
+              target.normalizedTicker,
+              'Unable to fetch quote from Yahoo Finance.'
+            );
           }
         }
       }
@@ -350,12 +334,11 @@ export class MarketDataService {
       let batchSuccessCount = 0;
 
       for (const entry of normalizedEntries) {
-        const status = statusByTicker.get(entry.normalizedTicker);
-        if (status?.success) {
+        if (successTickers.has(entry.normalizedTicker)) {
           batchSuccessCount += 1;
         } else {
           const edgeMessage = edgeError instanceof Error ? edgeError.message : undefined;
-          const message = status?.error || edgeMessage || 'Unknown error occurred.';
+          const message = errorMessageByTicker.get(entry.normalizedTicker) || edgeMessage || 'Unknown error occurred.';
           batchErrors.push({
             ticker: entry.originalTicker,
             message
