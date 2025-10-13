@@ -613,27 +613,32 @@ export class MarketDataService {
         }));
       };
 
-      let cachedSeries = await fetchFromCache();
+      const isIntradayRange = range === '1D' || range === '1W';
+      let cachedSeries: Array<{ date: string; price: number }> = [];
 
-      const isCacheStale = (() => {
-        if (!cachedSeries.length) return true;
-        const latest = cachedSeries[cachedSeries.length - 1];
-        const latestDate = new Date(`${latest.date}T00:00:00Z`).getTime();
-        const now = Date.now();
-        const maxAgeMs = 1000 * 60 * 60 * 24 * 2; // 2 days
-        return now - latestDate > maxAgeMs;
-      })();
-
-      if (isCacheStale && symbolData) {
-        await MarketDataService.fetchHistoricalData([normalizedTicker]);
+      if (!isIntradayRange) {
         cachedSeries = await fetchFromCache();
-      }
 
-      if (cachedSeries.length) {
-        return cachedSeries.map(point => ({
-          time: `${point.date}T00:00:00Z`,
-          price: point.price
-        }));
+        const isCacheStale = (() => {
+          if (!cachedSeries.length) return true;
+          const latest = cachedSeries[cachedSeries.length - 1];
+          const latestDate = new Date(`${latest.date}T00:00:00Z`).getTime();
+          const now = Date.now();
+          const maxAgeMs = 1000 * 60 * 60 * 24 * 2; // 2 days
+          return now - latestDate > maxAgeMs;
+        })();
+
+        if (isCacheStale && symbolData) {
+          await MarketDataService.fetchHistoricalData([normalizedTicker]);
+          cachedSeries = await fetchFromCache();
+        }
+
+        if (cachedSeries.length) {
+          return cachedSeries.map(point => ({
+            time: `${point.date}T00:00:00Z`,
+            price: point.price
+          }));
+        }
       }
 
       let remoteSeries: HistoricalPricePoint[] | null = null;
@@ -656,12 +661,12 @@ export class MarketDataService {
       }
 
       if (remoteSeries && remoteSeries.length) {
-        if (symbolData?.id) {
+        if (symbolData?.id && !isIntradayRange) {
           const persisted = await this.persistHistoricalSeries(symbolData.id, remoteSeries);
           if (persisted) {
-            cachedSeries = await fetchFromCache();
-            if (cachedSeries.length) {
-              return cachedSeries.map(point => ({
+            const refreshedCache = await fetchFromCache();
+            if (refreshedCache.length) {
+              return refreshedCache.map(point => ({
                 time: `${point.date}T00:00:00Z`,
                 price: point.price
               }));
@@ -675,12 +680,12 @@ export class MarketDataService {
       const yahooSeries = await this.fetchYahooHistoricalRange(normalizedTicker, range);
 
       if (yahooSeries.length) {
-        if (symbolData?.id) {
+        if (symbolData?.id && !isIntradayRange) {
           const persisted = await this.persistHistoricalSeries(symbolData.id, yahooSeries);
           if (persisted) {
-            cachedSeries = await fetchFromCache();
-            if (cachedSeries.length) {
-              return cachedSeries.map(point => ({
+            const refreshedCache = await fetchFromCache();
+            if (refreshedCache.length) {
+              return refreshedCache.map(point => ({
                 time: `${point.date}T00:00:00Z`,
                 price: point.price
               }));
