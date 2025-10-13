@@ -15,8 +15,11 @@ export const SUPABASE_FUNCTION_URL = functionUrl;
 
 const trimSlashes = (value: string) => value.replace(/\/+$/, '').replace(/^\/+/, '');
 
-export const resolveSupabaseFunctionUrl = (functionName: string): string => {
-  const trimmed = SUPABASE_FUNCTION_URL?.trim();
+export const resolveSupabaseFunctionUrl = (
+  functionName: string,
+  baseUrl: string = SUPABASE_FUNCTION_URL
+): string => {
+  const trimmed = baseUrl?.trim();
   if (!trimmed) {
     throw new Error('Supabase function URL is not configured.');
   }
@@ -28,21 +31,25 @@ export const resolveSupabaseFunctionUrl = (functionName: string): string => {
 
   if (/^https?:\/\//i.test(trimmed)) {
     const url = new URL(trimmed);
-    const pathname = url.pathname.replace(/\/+$/, '');
-    if (pathname === `/${normalizedName}` || pathname.endsWith(`/${normalizedName}`)) {
-      return url.toString();
+    const segments = url.pathname.split('/').filter(Boolean);
+
+    if (segments[segments.length - 1] !== normalizedName) {
+      segments.push(normalizedName);
     }
 
-    const basePath = pathname.length ? pathname : '';
-    url.pathname = `${basePath}/${normalizedName}`.replace(/\/+/g, '/');
+    url.pathname = `/${segments.join('/')}`;
     return url.toString();
   }
 
-  const normalizedBase = trimSlashes(trimmed);
-  if (normalizedBase === normalizedName || normalizedBase.endsWith(`/${normalizedName}`)) {
-    return trimmed.startsWith('/') ? `/${normalizedBase}` : normalizedBase;
+  const hasLeadingSlash = trimmed.startsWith('/');
+  const segments = trimSlashes(trimmed)
+    .split('/')
+    .filter(Boolean);
+
+  if (segments[segments.length - 1] !== normalizedName) {
+    segments.push(normalizedName);
   }
 
-  const prefix = trimmed.startsWith('/') ? '' : '/';
-  return `${prefix}${normalizedBase}/${normalizedName}`;
+  const path = segments.join('/');
+  return hasLeadingSlash ? `/${path}` : path;
 };
