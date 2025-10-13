@@ -14,11 +14,13 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { MarketDataService } from "@/lib/marketData";
 
 const settingsSchema = z.object({
   base_currency: z.string().min(1, "Please select a base currency"),
   timezone: z.string().min(1, "Please select a timezone"),
-  default_lot_method: z.enum(['FIFO', 'LIFO', 'HIFO', 'AVERAGE'])
+  default_lot_method: z.enum(['FIFO', 'LIFO', 'HIFO', 'AVERAGE']),
+  market_data_provider: z.enum(['alphavantage', 'yfinance'])
 });
 
 type SettingsFormData = z.infer<typeof settingsSchema>;
@@ -83,8 +85,8 @@ const timezones = [
 ];
 
 const lotMethods = [
-  { 
-    value: 'FIFO', 
+  {
+    value: 'FIFO',
     label: 'FIFO (First In, First Out)',
     description: 'Sell the oldest shares first. Generally most tax efficient for long-term positions.'
   },
@@ -103,6 +105,11 @@ const lotMethods = [
     label: 'Average Cost',
     description: 'Use the average cost of all shares. Simpler but less tax optimization.'
   },
+];
+
+const marketDataProviders = [
+  { value: 'alphavantage', labelKey: 'settings.marketDataProviderAlpha' },
+  { value: 'yfinance', labelKey: 'settings.marketDataProviderYahoo' }
 ];
 
 export default function Settings() {
@@ -129,6 +136,7 @@ export default function Settings() {
       base_currency: 'USD',
       timezone: 'UTC',
       default_lot_method: 'FIFO',
+      market_data_provider: 'alphavantage',
     },
   });
 
@@ -157,12 +165,20 @@ export default function Settings() {
         base_currency: profile.base_currency,
         timezone: profile.timezone,
         default_lot_method: profile.default_lot_method,
+        market_data_provider: profile.market_data_provider,
       });
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(MarketDataService.PROVIDER_STORAGE_KEY, profile.market_data_provider);
+      }
     }
   }, [profile, form]);
 
   const onSubmit = async (data: SettingsFormData) => {
-    await updateProfile.mutateAsync(data);
+    const updatedProfile = await updateProfile.mutateAsync(data);
+    const provider = updatedProfile?.market_data_provider ?? data.market_data_provider;
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(MarketDataService.PROVIDER_STORAGE_KEY, provider);
+    }
   };
 
   const fetchTotpFactors = useCallback(async () => {
@@ -540,6 +556,34 @@ export default function Settings() {
                     </Select>
                     <FormDescription>
                       {t('settings.timezoneDesc')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="market_data_provider"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('settings.marketDataProvider')}</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t('settings.marketDataProvider')} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {marketDataProviders.map((provider) => (
+                          <SelectItem key={provider.value} value={provider.value}>
+                            {t(provider.labelKey)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t('settings.marketDataProviderDesc')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

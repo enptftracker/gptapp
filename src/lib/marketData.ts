@@ -47,6 +47,8 @@ export interface HistoricalPricePoint {
   price: number;
 }
 
+export type MarketDataSource = 'alphavantage' | 'yfinance';
+
 const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: string }> = {
   '1D': { range: '1d', interval: '15m' },
   '1W': { range: '5d', interval: '1h' },
@@ -61,6 +63,17 @@ const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: str
 export class MarketDataService {
 
   static readonly MAX_SYMBOLS_PER_BATCH = 20;
+  static readonly DEFAULT_PROVIDER: MarketDataSource = 'alphavantage';
+  static readonly PROVIDER_STORAGE_KEY = 'marketDataProvider';
+
+  private static getPreferredProvider(): MarketDataSource {
+    if (typeof window === 'undefined') {
+      return this.DEFAULT_PROVIDER;
+    }
+
+    const stored = window.localStorage.getItem(MarketDataService.PROVIDER_STORAGE_KEY);
+    return stored === 'yfinance' ? 'yfinance' : 'alphavantage';
+  }
 
   private static async invokeMarketData<T>(body: Record<string, unknown>): Promise<T | null> {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -76,8 +89,18 @@ export class MarketDataService {
       return null;
     }
 
+    const provider = ((): MarketDataSource => {
+      const candidate = (body as { provider?: unknown }).provider;
+      if (typeof candidate === 'string') {
+        return candidate === 'yfinance' ? 'yfinance' : 'alphavantage';
+      }
+      return this.getPreferredProvider();
+    })();
+
+    const payload = { ...body, provider };
+
     const { data, error } = await supabase.functions.invoke<T>('market-data', {
-      body,
+      body: payload,
       headers: {
         Authorization: `Bearer ${accessToken}`
       }
