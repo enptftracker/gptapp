@@ -71,7 +71,13 @@ class MarketDataAuthorizationError extends Error {
 
 export class MarketDataService {
 
-  static readonly MAX_SYMBOLS_PER_BATCH = 20;
+  // Supabase Edge Functions have a hard 60s execution limit. The market data
+  // function sleeps ~12s between requests to respect provider rate limits,
+  // which means batches larger than four symbols risk timing out (4 symbols =>
+  // ~36s of enforced waiting + network latency). Keeping the batch size at 4
+  // keeps each invocation safely below the execution limit while still making
+  // steady progress through the user's symbol list.
+  static readonly MAX_SYMBOLS_PER_BATCH = 4;
   static readonly DEFAULT_PROVIDER: MarketDataSource = 'alphavantage';
   static readonly PROVIDER_STORAGE_KEY = 'marketDataProvider';
 
