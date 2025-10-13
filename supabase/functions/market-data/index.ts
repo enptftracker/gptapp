@@ -52,6 +52,8 @@ const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: str
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const shouldThrottleProvider = (provider: MarketProvider | null | undefined) => provider === 'alphavantage';
+
 const jsonResponse = (payload: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(payload), {
     ...init,
