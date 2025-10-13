@@ -4,10 +4,8 @@ import {
   HistoricalRange,
   HistoricalPricePoint,
   MarketDataService,
-  BatchUpdateProgressState,
-  BatchUpdateSummary
+  PriceUpdateSummary
 } from '@/lib/marketData';
-import { symbolService } from '@/lib/supabase';
 
 export function useMarketData(ticker: string) {
   return useQuery({
@@ -31,61 +29,34 @@ export function useHistoricalPrices(ticker: string, range: HistoricalRange) {
   });
 }
 
-export type UpdatePricesStatus = 'idle' | 'in-progress' | 'completed' | 'failed';
+export type UpdatePricesStatus = 'idle' | 'running' | 'success' | 'error';
 
 export interface UpdatePricesResult {
   status: UpdatePricesStatus;
-  progress: BatchUpdateProgressState | null;
-  summary: BatchUpdateSummary | null;
+  summary: PriceUpdateSummary | null;
   errorMessage: string | null;
   reset: () => void;
-  mutate: UseMutateFunction<BatchUpdateSummary, unknown, void, unknown>;
-  mutateAsync: () => Promise<BatchUpdateSummary>;
+  mutate: UseMutateFunction<PriceUpdateSummary, unknown, void, unknown>;
+  mutateAsync: () => Promise<PriceUpdateSummary>;
   isPending: boolean;
 }
 
 export function useUpdatePrices(): UpdatePricesResult {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<UpdatePricesStatus>('idle');
-  const [progress, setProgress] = useState<BatchUpdateProgressState | null>(null);
-  const [summary, setSummary] = useState<BatchUpdateSummary | null>(null);
+  const [summary, setSummary] = useState<PriceUpdateSummary | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const mutation = useMutation<BatchUpdateSummary, unknown, void>({
+  const mutation = useMutation<PriceUpdateSummary, unknown, void>({
     mutationFn: async () => {
-      const symbols = await symbolService.getAll();
-      const items = symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }));
-      const totalBatches = items.length === 0
-        ? 0
-        : Math.ceil(items.length / MarketDataService.MAX_SYMBOLS_PER_BATCH);
-
-      setStatus('in-progress');
+      setStatus('running');
       setSummary(null);
       setErrorMessage(null);
-      setProgress({
-        currentBatch: 0,
-        totalBatches,
-        successCount: 0,
-        errorCount: 0,
-        errors: []
-      });
-
-      const result = await MarketDataService.batchUpdatePrices(items, update => {
-        setProgress(update);
-      });
-
-      return result;
+      return MarketDataService.refreshAllPrices();
     },
     onSuccess: async (result) => {
-      setStatus('completed');
+      setStatus('success');
       setSummary(result);
-      setProgress({
-        currentBatch: result.totalBatches,
-        totalBatches: result.totalBatches,
-        successCount: result.successCount,
-        errorCount: result.errorCount,
-        errors: result.errors
-      });
 
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['holdings'] }),
@@ -94,14 +65,13 @@ export function useUpdatePrices(): UpdatePricesResult {
       ]);
     },
     onError: (error) => {
-      setStatus('failed');
+      setStatus('error');
       setErrorMessage(error instanceof Error ? error.message : 'Failed to update prices.');
     }
   });
 
   const reset = () => {
     setStatus('idle');
-    setProgress(null);
     setSummary(null);
     setErrorMessage(null);
     mutation.reset();
@@ -109,7 +79,6 @@ export function useUpdatePrices(): UpdatePricesResult {
 
   return {
     status,
-    progress,
     summary,
     errorMessage,
     reset,

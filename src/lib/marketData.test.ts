@@ -1,79 +1,84 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
+if (typeof (globalThis as { localStorage?: Storage }).localStorage === 'undefined') {
+  const storage = new Map<string, string>();
+  (globalThis as { localStorage: Storage }).localStorage = {
+    get length() {
+      return storage.size;
+    },
+    clear: () => storage.clear(),
+    getItem: (key: string) => (storage.has(key) ? storage.get(key)! : null),
+    key: (index: number) => Array.from(storage.keys())[index] ?? null,
+    removeItem: (key: string) => {
+      storage.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      storage.set(key, value);
+    }
+  } as Storage;
+}
+
 type MarketDataModule = typeof import('./marketData');
 
-let MarketDataService: MarketDataModule['MarketDataService'];
+type InvokeFn = (body: Record<string, unknown>) => Promise<unknown>;
+type AccessTokenFn = () => Promise<string>;
 
-type BatchInvoke = (...args: unknown[]) => Promise<unknown>;
-type FetchDirect = (symbol: { id: string; ticker: string }) => Promise<{ success: boolean; message?: string }>;
+describe('MarketDataService.refreshPrices', () => {
+  let MarketDataService: MarketDataModule['MarketDataService'];
+  let originalInvoke: InvokeFn;
+  let originalGetAccessToken: AccessTokenFn;
 
-describe('MarketDataService.batchUpdatePrices fallback handling', () => {
-  const symbols = [
-    { id: '1', ticker: 'AAPL' },
-    { id: '2', ticker: 'MSFT' },
-  ];
-
-  let originalInvoke: BatchInvoke;
-  let originalFetchDirect: FetchDirect;
+  const buildSummary = () => ({
+    provider: 'yahoo' as const,
+    totalSymbols: 2,
+    updated: 2,
+    failed: 0,
+    errors: [],
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString()
+  });
 
   beforeAll(async () => {
-    if (typeof (globalThis as { localStorage?: Storage }).localStorage === 'undefined') {
-      const storage = new Map<string, string>();
-      (globalThis as { localStorage: Storage }).localStorage = {
-        get length() {
-          return storage.size;
-        },
-        clear: () => storage.clear(),
-        getItem: (key: string) => (storage.has(key) ? storage.get(key)! : null),
-        key: (index: number) => Array.from(storage.keys())[index] ?? null,
-        removeItem: (key: string) => {
-          storage.delete(key);
-        },
-        setItem: (key: string, value: string) => {
-          storage.set(key, value);
-        }
-      } as Storage;
-    }
-
     ({ MarketDataService } = await import('./marketData'));
   });
 
   beforeEach(() => {
-    originalInvoke = (MarketDataService as unknown as { invokeMarketData: BatchInvoke }).invokeMarketData;
-    originalFetchDirect = (MarketDataService as unknown as { fetchAndPersistDirectQuote: FetchDirect }).fetchAndPersistDirectQuote;
+    originalInvoke = (MarketDataService as unknown as { invokeFunction: InvokeFn }).invokeFunction;
+    originalGetAccessToken = (MarketDataService as unknown as { getAccessToken: AccessTokenFn }).getAccessToken;
+    (MarketDataService as unknown as { getAccessToken: AccessTokenFn }).getAccessToken = async () => 'token';
   });
 
   afterEach(() => {
-    (MarketDataService as unknown as { invokeMarketData: BatchInvoke }).invokeMarketData = originalInvoke;
-    (MarketDataService as unknown as { fetchAndPersistDirectQuote: FetchDirect }).fetchAndPersistDirectQuote = originalFetchDirect;
+    (MarketDataService as unknown as { invokeFunction: InvokeFn }).invokeFunction = originalInvoke;
+    (MarketDataService as unknown as { getAccessToken: AccessTokenFn }).getAccessToken = originalGetAccessToken;
   });
 
-  it('marks symbols as successful when fallback direct fetch succeeds', async () => {
-    const invokeMock = mock<BatchInvoke>(async () => null);
-    const fallbackMock = mock<FetchDirect>(async () => ({ success: true }));
-
-    (MarketDataService as unknown as { invokeMarketData: BatchInvoke }).invokeMarketData = invokeMock;
-    (MarketDataService as unknown as { fetchAndPersistDirectQuote: FetchDirect }).fetchAndPersistDirectQuote = fallbackMock;
-
-    const summary = await MarketDataService.batchUpdatePrices(symbols);
-
-    expect(summary.successCount).toBe(symbols.length);
-    expect(summary.errorCount).toBe(0);
-    expect(fallbackMock.mock.calls.length).toBe(symbols.length);
-  });
-
-  it('rejects the mutation when both edge and direct fetches fail', async () => {
-    const invokeMock = mock<BatchInvoke>(async () => {
-      throw new Error('edge failure');
+  it('normalizes requested tickers before calling the edge function', async () => {
+    const invokeMock = mock<InvokeFn>(async (body) => {
+      expect(body).toEqual({ action: 'refresh_prices', symbols: ['AAPL', 'MSFT'] });
+      return buildSummary();
     });
-    const fallbackMock = mock<FetchDirect>(async () => ({ success: false, message: 'direct failure' }));
 
-    (MarketDataService as unknown as { invokeMarketData: BatchInvoke }).invokeMarketData = invokeMock;
-    (MarketDataService as unknown as { fetchAndPersistDirectQuote: FetchDirect }).fetchAndPersistDirectQuote = fallbackMock;
+    (MarketDataService as unknown as { invokeFunction: InvokeFn }).invokeFunction = invokeMock;
 
-    await expect(MarketDataService.batchUpdatePrices(symbols)).rejects.toThrow(
-      'Failed to update prices for all tickers. edge failure | direct failure'
-    );
-    expect(fallbackMock.mock.calls.length).toBe(symbols.length);
+    const summary = await MarketDataService.refreshPrices([' aapl ', 'AAPL', 'msft']);
+
+    expect(invokeMock.mock.calls.length).toBe(1);
+    expect(summary.provider).toBe('yahoo');
+    expect(summary.startedAt).toBeInstanceOf(Date);
+    expect(summary.completedAt).toBeInstanceOf(Date);
+  });
+
+  it('omits the symbols payload when no tickers are provided', async () => {
+    const invokeMock = mock<InvokeFn>(async (body) => {
+      expect(body).toEqual({ action: 'refresh_prices' });
+      return buildSummary();
+    });
+
+    (MarketDataService as unknown as { invokeFunction: InvokeFn }).invokeFunction = invokeMock;
+
+    await MarketDataService.refreshPrices();
+
+    expect(invokeMock.mock.calls.length).toBe(1);
   });
 });
