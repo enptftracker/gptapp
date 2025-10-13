@@ -39,43 +39,28 @@ const configuredOrigins = parseOrigins(Deno.env.get('APP_ORIGIN'))
 
 const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultOrigins]))
 
+const FORCED_ORIGIN = 'https://gptapp-khaki.vercel.app'
+
 const resolveOrigin = (originHeader?: string | null) => {
   const origin = originHeader ?? undefined
 
-  const allowAnyOrigin = allowedOrigins.includes('*')
-  const hasExplicitConfig = configuredOrigins.length > 0
-
   if (!origin) {
-    if (hasExplicitConfig) {
-      return configuredOrigins.find(item => item !== '*') ?? configuredOrigins[0] ?? '*'
-    }
-
-    const fallbackOrigin = allowedOrigins.find(
-      item => item !== '*' && !item.includes('*')
-    )
-
-    if (fallbackOrigin) {
-      return fallbackOrigin
-    }
-
-    return allowedOrigins.find(item => item !== '*') ?? '*'
+    return FORCED_ORIGIN
   }
 
+  const allowAnyOrigin = allowedOrigins.includes('*')
+
   if (allowAnyOrigin) {
-    return origin
+    return FORCED_ORIGIN
   }
 
   const isAllowed = allowedOrigins.some(allowed => matchesWildcard(origin, allowed))
 
   if (isAllowed) {
-    return origin
+    return FORCED_ORIGIN
   }
 
-  if (hasExplicitConfig) {
-    return configuredOrigins.find(item => item !== '*') ?? configuredOrigins[0] ?? '*'
-  }
-
-  return '*'
+  return FORCED_ORIGIN
 }
 
 export const getCorsHeaders = (requestOrOrigin?: Request | string | null) => {
