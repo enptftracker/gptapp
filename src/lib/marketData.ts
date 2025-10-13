@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { SUPABASE_ANON_KEY, SUPABASE_FUNCTION_URL } from '@/integrations/supabase/env';
 import type { Json } from '@/integrations/supabase/types';
 
 export interface MarketDataProvider {
@@ -59,6 +60,15 @@ const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: str
   'MAX': { range: 'max', interval: '3mo' }
 };
 
+type MarketDataSource = 'alphavantage' | 'yfinance';
+
+class MarketDataAuthorizationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MarketDataAuthorizationError';
+  }
+}
+
 export class MarketDataService {
 
   static readonly MAX_SYMBOLS_PER_BATCH = 20;
@@ -90,15 +100,17 @@ export class MarketDataService {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
     if (sessionError) {
-      console.error('Unable to retrieve session for market data request:', sessionError);
-      return null;
+      throw new MarketDataAuthorizationError('Unable to retrieve session for market data request.');
     }
+
     const accessToken = sessionData.session?.access_token;
 
     if (!accessToken) {
-      console.warn('No active session found. Skipping market data request.');
-      return null;
+      throw new MarketDataAuthorizationError('No active session found. Please sign in again to update market data.');
     }
+
+    const provider = this.getPreferredProvider();
+    const payload = { ...body, provider };
 
     try {
       const response = await fetch(`${SUPABASE_FUNCTION_URL}/market-data`, {
@@ -108,56 +120,74 @@ export class MarketDataService {
           Authorization: `Bearer ${accessToken}`,
           apikey: SUPABASE_ANON_KEY
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(payload)
       });
+
+      let parsed: unknown = null;
+      try {
+        parsed = await response.json();
+      } catch (error) {
+        if (response.ok) {
+          console.error('Market data response was not valid JSON:', error);
+        }
+      }
 
       if (response.status === 401) {
-        console.warn('Market data request returned 401. Please reauthenticate.');
-        return null;
+        throw new MarketDataAuthorizationError('Market data request returned 401. Please reauthenticate.');
       }
 
-    if (provider === 'yfinance') {
-      return null;
-    }
-
-    const payload = { ...body, provider };
-    try {
-      const { data, error } = await supabase.functions.invoke<T>('market-data', {
-        body: payload,
-        headers: {
-          Authorization: `Bearer ${accessToken}`
-        }
-      });
-
-      const status = (error as { status?: number } | null)?.status;
-      if (status === 401) {
-        console.warn('Market data request returned 401. Please reauthenticate.');
-        return null;
-      }
-
-      if (error) {
-        const message = typeof error === 'string'
-          ? error
-          : (error as { message?: string; error?: string }).message || (error as { message?: string; error?: string }).error;
-
-        if (!status || status >= 500) {
+      if (!response.ok) {
+        if (response.status >= 500) {
           this.setPreferredProvider('yfinance');
         }
 
-        throw new Error(message || 'Failed to fetch market data from the edge function.');
+        const message = parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as { error?: unknown }).error === 'string'
+          ? (parsed as { error: string }).error
+          : `Failed to fetch market data (status ${response.status}).`;
+
+        throw new Error(message);
       }
 
-      const payloadData = (data as T | null) ?? null;
-
-      if (payloadData !== null) {
-        this.setPreferredProvider('alphavantage');
+      if (parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as { error?: unknown }).error === 'string') {
+        throw new Error((parsed as { error: string }).error);
       }
 
-      return payloadData;
+      const resolvedProvider = (() => {
+        if (!parsed || typeof parsed !== 'object') {
+          return null;
+        }
+
+        const candidate = (parsed as { source?: unknown }).source ?? (parsed as { provider?: unknown }).provider;
+        if (typeof candidate !== 'string') {
+          return null;
+        }
+
+        if (candidate.toLowerCase() === 'yahoo' || candidate.toLowerCase() === 'yfinance') {
+          return 'yfinance' as const;
+        }
+
+        if (candidate.toLowerCase() === 'alphavantage') {
+          return 'alphavantage' as const;
+        }
+
+        return null;
+      })();
+
+      if (resolvedProvider) {
+        this.setPreferredProvider(resolvedProvider);
+      } else {
+        this.setPreferredProvider(provider);
+      }
+
+      return (parsed as T | null) ?? null;
     } catch (error) {
+      if (error instanceof MarketDataAuthorizationError) {
+        throw error;
+      }
+
       console.error('Edge function invocation failed:', error);
       this.setPreferredProvider('yfinance');
-      return null;
+      throw error instanceof Error ? error : new Error(String(error));
     }
   }
 
@@ -321,6 +351,7 @@ export class MarketDataService {
   ): Promise<BatchUpdateSummary> {
     const batches: BatchUpdateBatchResult[] = [];
     const errors: BatchUpdateErrorDetail[] = [];
+    const fallbackMessages: string[] = [];
     const totalSymbols = symbols.length;
     const totalBatches = totalSymbols === 0
       ? 0
@@ -392,6 +423,10 @@ export class MarketDataService {
       }
 
       if (fallbackRequired) {
+        if (fallbackRootMessage) {
+          fallbackMessages.push(fallbackRootMessage);
+        }
+
         let fallbackSuccesses = 0;
         for (const symbol of batchSymbols) {
           const result = await this.fetchAndPersistDirectQuote(symbol);
@@ -467,7 +502,17 @@ export class MarketDataService {
     };
 
     if (totalSymbols > 0 && cumulativeSuccessCount === 0) {
-      throw new Error('Failed to update prices for all tickers.');
+      const detailedMessages = [
+        ...fallbackMessages,
+        ...errors
+          .map(entry => entry.message?.trim())
+          .filter((message): message is string => Boolean(message))
+      ];
+
+      const uniqueMessages = Array.from(new Set(detailedMessages));
+      const detail = uniqueMessages.length ? ` ${uniqueMessages.join(' | ')}` : '';
+
+      throw new Error(`Failed to update prices for all tickers.${detail}`);
     }
 
     return summary;
