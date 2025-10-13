@@ -377,7 +377,24 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      upsert_historical_price_cache: {
+        Args: {
+          p_symbol_id: string
+          p_points: Json
+        }
+        Returns: number
+      }
+      upsert_price_cache_entry: {
+        Args: {
+          p_symbol_id: string
+          p_price: number
+          p_price_currency?: string
+          p_change_24h?: number | null
+          p_change_percent_24h?: number | null
+          p_asof?: string
+        }
+        Returns: null
+      }
     }
     Enums: {
       asset_type: "EQUITY" | "ETF" | "CRYPTO" | "FUND"
