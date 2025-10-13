@@ -17,7 +17,7 @@ export interface PriceUpdateErrorDetail {
 }
 
 export interface PriceUpdateSummary {
-  provider: 'yahoo';
+  provider: 'alphavantage';
   totalSymbols: number;
   updated: number;
   failed: number;
@@ -45,17 +45,6 @@ interface SymbolRecord {
   ticker: string;
 }
 
-const YAHOO_HISTORICAL_CONFIG: Record<HistoricalRange, { range: string; interval: string }> = {
-  '1D': { range: '1d', interval: '5m' },
-  '1W': { range: '5d', interval: '30m' },
-  '1M': { range: '1mo', interval: '1d' },
-  '3M': { range: '3mo', interval: '1d' },
-  '6M': { range: '6mo', interval: '1d' },
-  '1Y': { range: '1y', interval: '1d' },
-  '5Y': { range: '5y', interval: '1wk' },
-  'MAX': { range: 'max', interval: '1mo' }
-};
-
 class MarketDataAuthorizationError extends Error {
   constructor(message: string) {
     super(message);
@@ -65,7 +54,8 @@ class MarketDataAuthorizationError extends Error {
 
 class MarketDataServiceImpl {
   static readonly PROVIDER_STORAGE_KEY = 'market-data-provider';
-  private static readonly YAHOO_QUOTE_URL = 'https://query1.finance.yahoo.com/v7/finance/quote';
+  private static readonly ALPHA_VANTAGE_BASE_URL = 'https://www.alphavantage.co/query';
+  private static readonly ALPHA_INTRADAY_INTERVAL = '5min';
 
   private static async requireAuth(): Promise<void> {
     const { data, error } = await supabase.auth.getSession();
@@ -108,56 +98,111 @@ class MarketDataServiceImpl {
     return Number.parseFloat(value.toFixed(digits));
   }
 
-  private static async fetchYahooQuote(symbol: string): Promise<LiveQuote> {
-    const url = `${this.YAHOO_QUOTE_URL}?symbols=${encodeURIComponent(symbol)}`;
+  private static getAlphaVantageApiKey(): string {
+    const metaEnv = (import.meta as ImportMeta | undefined)?.env as
+      | Record<string, string | undefined>
+      | undefined;
+    const candidate = metaEnv?.VITE_ALPHAVANTAGE_API_KEY ?? metaEnv?.ALPHAVANTAGE_API_KEY;
+    const processEnv = typeof process !== 'undefined' ? process.env : undefined;
+    const fallback = processEnv?.VITE_ALPHAVANTAGE_API_KEY ?? processEnv?.ALPHAVANTAGE_API_KEY;
+    const key = candidate ?? fallback ?? '';
+    return typeof key === 'string' ? key.trim() : '';
+  }
+
+  private static buildAlphaVantageUrl(params: Record<string, string>): string {
+    const apiKey = this.getAlphaVantageApiKey();
+    if (!apiKey) {
+      throw new Error('Alpha Vantage API key is not configured.');
+    }
+
+    const url = new URL(this.ALPHA_VANTAGE_BASE_URL);
+    Object.entries(params).forEach(([key, value]) => {
+      url.searchParams.set(key, value);
+    });
+    url.searchParams.set('apikey', apiKey);
+    return url.toString();
+  }
+
+  private static parseAlphaDate(value: unknown): Date {
+    if (typeof value === 'string') {
+      const iso = value.includes('T') ? value : `${value}T00:00:00Z`;
+      const parsed = new Date(iso);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    return new Date();
+  }
+
+  private static async parseAlphaJson(response: Response, context: string): Promise<unknown> {
+    try {
+      return await response.json();
+    } catch (error) {
+      console.error(`Failed to parse ${context}:`, error);
+      throw new Error('Alpha Vantage returned an invalid response.');
+    }
+  }
+
+  private static extractAlphaError(payload: unknown): string | null {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const container = payload as Record<string, unknown>;
+    const messageCandidate =
+      container['Error Message'] ?? container['Note'] ?? container['Information'];
+
+    if (typeof messageCandidate === 'string' && messageCandidate.trim().length > 0) {
+      return messageCandidate.trim();
+    }
+
+    return null;
+  }
+
+  private static async fetchAlphaQuote(symbol: string): Promise<LiveQuote> {
+    const url = this.buildAlphaVantageUrl({
+      function: 'GLOBAL_QUOTE',
+      symbol
+    });
     let response: Response;
 
     try {
       response = await fetch(url);
     } catch (error) {
-      console.error('Yahoo Finance quote request failed:', error);
+      console.error('Alpha Vantage quote request failed:', error);
       throw new Error('Unable to reach the market data provider.');
     }
 
     if (!response.ok) {
-      throw new Error(`Yahoo Finance request failed (${response.status}).`);
+      throw new Error(`Alpha Vantage request failed (${response.status}).`);
     }
 
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch (error) {
-      console.error('Failed to parse Yahoo Finance quote response:', error);
-      throw new Error('Yahoo Finance returned an invalid response.');
+    const quotePayload = await this.parseAlphaJson(response, 'Alpha Vantage quote response');
+    const providerError = this.extractAlphaError(quotePayload);
+
+    if (providerError) {
+      throw new Error(`Alpha Vantage error: ${providerError}`);
     }
 
-    const result = (payload as { quoteResponse?: { result?: unknown[] } })?.quoteResponse?.result?.[0];
+    const result = (quotePayload as { 'Global Quote'?: Record<string, unknown> })?.['Global Quote'];
 
-    if (!result) {
-      throw new Error('Yahoo Finance returned no data for the requested symbol.');
+    if (!result || Object.keys(result).length === 0) {
+      throw new Error('Alpha Vantage returned no data for the requested symbol.');
     }
 
     const record = result as Record<string, unknown>;
 
-    const priceCandidate = this.toNumber(
-      record['regularMarketPrice'] ?? record['postMarketPrice'] ?? record['preMarketPrice']
-    );
+    const priceCandidate = this.toNumber(record['05. price']);
 
     if (typeof priceCandidate !== 'number') {
-      throw new Error('Yahoo Finance returned an invalid price.');
+      throw new Error('Alpha Vantage returned an invalid price.');
     }
 
-    const changeCandidate = this.toNumber(record['regularMarketChange']) ?? 0;
-    const changePercentCandidate = this.toNumber(record['regularMarketChangePercent']) ?? 0;
-    const volumeCandidate = this.toNumber(record['regularMarketVolume']);
-    const marketCapCandidate = this.toNumber(record['marketCap']);
-
-    const lastUpdatedSeconds = this.toNumber(
-      record['regularMarketTime'] ?? record['postMarketTime'] ?? Date.now() / 1000
-    );
-    const lastUpdated = typeof lastUpdatedSeconds === 'number'
-      ? new Date(lastUpdatedSeconds * 1000)
-      : new Date();
+    const changeCandidate = this.toNumber(record['09. change']) ?? 0;
+    const changePercentCandidate = this.toNumber(record['10. change percent']) ?? 0;
+    const volumeCandidate = this.toNumber(record['06. volume']);
+    const lastUpdated = this.parseAlphaDate(record['07. latest trading day']);
 
     return {
       symbol,
@@ -165,85 +210,150 @@ class MarketDataServiceImpl {
       change: this.round(changeCandidate),
       changePercent: this.round(changePercentCandidate),
       volume: typeof volumeCandidate === 'number' ? volumeCandidate : undefined,
-      marketCap: typeof marketCapCandidate === 'number' ? marketCapCandidate : undefined,
       lastUpdated,
-      provider: 'yahoo'
+      provider: 'alphavantage'
     };
   }
 
-  private static async fetchYahooHistorical(symbol: string, range: HistoricalRange): Promise<HistoricalPricePoint[]> {
-    const config = YAHOO_HISTORICAL_CONFIG[range];
-    if (!config) {
-      throw new Error('Invalid historical range supplied.');
+  private static async fetchAlphaHistorical(
+    symbol: string,
+    range: HistoricalRange
+  ): Promise<HistoricalPricePoint[]> {
+    if (range === '1D') {
+      return this.fetchAlphaIntraday(symbol);
     }
 
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${config.range}&interval=${config.interval}&includePrePost=false&events=div%2Csplits`;
+    return this.fetchAlphaDaily(symbol, range);
+  }
+
+  private static async fetchAlphaIntraday(symbol: string): Promise<HistoricalPricePoint[]> {
+    const url = this.buildAlphaVantageUrl({
+      function: 'TIME_SERIES_INTRADAY',
+      symbol,
+      interval: this.ALPHA_INTRADAY_INTERVAL,
+      outputsize: 'compact'
+    });
+
+    let response: Response;
+
+    let payload: unknown;
+    try {
+      response = await fetch(url);
+    } catch (error) {
+      console.error('Alpha Vantage intraday request failed:', error);
+      throw new Error('Unable to reach the market data provider.');
+    }
+
+    if (!response.ok) {
+      throw new Error(`Alpha Vantage intraday request failed (${response.status}).`);
+    }
+
+    const intradayPayload = await this.parseAlphaJson(
+      response,
+      'Alpha Vantage intraday response'
+    );
+    const providerError = this.extractAlphaError(intradayPayload);
+    if (providerError) {
+      throw new Error(`Alpha Vantage error: ${providerError}`);
+    }
+
+    const seriesKey = `Time Series (${this.ALPHA_INTRADAY_INTERVAL})`;
+    const series = (intradayPayload as Record<string, unknown>)[seriesKey] as Record<string, Record<string, unknown>> | undefined;
+
+    if (!series) {
+      throw new Error('Alpha Vantage returned no intraday data.');
+    }
+
+    const points: HistoricalPricePoint[] = [];
+
+    Object.entries(series).forEach(([time, value]) => {
+      const price = this.toNumber(value?.['4. close']);
+      if (typeof price !== 'number') {
+        return;
+      }
+
+      const parsedTime = new Date(`${time.replace(' ', 'T')}Z`);
+      if (Number.isNaN(parsedTime.getTime())) {
+        return;
+      }
+
+      points.push({
+        time: parsedTime.toISOString(),
+        price: this.round(price)
+      });
+    });
+
+    return points.sort((a, b) => a.time.localeCompare(b.time));
+  }
+
+  private static readonly dailyRangeLimits: Partial<Record<HistoricalRange, number>> = {
+    '1W': 7,
+    '1M': 31,
+    '3M': 93,
+    '6M': 186,
+    '1Y': 372,
+    '5Y': 1860
+  };
+
+  private static async fetchAlphaDaily(
+    symbol: string,
+    range: Exclude<HistoricalRange, '1D'>
+  ): Promise<HistoricalPricePoint[]> {
+    const url = this.buildAlphaVantageUrl({
+      function: 'TIME_SERIES_DAILY_ADJUSTED',
+      symbol,
+      outputsize: range === 'MAX' || range === '5Y' ? 'full' : 'compact'
+    });
+
     let response: Response;
 
     try {
       response = await fetch(url);
     } catch (error) {
-      console.error('Yahoo Finance historical request failed:', error);
+      console.error('Alpha Vantage daily request failed:', error);
       throw new Error('Unable to reach the market data provider.');
     }
+  }
 
     if (!response.ok) {
-      throw new Error(`Yahoo Finance historical request failed (${response.status}).`);
+      throw new Error(`Alpha Vantage daily request failed (${response.status}).`);
     }
 
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch (error) {
-      console.error('Failed to parse Yahoo Finance historical response:', error);
-      throw new Error('Yahoo Finance returned an invalid response.');
+    const dailyPayload = await this.parseAlphaJson(response, 'Alpha Vantage daily response');
+    const providerError = this.extractAlphaError(dailyPayload);
+    if (providerError) {
+      throw new Error(`Alpha Vantage error: ${providerError}`);
     }
 
-    const result = (payload as { chart?: { result?: unknown[] } })?.chart?.result?.[0];
+    const series = (dailyPayload as { 'Time Series (Daily)'?: Record<string, Record<string, unknown>> })?.['Time Series (Daily)'];
 
-    if (!result) {
-      throw new Error('Yahoo Finance returned no historical data.');
+    if (!series) {
+      throw new Error('Alpha Vantage returned no daily historical data.');
     }
 
-    const record = result as Record<string, unknown>;
-    const timestamps = Array.isArray(record['timestamp']) ? record['timestamp'] : [];
-    const indicators = record['indicators'] as Record<string, unknown> | undefined;
-    const quoteIndicator = indicators?.['quote'] as Array<Record<string, unknown>> | undefined;
-    const adjIndicator = indicators?.['adjclose'] as Array<Record<string, unknown>> | undefined;
-    const quoteSeries = Array.isArray(quoteIndicator?.[0]?.['close'])
-      ? (quoteIndicator![0]!['close'] as Array<number | null>)
-      : undefined;
-    const adjSeries = Array.isArray(adjIndicator?.[0]?.['adjclose'])
-      ? (adjIndicator![0]!['adjclose'] as Array<number | null>)
-      : undefined;
+    const entries = Object.entries(series)
+      .map(([time, value]) => {
+        const price = this.toNumber(value?.['5. adjusted close'] ?? value?.['4. close']);
+        const parsedTime = new Date(`${time}T00:00:00Z`);
+        if (typeof price !== 'number' || Number.isNaN(parsedTime.getTime())) {
+          return null;
+        }
 
-    const series = Array.isArray(quoteSeries) && quoteSeries.some(value => typeof value === 'number')
-      ? quoteSeries
-      : adjSeries;
+        return {
+          time: parsedTime.toISOString(),
+          price: this.round(price)
+        };
+      })
+      .filter((entry): entry is HistoricalPricePoint => Boolean(entry));
 
-    if (!Array.isArray(series)) {
-      throw new Error('Yahoo Finance returned incomplete historical data.');
+    entries.sort((a, b) => a.time.localeCompare(b.time));
+
+    const limit = this.dailyRangeLimits[range];
+    if (typeof limit === 'number' && entries.length > limit) {
+      return entries.slice(-limit);
     }
 
-    const points: HistoricalPricePoint[] = [];
-
-    timestamps.forEach((timestamp, index) => {
-      if (typeof timestamp !== 'number') {
-        return;
-      }
-
-      const price = series[index];
-      if (typeof price !== 'number' || Number.isNaN(price)) {
-        return;
-      }
-
-      points.push({
-        time: new Date(timestamp * 1000).toISOString(),
-        price: this.round(price)
-      });
-    });
-
-    return points;
+    return entries;
   }
 
   private static async persistQuote(symbolId: string, quote: LiveQuote): Promise<void> {
@@ -372,7 +482,7 @@ class MarketDataServiceImpl {
 
     for (const symbol of symbols) {
       try {
-        const quote = await this.fetchYahooQuote(symbol.ticker);
+        const quote = await this.fetchAlphaQuote(symbol.ticker);
         await this.persistQuote(symbol.id, quote);
         updated += 1;
         if (options?.includeQuotes) {
@@ -388,7 +498,7 @@ class MarketDataServiceImpl {
     const completedAt = new Date();
 
     const summary: PriceUpdateSummary = {
-      provider: 'yahoo',
+      provider: 'alphavantage',
       totalSymbols: symbols.length,
       updated,
       failed: errors.length,
@@ -419,7 +529,7 @@ class MarketDataServiceImpl {
     }
 
     try {
-      const quote = await this.fetchYahooQuote(normalized);
+      const quote = await this.fetchAlphaQuote(normalized);
 
       if (symbolRecord?.id) {
         try {
@@ -512,7 +622,7 @@ class MarketDataServiceImpl {
 
     await this.requireAuth();
 
-    return this.fetchYahooHistorical(normalized, range);
+    return this.fetchAlphaHistorical(normalized, range);
   }
 
   static async searchSymbols(query: string): Promise<Array<{ ticker: string; name: string; type: string }>> {

@@ -31,7 +31,7 @@ describe('MarketDataService.refreshPrices', () => {
   ) => Promise<{ summary: MarketDataModule['PriceUpdateSummary']; quotes: MarketDataModule['LiveQuote'][] }>;
 
   const buildSummary = (totalSymbols: number): MarketDataModule['PriceUpdateSummary'] => ({
-    provider: 'yahoo',
+    provider: 'alphavantage',
     totalSymbols,
     updated: totalSymbols,
     failed: 0,
@@ -100,7 +100,7 @@ describe('MarketDataService.refreshPrices', () => {
 
     expect(loadMock.mock.calls.length).toBe(1);
     expect(refreshMock.mock.calls.length).toBe(1);
-    expect(summary.provider).toBe('yahoo');
+    expect(summary.provider).toBe('alphavantage');
     expect(summary.totalSymbols).toBe(2);
     expect(summary.startedAt).toBeInstanceOf(Date);
     expect(summary.completedAt).toBeInstanceOf(Date);
