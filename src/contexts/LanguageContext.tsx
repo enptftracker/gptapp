@@ -37,10 +37,6 @@ const translations = {
     'settings.timezoneDesc': 'Your local timezone for dates and times',
     'settings.lotMethod': 'Lot Method',
     'settings.lotMethodDesc': 'Cost basis calculation method for tax reporting',
-    'settings.marketDataProvider': 'Market data provider',
-    'settings.marketDataProviderDesc': 'Choose the service used to refresh quotes and historical data',
-    'settings.marketDataProviderAlpha': 'Alpha Vantage (recommended)',
-    'settings.marketDataProviderYahoo': 'Yahoo Finance',
     'settings.theme': 'Theme',
     'settings.themeDesc': 'Select your preferred theme',
     'settings.language': 'Language',
@@ -105,6 +101,8 @@ const translations = {
     'settings.twoFactorDisableFailedDesc': 'Something went wrong while disabling two-factor authentication.',
     'settings.twoFactorLoadFailed': 'Unable to load 2FA status',
     'settings.twoFactorLoadFailedDesc': 'Refresh the page to try again.',
+    'settings.twoFactorUnavailableTitle': 'Two-factor authentication is unavailable',
+    'settings.twoFactorUnavailableDesc': 'Your workspace administrator needs to enable MFA in Supabase before you can set it up here.',
 
     // Theme
     'theme.light': 'Light',
@@ -148,10 +146,6 @@ const translations = {
     'settings.timezoneDesc': 'Votre fuseau horaire local pour les dates et heures',
     'settings.lotMethod': 'Méthode de lot',
     'settings.lotMethodDesc': 'Méthode de calcul du coût de base pour la déclaration fiscale',
-    'settings.marketDataProvider': 'Fournisseur de données de marché',
-    'settings.marketDataProviderDesc': 'Choisissez le service utilisé pour actualiser les cours et les historiques',
-    'settings.marketDataProviderAlpha': 'Alpha Vantage (recommandé)',
-    'settings.marketDataProviderYahoo': 'Yahoo Finance',
     'settings.theme': 'Thème',
     'settings.themeDesc': 'Sélectionnez votre thème préféré',
     'settings.language': 'Langue',
@@ -216,7 +210,9 @@ const translations = {
     'settings.twoFactorDisableFailedDesc': 'Une erreur est survenue lors de la désactivation de l’authentification à deux facteurs.',
     'settings.twoFactorLoadFailed': 'Impossible de charger l’état de l’A2F',
     'settings.twoFactorLoadFailedDesc': 'Actualisez la page pour réessayer.',
-    
+    'settings.twoFactorUnavailableTitle': 'L’authentification à deux facteurs est indisponible',
+    'settings.twoFactorUnavailableDesc': 'L’administrateur doit activer la MFA dans Supabase avant que vous puissiez la configurer ici.',
+
     // Theme
     'theme.light': 'Clair',
     'theme.dark': 'Sombre',
