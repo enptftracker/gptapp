@@ -20,22 +20,24 @@ if (typeof (globalThis as { localStorage?: Storage }).localStorage === 'undefine
 
 type MarketDataModule = typeof import('./marketData');
 
-type InvokeFn = (body: Record<string, unknown>) => Promise<unknown>;
-type AccessTokenFn = () => Promise<string>;
-
 describe('MarketDataService.refreshPrices', () => {
   let MarketDataService: MarketDataModule['MarketDataService'];
-  let originalInvoke: InvokeFn;
-  let originalGetAccessToken: AccessTokenFn;
+  let originalRequireAuth: () => Promise<void>;
+  let originalLoadSymbolsForTickers: (tickers: string[]) => Promise<{ symbols: Array<{ id: string; ticker: string }>; missing: string[] }>;
+  let originalLoadSymbolsFromPositions: () => Promise<Array<{ id: string; ticker: string }>>;
+  let originalRefreshQuotesForSymbols: (
+    symbols: Array<{ id: string; ticker: string }>,
+    options?: { includeQuotes?: boolean; missingTickers?: string[] }
+  ) => Promise<{ summary: MarketDataModule['PriceUpdateSummary']; quotes: MarketDataModule['LiveQuote'][] }>;
 
-  const buildSummary = () => ({
-    provider: 'yahoo' as const,
-    totalSymbols: 2,
-    updated: 2,
+  const buildSummary = (totalSymbols: number): MarketDataModule['PriceUpdateSummary'] => ({
+    provider: 'yahoo',
+    totalSymbols,
+    updated: totalSymbols,
     failed: 0,
     errors: [],
-    startedAt: new Date().toISOString(),
-    completedAt: new Date().toISOString()
+    startedAt: new Date(),
+    completedAt: new Date()
   });
 
   beforeAll(async () => {
@@ -43,42 +45,91 @@ describe('MarketDataService.refreshPrices', () => {
   });
 
   beforeEach(() => {
-    originalInvoke = (MarketDataService as unknown as { invokeFunction: InvokeFn }).invokeFunction;
-    originalGetAccessToken = (MarketDataService as unknown as { getAccessToken: AccessTokenFn }).getAccessToken;
-    (MarketDataService as unknown as { getAccessToken: AccessTokenFn }).getAccessToken = async () => 'token';
+    originalRequireAuth = (MarketDataService as unknown as { requireAuth: () => Promise<void> }).requireAuth;
+    originalLoadSymbolsForTickers = (MarketDataService as unknown as {
+      loadSymbolsForTickers: typeof originalLoadSymbolsForTickers;
+    }).loadSymbolsForTickers;
+    originalLoadSymbolsFromPositions = (MarketDataService as unknown as {
+      loadSymbolsFromPositions: typeof originalLoadSymbolsFromPositions;
+    }).loadSymbolsFromPositions;
+    originalRefreshQuotesForSymbols = (MarketDataService as unknown as {
+      refreshQuotesForSymbols: typeof originalRefreshQuotesForSymbols;
+    }).refreshQuotesForSymbols;
+
+    (MarketDataService as unknown as { requireAuth: () => Promise<void> }).requireAuth = async () => {};
   });
 
   afterEach(() => {
-    (MarketDataService as unknown as { invokeFunction: InvokeFn }).invokeFunction = originalInvoke;
-    (MarketDataService as unknown as { getAccessToken: AccessTokenFn }).getAccessToken = originalGetAccessToken;
+    (MarketDataService as unknown as { requireAuth: () => Promise<void> }).requireAuth = originalRequireAuth;
+    (MarketDataService as unknown as {
+      loadSymbolsForTickers: typeof originalLoadSymbolsForTickers;
+    }).loadSymbolsForTickers = originalLoadSymbolsForTickers;
+    (MarketDataService as unknown as {
+      loadSymbolsFromPositions: typeof originalLoadSymbolsFromPositions;
+    }).loadSymbolsFromPositions = originalLoadSymbolsFromPositions;
+    (MarketDataService as unknown as {
+      refreshQuotesForSymbols: typeof originalRefreshQuotesForSymbols;
+    }).refreshQuotesForSymbols = originalRefreshQuotesForSymbols;
   });
 
-  it('normalizes requested tickers before calling the edge function', async () => {
-    const invokeMock = mock<InvokeFn>(async (body) => {
-      expect(body).toEqual({ action: 'refresh_prices', symbols: ['AAPL', 'MSFT'] });
-      return buildSummary();
+  it('normalizes requested tickers before refreshing quotes', async () => {
+    const loadMock = mock(async (tickers: string[]) => {
+      expect(tickers).toEqual(['AAPL', 'MSFT']);
+      return {
+        symbols: [
+          { id: '1', ticker: 'AAPL' },
+          { id: '2', ticker: 'MSFT' }
+        ],
+        missing: []
+      };
     });
 
-    (MarketDataService as unknown as { invokeFunction: InvokeFn }).invokeFunction = invokeMock;
+    const refreshMock = mock(async () => ({
+      summary: buildSummary(2),
+      quotes: []
+    }));
+
+    (MarketDataService as unknown as {
+      loadSymbolsForTickers: typeof originalLoadSymbolsForTickers;
+    }).loadSymbolsForTickers = loadMock;
+    (MarketDataService as unknown as {
+      refreshQuotesForSymbols: typeof originalRefreshQuotesForSymbols;
+    }).refreshQuotesForSymbols = refreshMock;
 
     const summary = await MarketDataService.refreshPrices([' aapl ', 'AAPL', 'msft']);
 
-    expect(invokeMock.mock.calls.length).toBe(1);
+    expect(loadMock.mock.calls.length).toBe(1);
+    expect(refreshMock.mock.calls.length).toBe(1);
     expect(summary.provider).toBe('yahoo');
+    expect(summary.totalSymbols).toBe(2);
     expect(summary.startedAt).toBeInstanceOf(Date);
     expect(summary.completedAt).toBeInstanceOf(Date);
   });
 
-  it('omits the symbols payload when no tickers are provided', async () => {
-    const invokeMock = mock<InvokeFn>(async (body) => {
-      expect(body).toEqual({ action: 'refresh_prices' });
-      return buildSummary();
+  it('returns an empty summary when there are no holdings to refresh', async () => {
+    const loadMock = mock(async () => [] as Array<{ id: string; ticker: string }>);
+    const refreshMock = mock(async (symbols: Array<{ id: string; ticker: string }>) => {
+      expect(symbols).toEqual([]);
+      return {
+        summary: buildSummary(0),
+        quotes: []
+      };
     });
 
-    (MarketDataService as unknown as { invokeFunction: InvokeFn }).invokeFunction = invokeMock;
+    (MarketDataService as unknown as {
+      loadSymbolsFromPositions: typeof originalLoadSymbolsFromPositions;
+    }).loadSymbolsFromPositions = loadMock;
+    (MarketDataService as unknown as {
+      refreshQuotesForSymbols: typeof originalRefreshQuotesForSymbols;
+    }).refreshQuotesForSymbols = refreshMock;
 
-    await MarketDataService.refreshPrices();
+    const summary = await MarketDataService.refreshPrices();
 
-    expect(invokeMock.mock.calls.length).toBe(1);
+    expect(loadMock.mock.calls.length).toBe(1);
+    expect(refreshMock.mock.calls.length).toBe(1);
+    expect(summary.totalSymbols).toBe(0);
+    expect(summary.failed).toBe(0);
+    expect(summary.startedAt).toBeInstanceOf(Date);
+    expect(summary.completedAt).toBeInstanceOf(Date);
   });
 });
