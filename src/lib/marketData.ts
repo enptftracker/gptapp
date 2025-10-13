@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { SUPABASE_ANON_KEY } from '@/integrations/supabase/env';
+import { SUPABASE_ANON_KEY, resolveSupabaseFunctionUrl } from '@/integrations/supabase/env';
 import {
   FunctionsFetchError,
   FunctionsHttpError,
@@ -76,6 +76,8 @@ class MarketDataAuthorizationError extends Error {
 }
 
 class MarketDataServiceImpl {
+  static readonly PROVIDER_STORAGE_KEY = 'market-data-provider';
+
   private static async getAccessToken(): Promise<string> {
     const { data, error } = await supabase.auth.getSession();
     if (error) {
@@ -115,58 +117,175 @@ class MarketDataServiceImpl {
     };
   }
 
-  private static async invokeFunction<T>(body: Record<string, unknown>): Promise<T> {
-    const token = await this.getAccessToken();
+  private static getFunctionHeaders(token: string): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      apikey: SUPABASE_ANON_KEY
+    };
+  }
 
-    const { data, error } = await supabase.functions.invoke<T>('market-data', {
-      body,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        apikey: SUPABASE_ANON_KEY
-      }
-    });
+  private static getFunctionUrl(): string {
+    return resolveSupabaseFunctionUrl('market-data');
+  }
 
-    if (error) {
-      if (error instanceof FunctionsHttpError) {
-        if (error.status === 401) {
-          throw new MarketDataAuthorizationError('Please sign in to update market data.');
-        }
+  private static extractErrorMessage(payload: unknown): string | null {
+    if (payload && typeof payload === 'object') {
+      const record = payload as Record<string, unknown>;
+      const errorMessage = record.error;
+      const message = record.message;
 
-        let message = `Market data request failed (${error.status}).`;
-        try {
-          if (error.context && typeof error.context.json === 'function') {
-            const details = await error.context.json();
-            if (details && typeof details === 'object' && 'error' in details) {
-              const detailMessage = (details as { error?: unknown }).error;
-              if (typeof detailMessage === 'string' && detailMessage.trim().length > 0) {
-                message = detailMessage;
-              }
-            }
-          }
-        } catch (parseError) {
-          console.error('Failed to parse market data error response:', parseError);
-        }
-
-        throw new Error(message);
+      if (typeof errorMessage === 'string' && errorMessage.trim().length > 0) {
+        return errorMessage;
       }
 
-      if (error instanceof FunctionsFetchError) {
-        throw new Error('Unable to reach the market data service. Please check your connection and try again.');
+      if (typeof message === 'string' && message.trim().length > 0) {
+        return message;
       }
-
-      if (error instanceof FunctionsRelayError) {
-        throw new Error(error.message || 'Market data service is currently unavailable.');
-      }
-
-      throw new Error(error.message ?? 'Market data request failed.');
     }
 
-    if (data == null) {
+    return null;
+  }
+
+  private static async extractHttpErrorMessage(error: FunctionsHttpError): Promise<string | null> {
+    try {
+      if (error.context && typeof error.context.json === 'function') {
+        const details = await error.context.json();
+        return this.extractErrorMessage(details);
+      }
+    } catch (parseError) {
+      console.error('Failed to parse market data error response:', parseError);
+    }
+
+    return null;
+  }
+
+  private static tryParseJson(raw: string | null): unknown | null {
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      console.error('Failed to parse market data response JSON:', error);
+      return null;
+    }
+  }
+
+  private static async directFunctionRequest<T>(
+    body: Record<string, unknown>,
+    token: string,
+    fallbackMessage?: string
+  ): Promise<T> {
+    const requestUrl = this.getFunctionUrl();
+    let response: Response;
+
+    try {
+      response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: this.getFunctionHeaders(token),
+        body: JSON.stringify(body)
+      });
+    } catch (networkError) {
+      console.error('Direct market data request failed:', networkError);
+      throw new Error(
+        fallbackMessage ?? 'Unable to reach the market data service. Please check your connection and try again.'
+      );
+    }
+
+    if (response.status === 401) {
+      throw new MarketDataAuthorizationError('Please sign in to update market data.');
+    }
+
+    const contentType = response.headers.get('content-type') ?? '';
+    let payload: unknown | null = null;
+
+    if (contentType.includes('application/json')) {
+      try {
+        payload = await response.json();
+      } catch (parseError) {
+        console.error('Failed to parse market data JSON response:', parseError);
+      }
+    } else {
+      try {
+        const textBody = await response.text();
+        payload = this.tryParseJson(textBody) ?? textBody;
+      } catch (readError) {
+        console.error('Failed to read market data response body:', readError);
+      }
+    }
+
+    if (!response.ok) {
+      const message = this.extractErrorMessage(payload) ??
+        fallbackMessage ??
+        `Market data request failed (${response.status}).`;
+      throw new Error(message);
+    }
+
+    if (payload == null || typeof payload === 'string') {
       throw new Error('Market data response was empty.');
     }
 
-    return data;
+    return payload as T;
+  }
+
+  private static async invokeFunction<T>(body: Record<string, unknown>): Promise<T> {
+    const token = await this.getAccessToken();
+    let response;
+    try {
+      response = await supabase.functions.invoke<T>('market-data', {
+        body,
+        headers: this.getFunctionHeaders(token)
+      });
+    } catch (invokeError) {
+      if (invokeError instanceof MarketDataAuthorizationError) {
+        throw invokeError;
+      }
+
+      console.error('Supabase function invocation failed, attempting direct fetch:', invokeError);
+      return this.directFunctionRequest<T>(body, token);
+    }
+
+    const { data, error } = response;
+
+    if (!error) {
+      if (data == null) {
+        throw new Error('Market data response was empty.');
+      }
+
+      return data;
+    }
+
+    if (error instanceof FunctionsHttpError) {
+      if (error.status === 401) {
+        throw new MarketDataAuthorizationError('Please sign in to update market data.');
+      }
+
+      const message = await this.extractHttpErrorMessage(error);
+      console.warn('Supabase function responded with an error, attempting direct fetch:', {
+        status: error.status,
+        message
+      });
+
+      return this.directFunctionRequest<T>(
+        body,
+        token,
+        message ?? `Market data request failed (${error.status}).`
+      );
+    }
+
+    if (error instanceof FunctionsFetchError || error instanceof FunctionsRelayError) {
+      console.warn('Supabase function could not reach the market data service, attempting direct fetch:', error);
+      return this.directFunctionRequest<T>(body, token);
+    }
+
+    const fallbackMessage = error && typeof error === 'object' && 'message' in error
+      ? (error as { message?: unknown }).message
+      : undefined;
+
+    console.warn('Unexpected Supabase function error, attempting direct fetch:', error);
+    return this.directFunctionRequest<T>(body, token, typeof fallbackMessage === 'string' ? fallbackMessage : undefined);
   }
 
   static async getMarketData(ticker: string): Promise<LiveQuote | null> {
