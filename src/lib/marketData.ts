@@ -1,5 +1,4 @@
 import { supabase } from '@/integrations/supabase/client';
-import { SUPABASE_ANON_KEY, SUPABASE_FUNCTION_URL } from '@/integrations/supabase/env';
 import type { Json } from '@/integrations/supabase/types';
 
 export interface MarketDataProvider {
@@ -63,6 +62,29 @@ const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: str
 export class MarketDataService {
 
   static readonly MAX_SYMBOLS_PER_BATCH = 20;
+  static readonly DEFAULT_PROVIDER: MarketDataSource = 'alphavantage';
+  static readonly PROVIDER_STORAGE_KEY = 'marketDataProvider';
+
+  private static setPreferredProvider(provider: MarketDataSource): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(MarketDataService.PROVIDER_STORAGE_KEY, provider);
+    } catch (error) {
+      console.error('Unable to persist provider preference:', error);
+    }
+  }
+
+  private static getPreferredProvider(): MarketDataSource {
+    if (typeof window === 'undefined') {
+      return this.DEFAULT_PROVIDER;
+    }
+
+    const stored = window.localStorage.getItem(MarketDataService.PROVIDER_STORAGE_KEY);
+    return stored === 'yfinance' ? 'yfinance' : 'alphavantage';
+  }
 
   private static async invokeMarketData<T>(body: Record<string, unknown>): Promise<T | null> {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -94,24 +116,47 @@ export class MarketDataService {
         return null;
       }
 
-      if (!response.ok) {
-        let message = 'Failed to fetch market data from the edge function.';
-        try {
-          const payload = await response.json();
-          if (payload && typeof payload.error === 'string') {
-            message = payload.error;
-          }
-        } catch (parseError) {
-          console.error('Unable to parse edge function error payload:', parseError);
-        }
+    if (provider === 'yfinance') {
+      return null;
+    }
 
-        throw new Error(message);
+    const payload = { ...body, provider };
+    try {
+      const { data, error } = await supabase.functions.invoke<T>('market-data', {
+        body: payload,
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      });
+
+      const status = (error as { status?: number } | null)?.status;
+      if (status === 401) {
+        console.warn('Market data request returned 401. Please reauthenticate.');
+        return null;
       }
 
-      const payload = (await response.json()) as T | null;
-      return payload ?? null;
+      if (error) {
+        const message = typeof error === 'string'
+          ? error
+          : (error as { message?: string; error?: string }).message || (error as { message?: string; error?: string }).error;
+
+        if (!status || status >= 500) {
+          this.setPreferredProvider('yfinance');
+        }
+
+        throw new Error(message || 'Failed to fetch market data from the edge function.');
+      }
+
+      const payloadData = (data as T | null) ?? null;
+
+      if (payloadData !== null) {
+        this.setPreferredProvider('alphavantage');
+      }
+
+      return payloadData;
     } catch (error) {
       console.error('Edge function invocation failed:', error);
+      this.setPreferredProvider('yfinance');
       return null;
     }
   }
@@ -152,24 +197,9 @@ export class MarketDataService {
       // If no cached data, fetch from API
       let data: MarketDataProvider | null = null;
       try {
-        const remote = await this.invokeMarketData<MarketDataProvider & { lastUpdated?: string | number | Date }>({
-          action: 'quote',
-          symbol: normalizedTicker
-        });
-
-        if (remote) {
-          const normalized: MarketDataProvider = {
-            ...remote,
-            lastUpdated: remote.lastUpdated instanceof Date
-              ? remote.lastUpdated
-              : new Date(remote.lastUpdated ?? Date.now())
-          };
-
-          data = normalized;
-
-          if (symbolData?.id) {
-            await this.persistPriceCache(symbolData.id, normalized);
-          }
+        data = await this.invokeMarketData<MarketDataProvider>({ action: 'quote', symbol: normalizedTicker });
+        if (data && symbolData?.id) {
+          await this.persistPriceCache(symbolData.id, data);
         }
       } catch (error) {
         console.error('Edge quote fetch failed:', error);
