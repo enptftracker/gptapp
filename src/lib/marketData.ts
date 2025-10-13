@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { SUPABASE_ANON_KEY, SUPABASE_FUNCTION_URL } from '@/integrations/supabase/env';
 import type { Json } from '@/integrations/supabase/types';
 
 export interface MarketDataProvider {
@@ -59,6 +60,8 @@ const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: str
   'MAX': { range: 'max', interval: '3mo' }
 };
 
+type MarketDataSource = 'alphavantage' | 'yfinance';
+
 export class MarketDataService {
 
   static readonly MAX_SYMBOLS_PER_BATCH = 20;
@@ -100,6 +103,9 @@ export class MarketDataService {
       return null;
     }
 
+    const provider = this.getPreferredProvider();
+    const payload = { ...body, provider };
+
     try {
       const response = await fetch(`${SUPABASE_FUNCTION_URL}/market-data`, {
         method: 'POST',
@@ -108,52 +114,67 @@ export class MarketDataService {
           Authorization: `Bearer ${accessToken}`,
           apikey: SUPABASE_ANON_KEY
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(payload)
       });
+
+      let parsed: unknown = null;
+      try {
+        parsed = await response.json();
+      } catch (error) {
+        if (response.ok) {
+          console.error('Market data response was not valid JSON:', error);
+        }
+      }
 
       if (response.status === 401) {
         console.warn('Market data request returned 401. Please reauthenticate.');
         return null;
       }
 
-    if (provider === 'yfinance') {
-      return null;
-    }
-
-    const payload = { ...body, provider };
-    try {
-      const { data, error } = await supabase.functions.invoke<T>('market-data', {
-        body: payload,
-        headers: {
-          Authorization: `Bearer ${accessToken}`
-        }
-      });
-
-      const status = (error as { status?: number } | null)?.status;
-      if (status === 401) {
-        console.warn('Market data request returned 401. Please reauthenticate.');
-        return null;
-      }
-
-      if (error) {
-        const message = typeof error === 'string'
-          ? error
-          : (error as { message?: string; error?: string }).message || (error as { message?: string; error?: string }).error;
-
-        if (!status || status >= 500) {
+      if (!response.ok) {
+        if (response.status >= 500) {
           this.setPreferredProvider('yfinance');
         }
 
-        throw new Error(message || 'Failed to fetch market data from the edge function.');
+        const message = parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as { error?: unknown }).error === 'string'
+          ? (parsed as { error: string }).error
+          : `Failed to fetch market data (status ${response.status}).`;
+
+        throw new Error(message);
       }
 
-      const payloadData = (data as T | null) ?? null;
-
-      if (payloadData !== null) {
-        this.setPreferredProvider('alphavantage');
+      if (parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as { error?: unknown }).error === 'string') {
+        throw new Error((parsed as { error: string }).error);
       }
 
-      return payloadData;
+      const resolvedProvider = (() => {
+        if (!parsed || typeof parsed !== 'object') {
+          return null;
+        }
+
+        const candidate = (parsed as { source?: unknown }).source ?? (parsed as { provider?: unknown }).provider;
+        if (typeof candidate !== 'string') {
+          return null;
+        }
+
+        if (candidate.toLowerCase() === 'yahoo' || candidate.toLowerCase() === 'yfinance') {
+          return 'yfinance' as const;
+        }
+
+        if (candidate.toLowerCase() === 'alphavantage') {
+          return 'alphavantage' as const;
+        }
+
+        return null;
+      })();
+
+      if (resolvedProvider) {
+        this.setPreferredProvider(resolvedProvider);
+      } else {
+        this.setPreferredProvider(provider);
+      }
+
+      return (parsed as T | null) ?? null;
     } catch (error) {
       console.error('Edge function invocation failed:', error);
       this.setPreferredProvider('yfinance');
