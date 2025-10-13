@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { MarketDataService } from '@/lib/marketData';
 
 export interface UserProfile {
   id: string;
@@ -48,10 +49,65 @@ export function useUpdateProfile() {
         .select()
         .single();
 
-      if (error) throw error;
-      return data;
+      if (!error) {
+        return data;
+      }
+
+      const missingProviderColumn =
+        typeof error?.message === 'string' &&
+        error.message.includes("market_data_provider") &&
+        error.message.includes('schema cache');
+
+      if (!missingProviderColumn || !('market_data_provider' in updates)) {
+        throw error;
+      }
+
+      const { market_data_provider, ...fallbackUpdates } = updates;
+
+      if (typeof window !== 'undefined' && market_data_provider) {
+        window.localStorage.setItem(MarketDataService.PROVIDER_STORAGE_KEY, market_data_provider);
+      }
+
+      if (Object.keys(fallbackUpdates).length === 0) {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('owner_id', user.id)
+          .single();
+
+        if (profileError) {
+          throw profileError;
+        }
+
+        return {
+          ...profileData,
+          market_data_provider: market_data_provider ?? profileData.market_data_provider,
+        } as UserProfile;
+      }
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('profiles')
+        .update(fallbackUpdates)
+        .eq('owner_id', user.id)
+        .select()
+        .single();
+
+      if (fallbackError) {
+        throw fallbackError;
+      }
+
+      return {
+        ...fallbackData,
+        market_data_provider: market_data_provider ?? fallbackData?.market_data_provider,
+      } as UserProfile;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (typeof window !== 'undefined' && data?.market_data_provider) {
+        window.localStorage.setItem(
+          MarketDataService.PROVIDER_STORAGE_KEY,
+          data.market_data_provider,
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       queryClient.invalidateQueries({ queryKey: ['holdings'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });

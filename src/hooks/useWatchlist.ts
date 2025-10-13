@@ -67,6 +67,7 @@ export function useWatchlist() {
 
       const now = Date.now();
       const freshnessWindow = 1000 * 60 * 5; // 5 minutes
+      const futureTolerance = 1000 * 30; // 30 seconds tolerance for clock skew
 
       const watchlistWithPrices = await Promise.all(
         (watchlistData || []).map(async (item) => {
@@ -80,7 +81,8 @@ export function useWatchlist() {
               }
             : undefined;
 
-          const isStale = !cached?.asof || now - cached.asof > freshnessWindow;
+          const isFutureDated = typeof cached?.asof === 'number' && cached.asof - now > futureTolerance;
+          const isStale = !cached?.asof || now - cached.asof > freshnessWindow || isFutureDated;
 
           if (isStale) {
             const fresh = await MarketDataService.getMarketData(item.symbol.ticker);
