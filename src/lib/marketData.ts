@@ -241,8 +241,12 @@ export class MarketDataService {
         originalTicker: symbol.ticker,
         normalizedTicker: symbol.ticker.trim().toUpperCase()
       }));
+
+      const symbolLookup = new Map(
+        normalizedEntries.map(entry => [entry.normalizedTicker, entry.originalTicker])
+      );
       const successTickers = new Set<string>();
-      const errorMessageByTicker = new Map<string, string>();
+      const errorMessages = new Map<string, string>();
       let edgeError: unknown = null;
 
       try {
@@ -253,14 +257,16 @@ export class MarketDataService {
         if (!data) {
           console.warn('Edge batch update unavailable; attempting direct Yahoo Finance fallback.');
           for (const entry of normalizedEntries) {
-            errorMessageByTicker.set(entry.normalizedTicker, 'Missing authorization for batch update.');
+            errorMessages.set(entry.normalizedTicker, 'Missing authorization for batch update.');
           }
         } else {
           const results = Array.isArray(data.results) ? data.results : [];
+
           if (results.length === 0) {
             normalizedEntries.forEach(entry => successTickers.add(entry.normalizedTicker));
           } else {
             const responded = new Set<string>();
+
             for (const result of results) {
               const normalizedTicker = (result.ticker ?? result.symbol ?? '').toString().toUpperCase();
               if (!normalizedTicker) {
@@ -275,7 +281,7 @@ export class MarketDataService {
                 !!result.error;
 
               if (hasError) {
-                errorMessageByTicker.set(
+                errorMessages.set(
                   normalizedTicker,
                   errorMessage || result.message || 'Unknown error occurred.'
                 );
@@ -285,7 +291,7 @@ export class MarketDataService {
             }
 
             for (const entry of normalizedEntries) {
-              if (!responded.has(entry.normalizedTicker)) {
+              if (!responded.has(entry.normalizedTicker) && !errorMessages.has(entry.normalizedTicker)) {
                 successTickers.add(entry.normalizedTicker);
               }
             }
@@ -295,7 +301,7 @@ export class MarketDataService {
         edgeError = error;
         const message = error instanceof Error ? error.message : 'Unexpected error during batch update.';
         for (const entry of normalizedEntries) {
-          errorMessageByTicker.set(entry.normalizedTicker, message);
+          errorMessages.set(entry.normalizedTicker, message);
         }
         console.error('Error in batch price update:', error);
       }
@@ -313,16 +319,16 @@ export class MarketDataService {
             try {
               await this.persistPriceCache(target.symbolId, quote);
               successTickers.add(target.normalizedTicker);
-              errorMessageByTicker.delete(target.normalizedTicker);
+              errorMessages.delete(target.normalizedTicker);
             } catch (persistError) {
               const message = persistError instanceof Error
                 ? persistError.message
                 : 'Unknown error while saving fallback quote.';
-              errorMessageByTicker.set(target.normalizedTicker, message);
+              errorMessages.set(target.normalizedTicker, message);
               console.error('Failed to persist fallback quote:', persistError);
             }
-          } else if (!errorMessageByTicker.has(target.normalizedTicker)) {
-            errorMessageByTicker.set(
+          } else if (!errorMessages.has(target.normalizedTicker)) {
+            errorMessages.set(
               target.normalizedTicker,
               'Unable to fetch quote from Yahoo Finance.'
             );
@@ -337,10 +343,13 @@ export class MarketDataService {
         if (successTickers.has(entry.normalizedTicker)) {
           batchSuccessCount += 1;
         } else {
-          const edgeMessage = edgeError instanceof Error ? edgeError.message : undefined;
-          const message = errorMessageByTicker.get(entry.normalizedTicker) || edgeMessage || 'Unknown error occurred.';
+          const message =
+            errorMessages.get(entry.normalizedTicker) ||
+            (edgeError instanceof Error ? edgeError.message : undefined) ||
+            'Unknown error occurred.';
+
           batchErrors.push({
-            ticker: entry.originalTicker,
+            ticker: symbolLookup.get(entry.normalizedTicker) ?? entry.originalTicker,
             message
           });
         }
