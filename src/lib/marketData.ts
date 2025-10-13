@@ -71,8 +71,15 @@ class MarketDataAuthorizationError extends Error {
 
 export class MarketDataService {
 
-  static readonly MAX_SYMBOLS_PER_BATCH = 20;
-  static readonly DEFAULT_PROVIDER: MarketDataSource = 'alphavantage';
+  // Supabase Edge Functions have a hard 60s execution limit. The market data
+  // function sleeps ~12s between requests to respect provider rate limits,
+  // which means batches larger than three symbols can still creep past the
+  // execution window once network latency and provider processing time are
+  // included. Keeping the batch size at 3 provides a safe buffer even when the
+  // slower Alpha Vantage provider is used, while we fall back to Yahoo Finance
+  // whenever possible for faster refreshes.
+  static readonly MAX_SYMBOLS_PER_BATCH = 3;
+  static readonly DEFAULT_PROVIDER: MarketDataSource = 'yfinance';
   static readonly PROVIDER_STORAGE_KEY = 'marketDataProvider';
 
   private static setPreferredProvider(provider: MarketDataSource): void {

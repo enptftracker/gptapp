@@ -58,6 +58,8 @@ interface DailyPoint {
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const shouldThrottleProvider = (provider: MarketProvider | null | undefined) => provider === 'alphavantage';
+
 const jsonResponse = (payload: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(payload), {
     ...init,
@@ -552,17 +554,21 @@ Deno.serve(async (req) => {
             continue;
           }
 
+          let providerUsed: MarketProvider | null = null;
+
           try {
             const { quote, provider } = await fetchQuoteWithFallback(symbol, preferredProvider);
+            providerUsed = provider;
             await upsertQuoteCache(id, quote);
             results.push({ symbol, success: true, source: provider });
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to fetch quote.';
             console.error(`Batch quote failed for ${symbol}:`, message);
             results.push({ symbol, success: false, error: message });
+            providerUsed = preferredProvider ?? 'alphavantage';
           }
 
-          if (index < payload.symbols.length - 1) {
+          if (index < payload.symbols.length - 1 && shouldThrottleProvider(providerUsed)) {
             await sleep(12_000);
           }
         }
@@ -601,17 +607,20 @@ Deno.serve(async (req) => {
 
         for (let index = 0; index < symbols.length; index++) {
           const symbol = symbols[index];
+          let providerUsed: MarketProvider | null = null;
 
           try {
             const summary = await refreshHistoricalSeries(symbol, adminClient, preferredProvider);
             results.push({ symbol, success: true, count: summary.count, source: summary.provider });
+            providerUsed = summary.provider;
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to refresh historical data.';
             console.error(`Historical refresh failed for ${symbol}:`, message);
             results.push({ symbol, success: false, error: message });
+            providerUsed = preferredProvider ?? 'alphavantage';
           }
 
-          if (index < symbols.length - 1) {
+          if (index < symbols.length - 1 && shouldThrottleProvider(providerUsed)) {
             await sleep(12_000);
           }
         }
