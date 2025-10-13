@@ -212,6 +212,7 @@ class MarketDataServiceImpl {
 
     let response: Response;
 
+    let payload: unknown;
     try {
       response = await fetch(url);
     } catch (error) {
@@ -287,6 +288,7 @@ class MarketDataServiceImpl {
       console.error('Alpha Vantage daily request failed:', error);
       throw new Error('Unable to reach the market data provider.');
     }
+  }
 
     if (!response.ok) {
       throw new Error(`Alpha Vantage daily request failed (${response.status}).`);
