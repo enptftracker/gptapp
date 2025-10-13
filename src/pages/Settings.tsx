@@ -15,12 +15,12 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { MarketDataService } from "@/lib/marketData";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const settingsSchema = z.object({
   base_currency: z.string().min(1, "Please select a base currency"),
   timezone: z.string().min(1, "Please select a timezone"),
   default_lot_method: z.enum(['FIFO', 'LIFO', 'HIFO', 'AVERAGE']),
-  market_data_provider: z.enum(['alphavantage', 'yfinance'])
 });
 
 type SettingsFormData = z.infer<typeof settingsSchema>;
@@ -107,11 +107,6 @@ const lotMethods = [
   },
 ];
 
-const marketDataProviders = [
-  { value: 'alphavantage', labelKey: 'settings.marketDataProviderAlpha' },
-  { value: 'yfinance', labelKey: 'settings.marketDataProviderYahoo' }
-];
-
 export default function Settings() {
   const { t, language, setLanguage } = useLanguage();
   const { data: profile, isLoading } = useProfile();
@@ -129,6 +124,7 @@ export default function Settings() {
   const [enrollmentData, setEnrollmentData] = useState<{ id: string; qr_code: string; secret: string } | null>(null);
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState('');
+  const [isMfaSupported, setIsMfaSupported] = useState(true);
 
   const form = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
@@ -136,7 +132,6 @@ export default function Settings() {
       base_currency: 'USD',
       timezone: 'UTC',
       default_lot_method: 'FIFO',
-      market_data_provider: 'alphavantage',
     },
   });
 
@@ -165,7 +160,6 @@ export default function Settings() {
         base_currency: profile.base_currency,
         timezone: profile.timezone,
         default_lot_method: profile.default_lot_method,
-        market_data_provider: profile.market_data_provider,
       });
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(MarketDataService.PROVIDER_STORAGE_KEY, profile.market_data_provider);
@@ -175,8 +169,8 @@ export default function Settings() {
 
   const onSubmit = async (data: SettingsFormData) => {
     const updatedProfile = await updateProfile.mutateAsync(data);
-    const provider = updatedProfile?.market_data_provider ?? data.market_data_provider;
-    if (typeof window !== 'undefined') {
+    const provider = updatedProfile?.market_data_provider ?? profile?.market_data_provider;
+    if (typeof window !== 'undefined' && provider) {
       window.localStorage.setItem(MarketDataService.PROVIDER_STORAGE_KEY, provider);
     }
   };
@@ -189,7 +183,27 @@ export default function Settings() {
         throw error;
       }
       setTotpFactors((data?.factors as TotpFactor[]) ?? []);
+      setIsMfaSupported(true);
     } catch (error) {
+      const maybeMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error !== null && 'message' in error && typeof (error as { message?: unknown }).message === 'string'
+            ? (error as { message: string }).message
+            : '';
+      const normalizedMessage = maybeMessage.toLowerCase();
+      const mfaUnavailable =
+        normalizedMessage.includes('mfa') &&
+        (normalizedMessage.includes('not enabled') ||
+          normalizedMessage.includes('not supported') ||
+          normalizedMessage.includes('disabled'));
+
+      if (mfaUnavailable) {
+        setIsMfaSupported(false);
+        setTotpFactors([]);
+        return;
+      }
+
       const message = error instanceof Error ? error.message : t('settings.twoFactorLoadFailedDesc');
       toast({
         title: t('settings.twoFactorLoadFailed'),
@@ -203,8 +217,12 @@ export default function Settings() {
   }, [t, toast]);
 
   useEffect(() => {
+    if (!isMfaSupported) {
+      setIsLoadingMfa(false);
+      return;
+    }
     fetchTotpFactors();
-  }, [fetchTotpFactors]);
+  }, [fetchTotpFactors, isMfaSupported]);
 
   const verifiedTotpFactor = useMemo(
     () => totpFactors.find((factor) => factor.factor_type === 'totp' && factor.status === 'verified') ?? null,
@@ -562,36 +580,6 @@ export default function Settings() {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="market_data_provider"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('settings.marketDataProvider')}</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t('settings.marketDataProvider')} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {marketDataProviders.map((provider) => (
-                          <SelectItem key={provider.value} value={provider.value}>
-                            {t(provider.labelKey)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      {t('settings.marketDataProviderDesc')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <Separator />
-
               <div className="space-y-4">
                 <div>
                   <h3 className="text-lg font-medium">{t('settings.theme')}</h3>
@@ -630,7 +618,6 @@ export default function Settings() {
               </div>
 
               <Separator />
-
               <FormField
                 control={form.control}
                 name="default_lot_method"
@@ -808,7 +795,12 @@ export default function Settings() {
               <p className="text-sm text-muted-foreground">{t('settings.twoFactorDesc')}</p>
 
               <div className="space-y-4">
-                {isLoadingMfa ? (
+                {!isMfaSupported ? (
+                  <Alert>
+                    <AlertTitle>{t('settings.twoFactorUnavailableTitle')}</AlertTitle>
+                    <AlertDescription>{t('settings.twoFactorUnavailableDesc')}</AlertDescription>
+                  </Alert>
+                ) : isLoadingMfa ? (
                   <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
                 ) : verifiedTotpFactor ? (
                   <div className="space-y-4">
