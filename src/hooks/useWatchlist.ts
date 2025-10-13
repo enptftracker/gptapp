@@ -2,6 +2,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { MarketDataService } from '@/lib/marketData';
 import { useToast } from '@/hooks/use-toast';
+import {
+  WATCHLIST_FRESHNESS_WINDOW_MS,
+  isCacheEntryStale,
+} from './watchlistStaleness';
 
 export interface WatchlistItem {
   id: string;
@@ -66,7 +70,7 @@ export function useWatchlist() {
       );
 
       const now = Date.now();
-      const freshnessWindow = 1000 * 60 * 5; // 5 minutes
+      const freshnessWindow = WATCHLIST_FRESHNESS_WINDOW_MS;
 
       const watchlistWithPrices = await Promise.all(
         (watchlistData || []).map(async (item) => {
@@ -80,7 +84,7 @@ export function useWatchlist() {
               }
             : undefined;
 
-          const isStale = !cached?.asof || now - cached.asof > freshnessWindow;
+          const isStale = isCacheEntryStale(cached, now, freshnessWindow);
 
           if (isStale) {
             const fresh = await MarketDataService.getMarketData(item.symbol.ticker);
