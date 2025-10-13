@@ -184,25 +184,50 @@ export class MarketDataService {
       const marketData = await this.getMarketData(ticker);
       if (!marketData) return;
 
-      // Update price_cache table
-      const { error } = await supabase
-        .from('price_cache')
-        .upsert({
-          symbol_id: symbolId,
-          price: marketData.price,
-          price_currency: 'USD',
-          change_24h: marketData.change,
-          change_percent_24h: marketData.changePercent,
-          asof: new Date().toISOString()
-        }, {
-          onConflict: 'symbol_id'
-        });
-
-      if (error) {
-        console.error('Error updating price cache:', error);
-      }
+      await this.persistPriceCache(symbolId, marketData);
     } catch (error) {
       console.error('Error in updatePriceCache:', error);
+    }
+  }
+
+  private static async persistPriceCache(symbolId: string, marketData: MarketDataProvider): Promise<boolean> {
+    const { error } = await supabase
+      .from('price_cache')
+      .upsert({
+        symbol_id: symbolId,
+        price: marketData.price,
+        price_currency: 'USD',
+        change_24h: marketData.change,
+        change_percent_24h: marketData.changePercent,
+        asof: new Date().toISOString()
+      }, {
+        onConflict: 'symbol_id'
+      });
+
+    if (error) {
+      console.error('Error updating price cache:', error);
+      return false;
+    }
+
+    return true;
+  }
+
+  private static async fetchAndPersistDirectQuote(symbol: { id: string; ticker: string }): Promise<{ success: boolean; message?: string }> {
+    try {
+      const marketData = await this.getMarketData(symbol.ticker);
+      if (!marketData) {
+        return { success: false, message: 'Direct quote fetch returned no data.' };
+      }
+
+      const persisted = await this.persistPriceCache(symbol.id, marketData);
+      if (!persisted) {
+        return { success: false, message: 'Failed to persist direct quote data.' };
+      }
+
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch direct quote.';
+      return { success: false, message };
     }
   }
 
@@ -232,18 +257,17 @@ export class MarketDataService {
       const batchErrors: BatchUpdateErrorDetail[] = [];
       let batchSuccessCount = 0;
 
+      let fallbackRequired = false;
+      let fallbackRootMessage: string | undefined;
+
       try {
         const data = await this.invokeMarketData<{
           results?: Array<{ ticker?: string; symbol?: string; success?: boolean; status?: string; message?: string; error?: string }>;
         }>({ action: 'batch_update', symbols: batchSymbols });
 
         if (!data) {
-          batchErrors.push(
-            ...batchSymbols.map(symbol => ({
-              ticker: symbol.ticker,
-              message: 'Missing authorization for batch update.'
-            }))
-          );
+          fallbackRequired = true;
+          fallbackRootMessage = 'Missing authorization for batch update.';
         } else {
           const results = Array.isArray(data.results) ? data.results : [];
           if (results.length === 0) {
@@ -281,14 +305,52 @@ export class MarketDataService {
           }
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unexpected error during batch update.';
-        batchErrors.push(
-          ...batchSymbols.map(symbol => ({
-            ticker: symbol.ticker,
-            message
-          }))
-        );
+        fallbackRequired = true;
+        fallbackRootMessage = error instanceof Error ? error.message : 'Unexpected error during batch update.';
         console.error('Error in batch price update:', error);
+      }
+
+      if (fallbackRequired) {
+        let fallbackSuccesses = 0;
+        for (const symbol of batchSymbols) {
+          const result = await this.fetchAndPersistDirectQuote(symbol);
+          if (result.success) {
+            batchSuccessCount += 1;
+            fallbackSuccesses += 1;
+          } else {
+            batchErrors.push({
+              ticker: symbol.ticker,
+              message: result.message || fallbackRootMessage || 'Failed to fetch direct quote.'
+            });
+          }
+        }
+
+        if (fallbackSuccesses > 0) {
+          cumulativeSuccessCount += fallbackSuccesses;
+        }
+
+        cumulativeErrorCount += batchErrors.length;
+        errors.push(...batchErrors);
+
+        const batchResult: BatchUpdateBatchResult = {
+          index: currentBatchIndex,
+          symbols: batchSymbols.map(symbol => symbol.ticker),
+          successCount: batchSuccessCount,
+          errorCount: batchErrors.length,
+          errors: batchErrors
+        };
+
+        batches.push(batchResult);
+
+        onProgress?.({
+          currentBatch: currentBatchIndex,
+          totalBatches,
+          successCount: cumulativeSuccessCount,
+          errorCount: cumulativeErrorCount,
+          errors: [...errors]
+        });
+
+        continue;
       }
 
       cumulativeSuccessCount += batchSuccessCount;
@@ -314,7 +376,7 @@ export class MarketDataService {
       });
     }
 
-    return {
+    const summary: BatchUpdateSummary = {
       totalBatches,
       totalSymbols,
       successCount: cumulativeSuccessCount,
@@ -322,6 +384,12 @@ export class MarketDataService {
       errors,
       batches
     };
+
+    if (totalSymbols > 0 && cumulativeSuccessCount === 0) {
+      throw new Error('Failed to update prices for all tickers.');
+    }
+
+    return summary;
   }
 
   /**
