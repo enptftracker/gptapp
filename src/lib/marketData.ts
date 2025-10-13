@@ -1,5 +1,10 @@
 import { supabase } from '@/integrations/supabase/client';
-import { SUPABASE_ANON_KEY, SUPABASE_FUNCTION_URL } from '@/integrations/supabase/env';
+import { SUPABASE_ANON_KEY } from '@/integrations/supabase/env';
+import {
+  FunctionsFetchError,
+  FunctionsHttpError,
+  FunctionsRelayError
+} from '@supabase/supabase-js';
 
 export interface LiveQuote {
   symbol: string;
@@ -113,37 +118,55 @@ class MarketDataServiceImpl {
   private static async invokeFunction<T>(body: Record<string, unknown>): Promise<T> {
     const token = await this.getAccessToken();
 
-    const response = await fetch(`${SUPABASE_FUNCTION_URL}/market-data`, {
-      method: 'POST',
+    const { data, error } = await supabase.functions.invoke<T>('market-data', {
+      body,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
         apikey: SUPABASE_ANON_KEY
-      },
-      body: JSON.stringify(body)
+      }
     });
 
-    const text = await response.text();
-    let parsed: unknown = null;
-
-    if (text) {
-      try {
-        parsed = JSON.parse(text);
-      } catch (error) {
-        if (response.ok) {
-          console.error('Market data response parsing failed:', error);
+    if (error) {
+      if (error instanceof FunctionsHttpError) {
+        if (error.status === 401) {
+          throw new MarketDataAuthorizationError('Please sign in to update market data.');
         }
+
+        let message = `Market data request failed (${error.status}).`;
+        try {
+          if (error.context && typeof error.context.json === 'function') {
+            const details = await error.context.json();
+            if (details && typeof details === 'object' && 'error' in details) {
+              const detailMessage = (details as { error?: unknown }).error;
+              if (typeof detailMessage === 'string' && detailMessage.trim().length > 0) {
+                message = detailMessage;
+              }
+            }
+          }
+        } catch (parseError) {
+          console.error('Failed to parse market data error response:', parseError);
+        }
+
+        throw new Error(message);
       }
+
+      if (error instanceof FunctionsFetchError) {
+        throw new Error('Unable to reach the market data service. Please check your connection and try again.');
+      }
+
+      if (error instanceof FunctionsRelayError) {
+        throw new Error(error.message || 'Market data service is currently unavailable.');
+      }
+
+      throw new Error(error.message ?? 'Market data request failed.');
     }
 
-    if (!response.ok) {
-      const message = parsed && typeof parsed === 'object' && parsed !== null && 'error' in parsed && typeof (parsed as { error: unknown }).error === 'string'
-        ? (parsed as { error: string }).error
-        : `Market data request failed (${response.status}).`;
-      throw new Error(message);
+    if (data == null) {
+      throw new Error('Market data response was empty.');
     }
 
-    return parsed as T;
+    return data;
   }
 
   static async getMarketData(ticker: string): Promise<LiveQuote | null> {
