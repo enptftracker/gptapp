@@ -12,8 +12,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-export function PriceRefreshButton() {
-  const updatePrices = useUpdatePrices();
+interface PriceRefreshButtonProps {
+  portfolioId?: string;
+}
+
+export function PriceRefreshButton({ portfolioId }: PriceRefreshButtonProps) {
+  const updatePrices = useUpdatePrices(portfolioId ? { portfolioId } : undefined);
   const [showDialog, setShowDialog] = useState(false);
   const lastStatus = useRef<UpdatePricesStatus>("idle");
 
@@ -52,8 +56,10 @@ export function PriceRefreshButton() {
   const dialogDescription = updatePrices.status === "error"
     ? updatePrices.errorMessage ?? "An unexpected error occurred while updating prices."
     : summary
-      ? `Updated ${summary.updated} of ${summary.totalSymbols} tracked tickers.`
+      ? `Updated ${summary.updated} of ${summary.totalSymbols} ${portfolioId ? 'portfolio positions' : 'tracked tickers'}.`
       : "Price updates have finished.";
+
+  const buttonLabel = portfolioId ? "Refresh Portfolio Prices" : "Refresh Prices";
 
   return (
     <>
@@ -65,7 +71,7 @@ export function PriceRefreshButton() {
         aria-busy={isRunning}
       >
         <RefreshCw className={`h-4 w-4 ${isRunning ? 'animate-spin' : ''}`} />
-        <span className="font-semibold">Refresh Prices</span>
+        <span className="font-semibold">{buttonLabel}</span>
       </Button>
 
       <AlertDialog open={showDialog} onOpenChange={handleDialogChange}>
