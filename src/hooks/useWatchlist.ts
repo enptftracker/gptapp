@@ -2,6 +2,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { MarketDataService } from '@/lib/marketData';
 import { useToast } from '@/hooks/use-toast';
+import {
+  WATCHLIST_FRESHNESS_WINDOW_MS,
+  isCacheEntryStale,
+} from './watchlistStaleness';
 
 export interface WatchlistItem {
   id: string;

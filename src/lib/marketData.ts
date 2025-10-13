@@ -210,7 +210,8 @@ export class MarketDataService {
 
       await this.persistPriceCache(symbolId, marketData);
     } catch (error) {
-      console.error('Error in updatePriceCache:', error);
+      const message = error instanceof Error ? error.message : 'Failed to fetch direct quote.';
+      return { success: false, message };
     }
   }
 
@@ -248,6 +249,9 @@ export class MarketDataService {
       const successTickers = new Set<string>();
       const errorMessages = new Map<string, string>();
       let edgeError: unknown = null;
+
+      let fallbackRequired = false;
+      let fallbackRootMessage: string | undefined;
 
       try {
         const data = await this.invokeMarketData<{
