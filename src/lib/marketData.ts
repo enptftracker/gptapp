@@ -62,6 +62,13 @@ const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: str
 
 type MarketDataSource = 'alphavantage' | 'yfinance';
 
+class MarketDataAuthorizationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MarketDataAuthorizationError';
+  }
+}
+
 export class MarketDataService {
 
   static readonly MAX_SYMBOLS_PER_BATCH = 20;
@@ -93,14 +100,13 @@ export class MarketDataService {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
     if (sessionError) {
-      console.error('Unable to retrieve session for market data request:', sessionError);
-      return null;
+      throw new MarketDataAuthorizationError('Unable to retrieve session for market data request.');
     }
+
     const accessToken = sessionData.session?.access_token;
 
     if (!accessToken) {
-      console.warn('No active session found. Skipping market data request.');
-      return null;
+      throw new MarketDataAuthorizationError('No active session found. Please sign in again to update market data.');
     }
 
     const provider = this.getPreferredProvider();
@@ -127,8 +133,7 @@ export class MarketDataService {
       }
 
       if (response.status === 401) {
-        console.warn('Market data request returned 401. Please reauthenticate.');
-        return null;
+        throw new MarketDataAuthorizationError('Market data request returned 401. Please reauthenticate.');
       }
 
       if (!response.ok) {
@@ -176,9 +181,13 @@ export class MarketDataService {
 
       return (parsed as T | null) ?? null;
     } catch (error) {
+      if (error instanceof MarketDataAuthorizationError) {
+        throw error;
+      }
+
       console.error('Edge function invocation failed:', error);
       this.setPreferredProvider('yfinance');
-      return null;
+      throw error instanceof Error ? error : new Error(String(error));
     }
   }
 
@@ -342,6 +351,7 @@ export class MarketDataService {
   ): Promise<BatchUpdateSummary> {
     const batches: BatchUpdateBatchResult[] = [];
     const errors: BatchUpdateErrorDetail[] = [];
+    const fallbackMessages: string[] = [];
     const totalSymbols = symbols.length;
     const totalBatches = totalSymbols === 0
       ? 0
@@ -413,6 +423,10 @@ export class MarketDataService {
       }
 
       if (fallbackRequired) {
+        if (fallbackRootMessage) {
+          fallbackMessages.push(fallbackRootMessage);
+        }
+
         let fallbackSuccesses = 0;
         for (const symbol of batchSymbols) {
           const result = await this.fetchAndPersistDirectQuote(symbol);
@@ -488,7 +502,17 @@ export class MarketDataService {
     };
 
     if (totalSymbols > 0 && cumulativeSuccessCount === 0) {
-      throw new Error('Failed to update prices for all tickers.');
+      const detailedMessages = [
+        ...fallbackMessages,
+        ...errors
+          .map(entry => entry.message?.trim())
+          .filter((message): message is string => Boolean(message))
+      ];
+
+      const uniqueMessages = Array.from(new Set(detailedMessages));
+      const detail = uniqueMessages.length ? ` ${uniqueMessages.join(' | ')}` : '';
+
+      throw new Error(`Failed to update prices for all tickers.${detail}`);
     }
 
     return summary;

@@ -71,7 +71,9 @@ describe('MarketDataService.batchUpdatePrices fallback handling', () => {
     (MarketDataService as unknown as { invokeMarketData: BatchInvoke }).invokeMarketData = invokeMock;
     (MarketDataService as unknown as { fetchAndPersistDirectQuote: FetchDirect }).fetchAndPersistDirectQuote = fallbackMock;
 
-    await expect(MarketDataService.batchUpdatePrices(symbols)).rejects.toThrow('Failed to update prices for all tickers.');
+    await expect(MarketDataService.batchUpdatePrices(symbols)).rejects.toThrow(
+      'Failed to update prices for all tickers. edge failure | direct failure'
+    );
     expect(fallbackMock.mock.calls.length).toBe(symbols.length);
   });
 });
