@@ -4,7 +4,7 @@ import {
   HistoricalRange,
   HistoricalPricePoint,
   MarketDataService,
-  PriceUpdateSummary
+  PriceUpdateSummaryLike
 } from '@/lib/marketData';
 
 export function useMarketData(ticker: string) {
@@ -33,26 +33,33 @@ export type UpdatePricesStatus = 'idle' | 'running' | 'success' | 'error';
 
 export interface UpdatePricesResult {
   status: UpdatePricesStatus;
-  summary: PriceUpdateSummary | null;
+  summary: PriceUpdateSummaryLike | null;
   errorMessage: string | null;
   reset: () => void;
-  mutate: UseMutateFunction<PriceUpdateSummary, unknown, void, unknown>;
-  mutateAsync: () => Promise<PriceUpdateSummary>;
+  mutate: UseMutateFunction<PriceUpdateSummaryLike, unknown, void, unknown>;
+  mutateAsync: () => Promise<PriceUpdateSummaryLike>;
   isPending: boolean;
 }
 
-export function useUpdatePrices(): UpdatePricesResult {
+export interface UpdatePricesOptions {
+  portfolioId?: string;
+}
+
+export function useUpdatePrices(options?: UpdatePricesOptions): UpdatePricesResult {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<UpdatePricesStatus>('idle');
-  const [summary, setSummary] = useState<PriceUpdateSummary | null>(null);
+  const [summary, setSummary] = useState<PriceUpdateSummaryLike | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const portfolioId = options?.portfolioId?.trim();
 
-  const mutation = useMutation<PriceUpdateSummary, unknown, void>({
+  const mutation = useMutation<PriceUpdateSummaryLike, unknown, void>({
     mutationFn: async () => {
       setStatus('running');
       setSummary(null);
       setErrorMessage(null);
-      return MarketDataService.refreshAllPrices();
+      return portfolioId
+        ? MarketDataService.refreshPortfolioPrices(portfolioId)
+        : MarketDataService.refreshAllPrices();
     },
     onSuccess: async (result) => {
       setStatus('success');

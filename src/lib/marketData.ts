@@ -60,6 +60,11 @@ interface RefreshResponse {
   completedAt: string;
 }
 
+interface PortfolioRefreshResponse extends RefreshResponse {
+  portfolioId: string;
+  quotes?: QuoteResponse[];
+}
+
 interface HistoricalResponse {
   symbol: string;
   range: HistoricalRange;
@@ -67,6 +72,13 @@ interface HistoricalResponse {
   points?: HistoricalPricePoint[];
   error?: string;
 }
+
+export interface PortfolioPriceUpdateSummary extends PriceUpdateSummary {
+  portfolioId: string;
+  quotes: LiveQuote[];
+}
+
+export type PriceUpdateSummaryLike = PriceUpdateSummary | PortfolioPriceUpdateSummary;
 
 class MarketDataAuthorizationError extends Error {
   constructor(message: string) {
@@ -114,6 +126,16 @@ class MarketDataServiceImpl {
       errors: Array.isArray(payload.errors) ? payload.errors : [],
       startedAt: new Date(payload.startedAt),
       completedAt: new Date(payload.completedAt)
+    };
+  }
+
+  private static parsePortfolioRefreshSummary(payload: PortfolioRefreshResponse): PortfolioPriceUpdateSummary {
+    const summary = this.parseRefreshSummary(payload);
+
+    return {
+      ...summary,
+      portfolioId: payload.portfolioId,
+      quotes: Array.isArray(payload.quotes) ? payload.quotes.map(quote => this.parseQuote(quote)) : []
     };
   }
 
@@ -360,6 +382,20 @@ class MarketDataServiceImpl {
 
   static async updatePriceCache(_symbolId: string, ticker: string): Promise<void> {
     await this.refreshPrices([ticker]);
+  }
+
+  static async refreshPortfolioPrices(portfolioId: string): Promise<PortfolioPriceUpdateSummary> {
+    const normalized = portfolioId.trim();
+    if (!normalized) {
+      throw new Error('Portfolio ID is required for refreshing prices.');
+    }
+
+    const response = await this.invokeFunction<PortfolioRefreshResponse>({
+      action: 'portfolio_prices',
+      portfolioId: normalized
+    });
+
+    return this.parsePortfolioRefreshSummary(response);
   }
 
   static async getHistoricalPrices(ticker: string, range: HistoricalRange): Promise<HistoricalPricePoint[]> {

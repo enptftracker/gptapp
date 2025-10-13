@@ -11,6 +11,7 @@ import { usePortfolioHoldings, usePortfolioMetrics } from '@/hooks/useHoldings';
 import HoldingsTable from '@/components/dashboard/HoldingsTable';
 import TransactionHistory from '@/components/transactions/TransactionHistory';
 import TransactionForm from '@/components/transactions/TransactionForm';
+import { PriceRefreshButton } from '@/components/dashboard/PriceRefreshButton';
 import MetricCard from '@/components/dashboard/MetricCard';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { HistoricalValueChart } from '@/components/analytics/HistoricalValueChart';
@@ -101,7 +102,7 @@ export default function PortfolioDetail() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-center space-x-4">
           <Button variant="ghost" size="sm" asChild>
             <Link to="/portfolios">
@@ -116,10 +117,13 @@ export default function PortfolioDetail() {
             )}
           </div>
         </div>
-        <TransactionForm 
-          portfolios={[portfolio]}
-          defaultPortfolioId={portfolio.id}
-        />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <PriceRefreshButton portfolioId={portfolio.id} />
+          <TransactionForm
+            portfolios={[portfolio]}
+            defaultPortfolioId={portfolio.id}
+          />
+        </div>
       </div>
 
       {/* Key Metrics */}

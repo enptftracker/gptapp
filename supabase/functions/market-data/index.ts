@@ -266,10 +266,59 @@ async function loadSymbolsForUser(userId: string, tickers: string[]): Promise<Ar
   return data ?? [];
 }
 
+async function loadPortfolioSymbols(
+  userId: string,
+  portfolioId: string
+): Promise<Array<{ id: string; ticker: string }>> {
+  const { data: transactionSymbols, error: transactionError } = await adminClient
+    .from('transactions')
+    .select('symbol_id')
+    .eq('owner_id', userId)
+    .eq('portfolio_id', portfolioId)
+    .not('symbol_id', 'is', null);
+
+  if (transactionError) {
+    throw transactionError;
+  }
+
+  const entries = (transactionSymbols ?? []) as Array<{ symbol_id: string | null }>;
+
+  const symbolIds = Array.from(
+    new Set(
+      entries
+        .map(entry => entry.symbol_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    )
+  );
+
+  if (!symbolIds.length) {
+    return [];
+  }
+
+  const { data: symbols, error: symbolError } = await adminClient
+    .from('symbols')
+    .select('id, ticker')
+    .in('id', symbolIds)
+    .order('ticker');
+
+  if (symbolError) {
+    throw symbolError;
+  }
+
+  return (symbols ?? []).filter(
+    (symbol): symbol is { id: string; ticker: string } =>
+      typeof symbol?.id === 'string' &&
+      symbol.id.length > 0 &&
+      typeof symbol?.ticker === 'string' &&
+      symbol.ticker.length > 0
+  );
+}
+
 type MarketDataRequest =
   | { action: 'quote'; symbol: string }
   | { action: 'refresh_prices'; symbols?: unknown }
-  | { action: 'historical'; symbol: string; range: HistoricalRange };
+  | { action: 'historical'; symbol: string; range: HistoricalRange }
+  | { action: 'portfolio_prices'; portfolioId: string };
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -420,6 +469,73 @@ Deno.serve(async (req) => {
           console.error(`Historical request failed for ${symbol}:`, message);
           return withCors(jsonResponse({ error: message }, { status: 502 }), corsHeaders);
         }
+      }
+
+      case 'portfolio_prices': {
+        const portfolioId = payload.portfolioId?.trim();
+
+        if (!portfolioId) {
+          return withCors(jsonResponse({ error: 'Portfolio ID is required.' }, { status: 400 }), corsHeaders);
+        }
+
+        let symbols: Array<{ id: string; ticker: string }> = [];
+
+        try {
+          symbols = await loadPortfolioSymbols(userId, portfolioId);
+        } catch (error) {
+          console.error(`Failed to load symbols for portfolio ${portfolioId}:`, error);
+          return withCors(jsonResponse({ error: 'Unable to load portfolio symbols.' }, { status: 500 }), corsHeaders);
+        }
+
+        if (!symbols.length) {
+          const emptySummary = {
+            provider: 'yahoo' as const,
+            portfolioId,
+            totalSymbols: 0,
+            updated: 0,
+            failed: 0,
+            quotes: [] as LiveQuote[],
+            errors: [] as PriceUpdateErrorDetail[],
+            startedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString()
+          };
+
+          return withCors(jsonResponse(emptySummary), corsHeaders);
+        }
+
+        const startedAt = new Date();
+        const errors: PriceUpdateErrorDetail[] = [];
+        const quotes: LiveQuote[] = [];
+
+        for (const symbol of symbols) {
+          try {
+            const quote = await fetchYahooQuote(symbol.ticker);
+            quotes.push(quote);
+            await persistQuote(symbol.id, quote);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to fetch quote for symbol.';
+            errors.push({ ticker: symbol.ticker, message });
+            console.error(`Failed to refresh ${symbol.ticker} for portfolio ${portfolioId}:`, message);
+          }
+
+          await sleep(150);
+        }
+
+        const completedAt = new Date();
+
+        const summary = {
+          provider: 'yahoo' as const,
+          portfolioId,
+          totalSymbols: symbols.length,
+          updated: quotes.length,
+          failed: errors.length,
+          quotes,
+          errors,
+          startedAt: startedAt.toISOString(),
+          completedAt: completedAt.toISOString()
+        };
+
+        return withCors(jsonResponse(summary), corsHeaders);
       }
 
       default: {
