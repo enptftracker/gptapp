@@ -1,4 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
+import { SUPABASE_ANON_KEY, SUPABASE_FUNCTION_URL } from '@/integrations/supabase/env';
+import type { Json } from '@/integrations/supabase/types';
 
 export interface MarketDataProvider {
   symbol: string;
@@ -47,8 +49,6 @@ export interface HistoricalPricePoint {
   price: number;
 }
 
-export type MarketDataSource = 'alphavantage' | 'yfinance';
-
 const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: string }> = {
   '1D': { range: '1d', interval: '15m' },
   '1W': { range: '5d', interval: '1h' },
@@ -63,17 +63,6 @@ const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: str
 export class MarketDataService {
 
   static readonly MAX_SYMBOLS_PER_BATCH = 20;
-  static readonly DEFAULT_PROVIDER: MarketDataSource = 'alphavantage';
-  static readonly PROVIDER_STORAGE_KEY = 'marketDataProvider';
-
-  private static getPreferredProvider(): MarketDataSource {
-    if (typeof window === 'undefined') {
-      return this.DEFAULT_PROVIDER;
-    }
-
-    const stored = window.localStorage.getItem(MarketDataService.PROVIDER_STORAGE_KEY);
-    return stored === 'yfinance' ? 'yfinance' : 'alphavantage';
-  }
 
   private static async invokeMarketData<T>(body: Record<string, unknown>): Promise<T | null> {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -89,38 +78,42 @@ export class MarketDataService {
       return null;
     }
 
-    const provider = ((): MarketDataSource => {
-      const candidate = (body as { provider?: unknown }).provider;
-      if (typeof candidate === 'string') {
-        return candidate === 'yfinance' ? 'yfinance' : 'alphavantage';
+    try {
+      const response = await fetch(`${SUPABASE_FUNCTION_URL}/market-data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          apikey: SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (response.status === 401) {
+        console.warn('Market data request returned 401. Please reauthenticate.');
+        return null;
       }
-      return this.getPreferredProvider();
-    })();
 
-    const payload = { ...body, provider };
+      if (!response.ok) {
+        let message = 'Failed to fetch market data from the edge function.';
+        try {
+          const payload = await response.json();
+          if (payload && typeof payload.error === 'string') {
+            message = payload.error;
+          }
+        } catch (parseError) {
+          console.error('Unable to parse edge function error payload:', parseError);
+        }
 
-    const { data, error } = await supabase.functions.invoke<T>('market-data', {
-      body: payload,
-      headers: {
-        Authorization: `Bearer ${accessToken}`
+        throw new Error(message);
       }
-    });
 
-    const status = (error as { status?: number } | null)?.status;
-    if (status === 401) {
-      console.warn('Market data request returned 401. Please reauthenticate.');
+      const payload = (await response.json()) as T | null;
+      return payload ?? null;
+    } catch (error) {
+      console.error('Edge function invocation failed:', error);
       return null;
     }
-
-    if (error) {
-      const message = typeof error === 'string'
-        ? error
-        : (error as { message?: string; error?: string }).message || (error as { message?: string; error?: string }).error;
-
-      throw new Error(message || 'Failed to fetch market data from the edge function.');
-    }
-
-    return (data as T | null) ?? null;
   }
 
   /**
@@ -159,7 +152,25 @@ export class MarketDataService {
       // If no cached data, fetch from API
       let data: MarketDataProvider | null = null;
       try {
-        data = await this.invokeMarketData<MarketDataProvider>({ action: 'quote', symbol: normalizedTicker });
+        const remote = await this.invokeMarketData<MarketDataProvider & { lastUpdated?: string | number | Date }>({
+          action: 'quote',
+          symbol: normalizedTicker
+        });
+
+        if (remote) {
+          const normalized: MarketDataProvider = {
+            ...remote,
+            lastUpdated: remote.lastUpdated instanceof Date
+              ? remote.lastUpdated
+              : new Date(remote.lastUpdated ?? Date.now())
+          };
+
+          data = normalized;
+
+          if (symbolData?.id) {
+            await this.persistPriceCache(symbolData.id, normalized);
+          }
+        }
       } catch (error) {
         console.error('Edge quote fetch failed:', error);
       }
@@ -169,6 +180,11 @@ export class MarketDataService {
       }
 
       const fallback = await this.fetchYahooQuoteFallback(normalizedTicker);
+
+      if (fallback && symbolData?.id) {
+        await this.persistPriceCache(symbolData.id, fallback);
+      }
+
       return fallback;
     } catch (error) {
       console.error('Error fetching market data:', error);
@@ -191,21 +207,56 @@ export class MarketDataService {
   }
 
   private static async persistPriceCache(symbolId: string, marketData: MarketDataProvider): Promise<boolean> {
-    const { error } = await supabase
-      .from('price_cache')
-      .upsert({
-        symbol_id: symbolId,
-        price: marketData.price,
-        price_currency: 'USD',
-        change_24h: marketData.change,
-        change_percent_24h: marketData.changePercent,
-        asof: new Date().toISOString()
-      }, {
-        onConflict: 'symbol_id'
-      });
+    const { error } = await supabase.rpc('upsert_price_cache_entry', {
+      p_symbol_id: symbolId,
+      p_price: marketData.price,
+      p_price_currency: 'USD',
+      p_change_24h: marketData.change,
+      p_change_percent_24h: marketData.changePercent,
+      p_asof: new Date().toISOString()
+    });
 
     if (error) {
-      console.error('Error updating price cache:', error);
+      console.error('Error updating price cache via RPC:', error);
+      return false;
+    }
+
+    return true;
+  }
+
+  private static async persistHistoricalSeries(symbolId: string, points: HistoricalPricePoint[]): Promise<boolean> {
+    if (!points.length) {
+      return true;
+    }
+
+    const payload = points
+      .map(point => {
+        const date = new Date(point.time);
+        if (Number.isNaN(date.getTime())) {
+          return null;
+        }
+
+        return {
+          date: date.toISOString().slice(0, 10),
+          price: Number(point.price),
+          price_currency: 'USD'
+        };
+      })
+      .filter((entry): entry is { date: string; price: number; price_currency: string } => Boolean(entry));
+
+    if (!payload.length) {
+      return true;
+    }
+
+    const trimmed = payload.slice(-3652);
+
+    const { error } = await supabase.rpc('upsert_historical_price_cache', {
+      p_symbol_id: symbolId,
+      p_points: trimmed as unknown as Json
+    });
+
+    if (error) {
+      console.error('Error updating historical price cache via RPC:', error);
       return false;
     }
 
@@ -394,7 +445,7 @@ export class MarketDataService {
 
   /**
    * Fetch historical data for major indices
-   */
+  */
   static async fetchHistoricalData(symbols?: string[]): Promise<void> {
     try {
       const sanitizedSymbols = Array.isArray(symbols)
@@ -407,20 +458,88 @@ export class MarketDataService {
           )
         : undefined;
 
-      const payload: Record<string, unknown> = { action: 'historical' };
+      let symbolRecords: Array<{ id: string; ticker: string }> = [];
+
       if (sanitizedSymbols?.length) {
-        payload.symbols = sanitizedSymbols;
+        const { data, error } = await supabase
+          .from('symbols')
+          .select('id, ticker')
+          .in('ticker', sanitizedSymbols);
+
+        if (error) {
+          console.error('Unable to load symbols for historical refresh:', error);
+          return;
+        }
+
+        symbolRecords = data ?? [];
+
+        const found = new Set(symbolRecords.map(record => record.ticker.toUpperCase()));
+        const missing = sanitizedSymbols.filter(ticker => !found.has(ticker));
+        if (missing.length) {
+          console.warn('Skipping historical refresh for symbols not present in the database:', missing);
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('symbols')
+          .select('id, ticker');
+
+        if (error) {
+          console.error('Unable to load user symbols for historical refresh:', error);
+          return;
+        }
+
+        symbolRecords = data ?? [];
       }
 
-      const data = await this.invokeMarketData<{ success?: boolean; message?: string; results?: unknown[] }>(payload);
-      if (!data) {
-        console.warn('Historical data fetch skipped due to missing authorization.');
+      if (!symbolRecords.length) {
+        console.warn('No symbols available for historical data refresh.');
         return;
       }
 
-      console.log('Historical data fetch result:', data);
+      for (let index = 0; index < symbolRecords.length; index++) {
+        const record = symbolRecords[index];
+        const normalizedTicker = record.ticker.trim().toUpperCase();
+        const series = await this.fetchYahooDailySeries(normalizedTicker);
+
+        if (series.length) {
+          await this.persistHistoricalSeries(record.id, series);
+        } else {
+          console.warn(`No historical data returned from Yahoo Finance for ${normalizedTicker}`);
+        }
+
+        if (index < symbolRecords.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 750));
+        }
+      }
     } catch (error) {
       console.error('Error fetching historical data:', error);
+    }
+  }
+
+  static async getProviderStatus(): Promise<{
+    alphaConfigured: boolean;
+    serviceRoleConfigured: boolean;
+    anonKeyConfigured: boolean;
+  } | null> {
+    try {
+      const status = await this.invokeMarketData<{
+        alphaConfigured?: boolean;
+        serviceRoleConfigured?: boolean;
+        anonKeyConfigured?: boolean;
+      }>({ action: 'status' });
+
+      if (!status) {
+        return null;
+      }
+
+      return {
+        alphaConfigured: Boolean(status.alphaConfigured),
+        serviceRoleConfigured: Boolean(status.serviceRoleConfigured),
+        anonKeyConfigured: Boolean(status.anonKeyConfigured)
+      };
+    } catch (error) {
+      console.error('Unable to retrieve market data provider status:', error);
+      return null;
     }
   }
 
@@ -507,12 +626,38 @@ export class MarketDataService {
       }
 
       if (remoteSeries && remoteSeries.length) {
+        if (symbolData?.id) {
+          const persisted = await this.persistHistoricalSeries(symbolData.id, remoteSeries);
+          if (persisted) {
+            cachedSeries = await fetchFromCache();
+            if (cachedSeries.length) {
+              return cachedSeries.map(point => ({
+                time: `${point.date}T00:00:00Z`,
+                price: point.price
+              }));
+            }
+          }
+        }
+
         return remoteSeries;
       }
 
       const yahooSeries = await this.fetchYahooHistoricalRange(normalizedTicker, range);
 
       if (yahooSeries.length) {
+        if (symbolData?.id) {
+          const persisted = await this.persistHistoricalSeries(symbolData.id, yahooSeries);
+          if (persisted) {
+            cachedSeries = await fetchFromCache();
+            if (cachedSeries.length) {
+              return cachedSeries.map(point => ({
+                time: `${point.date}T00:00:00Z`,
+                price: point.price
+              }));
+            }
+          }
+        }
+
         return yahooSeries;
       }
 
@@ -624,6 +769,60 @@ export class MarketDataService {
       return points;
     } catch (error) {
       console.error('Yahoo fallback historical error:', error);
+      return [];
+    }
+  }
+
+  private static async fetchYahooDailySeries(ticker: string): Promise<HistoricalPricePoint[]> {
+    try {
+      const response = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=10y&interval=1d&includePrePost=false&events=div%2Csplits`
+      );
+
+      if (!response.ok) {
+        return [];
+      }
+
+      const payload = await response.json();
+      const result = payload?.chart?.result?.[0];
+
+      if (!result) {
+        return [];
+      }
+
+      const timestamps: Array<number | null> | undefined = result.timestamp;
+      const quoteSeries: Array<number | null> | undefined = result.indicators?.quote?.[0]?.close;
+      const adjCloseSeries: Array<number | null> | undefined = result.indicators?.adjclose?.[0]?.adjclose;
+
+      const series = quoteSeries && quoteSeries.some(value => typeof value === 'number')
+        ? quoteSeries
+        : adjCloseSeries;
+
+      if (!Array.isArray(timestamps) || !Array.isArray(series)) {
+        return [];
+      }
+
+      const points: HistoricalPricePoint[] = [];
+
+      timestamps.forEach((timestamp, index) => {
+        if (typeof timestamp !== 'number') {
+          return;
+        }
+
+        const price = series[index];
+        if (typeof price !== 'number' || Number.isNaN(price)) {
+          return;
+        }
+
+        points.push({
+          time: new Date(timestamp * 1000).toISOString(),
+          price: Number(price.toFixed(4))
+        });
+      });
+
+      return points.sort((a, b) => a.time.localeCompare(b.time));
+    } catch (error) {
+      console.error('Yahoo daily historical error:', error);
       return [];
     }
   }
