@@ -48,8 +48,6 @@ export interface HistoricalPricePoint {
   price: number;
 }
 
-export type MarketDataSource = 'alphavantage' | 'yfinance';
-
 const YAHOO_RANGE_CONFIG: Record<HistoricalRange, { range: string; interval: string }> = {
   '1D': { range: '1d', interval: '15m' },
   '1W': { range: '5d', interval: '1h' },
@@ -102,13 +100,21 @@ export class MarketDataService {
       return null;
     }
 
-    const provider = ((): MarketDataSource => {
-      const candidate = (body as { provider?: unknown }).provider;
-      if (typeof candidate === 'string') {
-        return candidate === 'yfinance' ? 'yfinance' : 'alphavantage';
+    try {
+      const response = await fetch(`${SUPABASE_FUNCTION_URL}/market-data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          apikey: SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (response.status === 401) {
+        console.warn('Market data request returned 401. Please reauthenticate.');
+        return null;
       }
-      return this.getPreferredProvider();
-    })();
 
     if (provider === 'yfinance') {
       return null;
