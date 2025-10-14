@@ -13,14 +13,12 @@ interface StockChartProps {
   currency: string;
 }
 
-type TimeRange = '1M' | '3M' | '6M' | '1Y' | '5Y';
+type TimeRange = '1M' | '3M' | '1Y' | '5Y';
 
 const rangeDisplayFormat: Record<HistoricalRange, string> = {
   '1D': 'HH:mm',
-  '1W': 'MMM d',
   '1M': 'MMM d',
   '3M': 'MMM d',
-  '6M': 'MMM d',
   '1Y': 'MMM yyyy',
   '5Y': 'MMM yyyy',
   'MAX': 'yyyy',
@@ -28,10 +26,8 @@ const rangeDisplayFormat: Record<HistoricalRange, string> = {
 
 const rangeTooltipFormat: Record<HistoricalRange, string> = {
   '1D': 'MMM d, HH:mm',
-  '1W': 'EEE, MMM d yyyy',
   '1M': 'EEE, MMM d yyyy',
   '3M': 'EEE, MMM d yyyy',
-  '6M': 'MMM d yyyy',
   '1Y': 'MMM d yyyy',
   '5Y': 'MMM yyyy',
   'MAX': 'MMM yyyy',
@@ -40,7 +36,6 @@ const rangeTooltipFormat: Record<HistoricalRange, string> = {
 const rangeMap: Record<TimeRange, HistoricalRange> = {
   '1M': '1M',
   '3M': '3M',
-  '6M': '6M',
   '1Y': '1Y',
   '5Y': '5Y',
 };
@@ -98,7 +93,7 @@ export function StockChart({ ticker, currency }: StockChartProps) {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle className="text-base md:text-lg">Price History</CardTitle>
           <div className="flex gap-1 overflow-x-auto pb-1">
-            {(['1M', '3M', '6M', '1Y', '5Y'] as TimeRange[]).map((range) => (
+            {(['1M', '3M', '1Y', '5Y'] as TimeRange[]).map((range) => (
               <Button
                 key={range}
                 variant={timeRange === range ? 'default' : 'outline'}

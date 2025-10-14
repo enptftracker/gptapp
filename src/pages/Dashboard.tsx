@@ -72,10 +72,6 @@ export default function Dashboard() {
           await priceService.updatePrice(holding.symbolId, quote.price);
           results.push({ symbol: holding.ticker, success: true });
         } catch (error) {
-          if (error instanceof Error && error.name === 'MarketDataAuthorizationError') {
-            throw error;
-          }
-
           console.error(`Failed to refresh price for ${holding.ticker}:`, error);
           results.push({
             symbol: holding.ticker,
