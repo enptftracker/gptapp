@@ -66,6 +66,63 @@ class MarketDataServiceImpl {
     return Number.parseFloat(value.toFixed(digits));
   }
 
+  private static async fetchStockPrice(
+    ticker: string
+  ): Promise<FetchStockPriceResponse | null> {
+    try {
+      const { data, error } = await supabase.functions.invoke<FetchStockPriceResponse>(
+        'fetch-stock-price',
+        {
+          body: { ticker }
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data || typeof data !== 'object') {
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error fetching stock price:', error);
+      throw error instanceof Error
+        ? error
+        : new Error('Unknown error fetching stock price.');
+    }
+  }
+
+  private static async fetchHistoricalData(
+    ticker: string,
+    range: HistoricalRange
+  ): Promise<FetchHistoricalDataResponse | null> {
+    try {
+      const { data, error } = await supabase.functions.invoke<FetchHistoricalDataResponse>(
+        'fetch-historical-data',
+        {
+          body: { ticker, period: range }
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data || typeof data !== 'object') {
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error fetching historical data:', error);
+      throw error instanceof Error
+        ? error
+        : new Error('Unknown error fetching historical data.');
+    }
+  }
+
   private static parseTimestamp(entry: HistoricalEntry): number | null {
     if (typeof entry.timestamp === 'number' && Number.isFinite(entry.timestamp)) {
       return entry.timestamp;
@@ -87,18 +144,9 @@ class MarketDataServiceImpl {
       return null;
     }
 
-    const { data, error } = await supabase.functions.invoke<FetchStockPriceResponse>(
-      'fetch-stock-price',
-      {
-        body: { ticker: normalized }
-      }
-    );
+    const data = await this.fetchStockPrice(normalized);
 
-    if (error) {
-      throw new Error(error.message ?? 'Supabase function error.');
-    }
-
-    if (!data || typeof data !== 'object') {
+    if (!data) {
       return null;
     }
 
@@ -135,16 +183,7 @@ class MarketDataServiceImpl {
       return [];
     }
 
-    const { data, error } = await supabase.functions.invoke<FetchHistoricalDataResponse>(
-      'fetch-historical-data',
-      {
-        body: { ticker: normalized, period: range }
-      }
-    );
-
-    if (error) {
-      throw new Error(error.message ?? 'Supabase function error.');
-    }
+    const data = await this.fetchHistoricalData(normalized, range);
 
     if (!data || !Array.isArray(data.data)) {
       return [];
