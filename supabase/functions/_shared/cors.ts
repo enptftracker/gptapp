@@ -14,26 +14,38 @@ const BASE_CORS_HEADERS = {
   Vary: 'Origin',
 } as const;
 
-const normalizeOrigin = (origin: string) => origin.replace(/\/$/, '');
+const toUrlOrigin = (value: string): string | null => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+};
+
+const ALLOWED_URL_ORIGINS = ALLOWED_ORIGINS.reduce<string[]>((origins, value) => {
+  const origin = toUrlOrigin(value);
+
+  if (origin && !origins.includes(origin)) {
+    origins.push(origin);
+  }
+
+  return origins;
+}, []);
 
 const resolveAllowedOrigin = (origin: string | null): string => {
   if (!origin) {
     return DEFAULT_ALLOWED_ORIGIN;
   }
 
-  const normalizedOrigin = normalizeOrigin(origin);
+  const normalizedOrigin = toUrlOrigin(origin);
 
-  const isAllowed = ALLOWED_ORIGINS.some((allowedOrigin) => {
-    const normalizedAllowed = normalizeOrigin(allowedOrigin);
+  if (!normalizedOrigin) {
+    return DEFAULT_ALLOWED_ORIGIN;
+  }
 
-    return (
-      normalizedAllowed === normalizedOrigin ||
-      normalizedAllowed.startsWith(normalizedOrigin) ||
-      normalizedOrigin.startsWith(normalizedAllowed)
-    );
-  });
-
-  return isAllowed ? normalizedOrigin : DEFAULT_ALLOWED_ORIGIN;
+  return ALLOWED_URL_ORIGINS.includes(normalizedOrigin)
+    ? normalizedOrigin
+    : DEFAULT_ALLOWED_ORIGIN;
 };
 
 export const getCorsHeaders = (origin: string | null) => ({
