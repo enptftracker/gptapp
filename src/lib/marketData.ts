@@ -121,7 +121,7 @@ class MarketDataServiceImpl {
     return null;
   }
 
-  private static async fetchAlphaQuote(symbol: string): Promise<LiveQuote> {
+  private static async fetchAlphaQuoteDirect(symbol: string): Promise<LiveQuote> {
     const url = this.buildAlphaVantageUrl({
       function: 'GLOBAL_QUOTE',
       symbol
@@ -174,6 +174,59 @@ class MarketDataServiceImpl {
       lastUpdated,
       provider: 'alphavantage'
     };
+  }
+
+  private static async fetchQuoteFromEdge(symbol: string): Promise<LiveQuote> {
+    type EdgeQuote = {
+      symbol?: string;
+      price?: number;
+      change?: number;
+      changePercent?: number;
+      volume?: number;
+      high?: number;
+      low?: number;
+      lastUpdated?: string;
+      provider?: string;
+    };
+
+    try {
+      const { data, error } = await supabase.functions.invoke<EdgeQuote>('market-quote', {
+        body: { ticker: symbol }
+      });
+
+      if (error) {
+        throw new Error(error.message ?? 'Supabase function error.');
+      }
+
+      if (!data || typeof data !== 'object') {
+        throw new Error('Supabase function returned no data.');
+      }
+
+      const price = this.toNumber(data.price);
+
+      if (typeof price !== 'number') {
+        throw new Error('Supabase function returned an invalid price.');
+      }
+
+      const change = this.toNumber(data.change) ?? 0;
+      const changePercent = this.toNumber(data.changePercent) ?? 0;
+      const volume = this.toNumber(data.volume);
+      const lastUpdatedInput = typeof data.lastUpdated === 'string' ? data.lastUpdated : undefined;
+      const lastUpdated = lastUpdatedInput ? new Date(lastUpdatedInput) : new Date();
+
+      return {
+        symbol: data.symbol ?? symbol,
+        price: this.round(price),
+        change: this.round(change),
+        changePercent: this.round(changePercent),
+        volume: typeof volume === 'number' ? volume : undefined,
+        lastUpdated,
+        provider: data.provider ?? 'alphavantage'
+      };
+    } catch (error) {
+      console.error('Failed to load quote from Supabase edge function:', error);
+      throw error;
+    }
   }
 
   private static async fetchAlphaHistorical(
@@ -334,7 +387,14 @@ class MarketDataServiceImpl {
     }
 
     try {
-      const quote = await this.fetchAlphaQuote(normalized);
+      const quote = await this.fetchQuoteFromEdge(normalized);
+      return quote;
+    } catch (error) {
+      console.error('Supabase edge quote fetch failed, attempting direct Alpha Vantage request:', error);
+    }
+
+    try {
+      const quote = await this.fetchAlphaQuoteDirect(normalized);
       return quote;
     } catch (error) {
       if (error instanceof MarketDataAuthorizationError) {
