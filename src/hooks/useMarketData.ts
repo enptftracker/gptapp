@@ -15,7 +15,7 @@ export function useMarketData(ticker: string) {
   });
 }
 
-export const HISTORICAL_RANGES: HistoricalRange[] = ['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'MAX'];
+export const HISTORICAL_RANGES: HistoricalRange[] = ['1D', '1M', '3M', '1Y', '5Y', 'MAX'];
 
 export function useHistoricalPrices(ticker: string, range: HistoricalRange) {
   return useQuery<HistoricalPricePoint[], Error>({
