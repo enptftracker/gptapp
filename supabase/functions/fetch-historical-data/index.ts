@@ -1,16 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 interface HistoricalRequest {
   ticker: string;
   period: '1D' | '1M' | '3M' | '1Y' | '5Y' | 'MAX';
 }
 
+type TimeSeriesEntry = {
+  '1. open': string;
+  '2. high': string;
+  '3. low': string;
+  '4. close': string;
+  '5. volume': string;
+};
+
+type TimeSeriesResponse = Record<string, TimeSeriesEntry>;
+
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req.headers.get('Origin'));
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -77,8 +85,8 @@ serve(async (req) => {
       ? 'Time Series (5min)' 
       : 'Time Series (Daily)';
     
-    const timeSeries = data[timeSeriesKey];
-    
+    const timeSeries = data[timeSeriesKey] as TimeSeriesResponse | undefined;
+
     if (!timeSeries) {
       console.error('No time series data found');
       return new Response(
@@ -90,14 +98,14 @@ serve(async (req) => {
     // Convert to array format and filter based on period
     const now = new Date();
     const chartData = Object.entries(timeSeries)
-      .map(([date, values]: [string, any]) => ({
+      .map(([date, values]) => ({
         date,
         timestamp: new Date(date).getTime(),
-        open: parseFloat(values['1. open']),
-        high: parseFloat(values['2. high']),
-        low: parseFloat(values['3. low']),
-        close: parseFloat(values['4. close']),
-        volume: parseInt(values['5. volume']),
+        open: Number.parseFloat(values['1. open']),
+        high: Number.parseFloat(values['2. high']),
+        low: Number.parseFloat(values['3. low']),
+        close: Number.parseFloat(values['4. close']),
+        volume: Number.parseInt(values['5. volume'], 10),
       }))
       .sort((a, b) => a.timestamp - b.timestamp);
 

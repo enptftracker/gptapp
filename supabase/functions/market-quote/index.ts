@@ -1,9 +1,5 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 type GlobalQuote = {
   symbol: string;
@@ -48,7 +44,7 @@ const normalizeTicker = (value: string | null | undefined): string =>
     .trim()
     .toUpperCase();
 
-const jsonResponse = (body: unknown, status = 200) =>
+const jsonResponse = (body: unknown, status: number, corsHeaders: HeadersInit) =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -58,16 +54,18 @@ const jsonResponse = (body: unknown, status = 200) =>
   });
 
 const handleRequest = async (request: Request): Promise<Response> => {
+  const corsHeaders = getCorsHeaders(request.headers.get('Origin'));
+
   // Handle CORS preflight requests
   if (request.method === 'OPTIONS') {
-    return new Response(null, { 
+    return new Response(null, {
       status: 200,
-      headers: corsHeaders 
+      headers: corsHeaders
     });
   }
 
   if (request.method !== 'POST') {
-    return jsonResponse({ error: 'Method not allowed' }, 405);
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
   }
 
   let payload: Record<string, unknown>;
@@ -76,7 +74,7 @@ const handleRequest = async (request: Request): Promise<Response> => {
     payload = await request.json();
   } catch (error) {
     console.error('Failed to parse request payload:', error);
-    return jsonResponse({ error: 'Invalid JSON payload' }, 400);
+    return jsonResponse({ error: 'Invalid JSON payload' }, 400, corsHeaders);
   }
 
   const tickerInput =
@@ -89,13 +87,13 @@ const handleRequest = async (request: Request): Promise<Response> => {
   const ticker = normalizeTicker(tickerInput);
 
   if (!ticker) {
-    return jsonResponse({ error: 'Ticker symbol is required' }, 400);
+    return jsonResponse({ error: 'Ticker symbol is required' }, 400, corsHeaders);
   }
 
   const apiKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
   if (!apiKey) {
     console.error('ALPHA_VANTAGE_API_KEY is not configured');
-    return jsonResponse({ error: 'Alpha Vantage API key is not configured' }, 500);
+    return jsonResponse({ error: 'Alpha Vantage API key is not configured' }, 500, corsHeaders);
   }
 
   const url = new URL('https://www.alphavantage.co/query');
@@ -109,12 +107,12 @@ const handleRequest = async (request: Request): Promise<Response> => {
     response = await fetch(url);
   } catch (error) {
     console.error('Alpha Vantage network request failed:', error);
-    return jsonResponse({ error: 'Failed to reach Alpha Vantage' }, 502);
+    return jsonResponse({ error: 'Failed to reach Alpha Vantage' }, 502, corsHeaders);
   }
 
   if (!response.ok) {
     console.error('Alpha Vantage returned an error response:', response.status, response.statusText);
-    return jsonResponse({ error: `Alpha Vantage error: ${response.statusText}` }, response.status);
+    return jsonResponse({ error: `Alpha Vantage error: ${response.statusText}` }, response.status, corsHeaders);
   }
 
   let data: Record<string, unknown>;
@@ -123,24 +121,24 @@ const handleRequest = async (request: Request): Promise<Response> => {
     data = await response.json();
   } catch (error) {
     console.error('Failed to parse Alpha Vantage response:', error);
-    return jsonResponse({ error: 'Invalid response from Alpha Vantage' }, 502);
+    return jsonResponse({ error: 'Invalid response from Alpha Vantage' }, 502, corsHeaders);
   }
 
   const providerError = (data['Error Message'] ?? data['Note'] ?? data['Information']);
   if (typeof providerError === 'string' && providerError.trim().length > 0) {
     console.error('Alpha Vantage provider error:', providerError);
-    return jsonResponse({ error: providerError.trim() }, 502);
+    return jsonResponse({ error: providerError.trim() }, 502, corsHeaders);
   }
 
   const rawQuote = (data['Global Quote'] ?? null) as QuotePayload | null;
 
   if (!rawQuote || Object.keys(rawQuote).length === 0) {
-    return jsonResponse({ error: 'No quote data found for ticker', symbol: ticker }, 404);
+    return jsonResponse({ error: 'No quote data found for ticker', symbol: ticker }, 404, corsHeaders);
   }
 
   const price = toNumber(rawQuote['05. price']);
   if (typeof price !== 'number') {
-    return jsonResponse({ error: 'Invalid price returned from Alpha Vantage' }, 502);
+    return jsonResponse({ error: 'Invalid price returned from Alpha Vantage' }, 502, corsHeaders);
   }
 
   const change = toNumber(rawQuote['09. change']) ?? 0;
@@ -165,7 +163,7 @@ const handleRequest = async (request: Request): Promise<Response> => {
     provider: 'alphavantage'
   };
 
-  return jsonResponse(payloadResponse, 200);
+  return jsonResponse(payloadResponse, 200, corsHeaders);
 };
 
 serve(handleRequest);
