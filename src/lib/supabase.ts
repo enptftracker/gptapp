@@ -57,7 +57,7 @@ export interface Profile {
   base_currency: string;
   timezone: string;
   default_lot_method: 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
-  market_data_provider: 'alphavantage' | 'yfinance';
+  market_data_provider: 'alphavantage' | 'yfinance' | 'finnhub';
   created_at: string;
   updated_at: string;
 }
@@ -238,6 +238,13 @@ export const transactionService = {
 };
 
 // Price operations
+type UpdatePriceOptions = {
+  currency?: string;
+  change?: number | null;
+  changePercent?: number | null;
+  asof?: Date;
+};
+
 export const priceService = {
   async getLatest(symbolId: string): Promise<PriceData | null> {
     const { data, error } = await supabase
@@ -279,16 +286,25 @@ export const priceService = {
     return latest;
   },
 
-  async updatePrice(symbolId: string, price: number, currency: string = 'USD'): Promise<void> {
+  async updatePrice(
+    symbolId: string,
+    price: number,
+    { currency = 'USD', change = null, changePercent = null, asof }: UpdatePriceOptions = {}
+  ): Promise<void> {
     const { error } = await supabase
       .from('price_cache')
-      .upsert({
-        symbol_id: symbolId,
-        price,
-        price_currency: currency,
-        asof: new Date().toISOString()
-      });
-    
+      .upsert(
+        {
+          symbol_id: symbolId,
+          price,
+          price_currency: currency,
+          change_24h: change,
+          change_percent_24h: changePercent,
+          asof: (asof ?? new Date()).toISOString()
+        },
+        { onConflict: 'symbol_id' }
+      );
+
     if (error) throw error;
   }
 };

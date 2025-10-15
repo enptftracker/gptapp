@@ -5,24 +5,20 @@ interface StockRequest {
   ticker: string;
 }
 
-const YAHOO_FINANCE_ENDPOINT =
-  "https://query1.finance.yahoo.com/v7/finance/quote?symbols=";
-const DEFAULT_YAHOO_USER_AGENT =
-  "Mozilla/5.0 (compatible; PortfolioOpusSupabaseFunction/1.0; +https://github.com/openai/gptapp)";
+const FINNHUB_QUOTE_ENDPOINT = "https://finnhub.io/api/v1/quote";
 
-const getYahooRequestHeaders = (): HeadersInit => {
-  const configuredUserAgent = Deno.env.get("YAHOO_USER_AGENT")?.trim();
-  const userAgent =
-    configuredUserAgent && configuredUserAgent.length > 0
-      ? configuredUserAgent
-      : DEFAULT_YAHOO_USER_AGENT;
+const getFinnhubApiKey = (): string => {
+  const apiKey = Deno.env.get("FINNHUB_API_KEY")?.trim();
 
-  return {
-    "User-Agent": userAgent,
-    Accept: "application/json, text/javascript, */*; q=0.01",
-    "Accept-Language": "en-US,en;q=0.9",
-    Referer: "https://finance.yahoo.com/",
-  };
+  if (!apiKey) {
+    throw new HttpError(
+      "Finnhub API key is not configured",
+      500,
+      "Missing FINNHUB_API_KEY environment variable",
+    );
+  }
+
+  return apiKey;
 };
 
 class HttpError extends Error {
@@ -62,79 +58,79 @@ const normalizeTradingDay = (timestamp?: number | null): string | undefined => {
 
     return date.toISOString().split("T")[0];
   } catch (err) {
-    console.error("Failed to normalize Yahoo trading day", err);
+    console.error("Failed to normalize trading day", err);
     return undefined;
   }
 };
 
-interface YahooQuoteResult {
-  symbol?: string;
-  regularMarketPrice?: number | string;
-  regularMarketChange?: number | string;
-  regularMarketChangePercent?: number | string;
-  regularMarketDayHigh?: number | string;
-  regularMarketDayLow?: number | string;
-  regularMarketVolume?: number | string;
-  regularMarketTime?: number | null;
+interface FinnhubQuoteResult {
+  c?: number | string; // Current price
+  d?: number | string; // Change
+  dp?: number | string; // Percent change
+  h?: number | string; // High price of the day
+  l?: number | string; // Low price of the day
+  o?: number | string; // Open price of the day
+  pc?: number | string; // Previous close price
+  t?: number | null; // Timestamp
 }
 
-const fetchYahooFinanceQuote = async (ticker: string) => {
-  const yahooResponse = await fetch(
-    `${YAHOO_FINANCE_ENDPOINT}${encodeURIComponent(ticker)}`,
-    {
-      headers: getYahooRequestHeaders(),
-    },
-  );
+const fetchFinnhubQuote = async (ticker: string) => {
+  const apiKey = getFinnhubApiKey();
+  const url = new URL(FINNHUB_QUOTE_ENDPOINT);
+  url.searchParams.set("symbol", ticker);
+  url.searchParams.set("token", apiKey);
 
-  if (!yahooResponse.ok) {
-    const upstreamStatus = yahooResponse.status;
+  const finnhubResponse = await fetch(url.toString(), {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!finnhubResponse.ok) {
+    const upstreamStatus = finnhubResponse.status;
     throw new HttpError(
-      `Yahoo Finance API error: ${upstreamStatus}`,
+      `Finnhub API error: ${upstreamStatus}`,
       upstreamStatus >= 400 && upstreamStatus < 500 ? upstreamStatus : 502,
     );
   }
 
-  const yahooData = await yahooResponse.json();
-  const results: YahooQuoteResult[] =
-    yahooData?.quoteResponse?.result &&
-    Array.isArray(yahooData.quoteResponse.result)
-      ? yahooData.quoteResponse.result
-      : [];
+  const finnhubData: FinnhubQuoteResult | undefined =
+    await finnhubResponse.json();
 
-  const result = results[0];
-
-  if (!result) {
+  if (!finnhubData || typeof finnhubData !== "object") {
     throw new HttpError(
-      "Stock not found or invalid ticker symbol",
-      404,
-      yahooData,
+      "Finnhub quote response is invalid",
+      502,
+      finnhubData,
     );
   }
 
-  const price = toFiniteNumber(result.regularMarketPrice);
+  const price = toFiniteNumber(finnhubData.c);
 
   if (typeof price !== "number") {
-    throw new HttpError("Yahoo Finance response missing price", 502, result);
+    throw new HttpError(
+      "Stock not found or invalid ticker symbol",
+      404,
+      finnhubData,
+    );
   }
 
-  const change = toFiniteNumber(result.regularMarketChange) ?? 0;
-  const changePercent =
-    toFiniteNumber(result.regularMarketChangePercent) ?? 0;
-  const high = toFiniteNumber(result.regularMarketDayHigh);
-  const low = toFiniteNumber(result.regularMarketDayLow);
-  const volume = toFiniteNumber(result.regularMarketVolume);
-  const tradingDay = normalizeTradingDay(result.regularMarketTime ?? undefined);
+  const change = toFiniteNumber(finnhubData.d) ?? 0;
+  const changePercent = toFiniteNumber(finnhubData.dp) ?? 0;
+  const high = toFiniteNumber(finnhubData.h);
+  const low = toFiniteNumber(finnhubData.l);
+  const tradingDay = normalizeTradingDay(finnhubData.t ?? undefined);
 
   return {
-    symbol: result.symbol ?? ticker,
+    symbol: ticker,
     price,
     change,
     changePercent,
     high: high ?? undefined,
     low: low ?? undefined,
-    volume: typeof volume === "number" ? Math.round(volume) : undefined,
+    volume: undefined,
     tradingDay,
-    provider: "yfinance" as const,
+    provider: "finnhub" as const,
   };
 };
 
@@ -164,9 +160,9 @@ export const handleFetchStockPrice = async (
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }
-    console.log(`Fetching stock data from Yahoo Finance for: ${ticker}`);
+    console.log(`Fetching stock data from Finnhub for: ${ticker}`);
 
-    const stockData = await fetchYahooFinanceQuote(ticker);
+    const stockData = await fetchFinnhubQuote(ticker);
 
     return new Response(JSON.stringify(stockData), {
       status: 200,
