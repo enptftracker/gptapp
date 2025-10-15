@@ -69,7 +69,11 @@ export default function Dashboard() {
             throw new Error('Quote data unavailable');
           }
 
-          await priceService.updatePrice(holding.symbolId, quote.price);
+          await priceService.updatePrice(holding.symbolId, quote.price, {
+            change: quote.change,
+            changePercent: quote.changePercent,
+            asof: quote.lastUpdated
+          });
           results.push({ symbol: holding.ticker, success: true });
         } catch (error) {
           console.error(`Failed to refresh price for ${holding.ticker}:`, error);
