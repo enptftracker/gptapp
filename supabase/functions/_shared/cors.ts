@@ -9,7 +9,7 @@ export function getCorsHeaders(origin: string | null) {
   const allowOrigin =
     origin && (DEFAULT_ALLOWED_ORIGINS.has(origin) || origin === "*")
       ? origin
-      : "https://gptapp-khaki.vercel.app"; // pick your prod origin, or "*"
+      : "*";
 
   return {
     "Access-Control-Allow-Origin": allowOrigin,
