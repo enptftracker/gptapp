@@ -7,7 +7,34 @@ interface StockRequest {
 
 const YAHOO_FINANCE_ENDPOINT =
   "https://query1.finance.yahoo.com/v7/finance/quote?symbols=";
-const YAHOO_USER_AGENT = "PortfolioOpusSupabaseFunction/1.0";
+const DEFAULT_YAHOO_USER_AGENT =
+  "Mozilla/5.0 (compatible; PortfolioOpusSupabaseFunction/1.0; +https://github.com/openai/gptapp)";
+
+const getYahooRequestHeaders = (): HeadersInit => {
+  const configuredUserAgent = Deno.env.get("YAHOO_USER_AGENT")?.trim();
+  const userAgent =
+    configuredUserAgent && configuredUserAgent.length > 0
+      ? configuredUserAgent
+      : DEFAULT_YAHOO_USER_AGENT;
+
+  return {
+    "User-Agent": userAgent,
+    Accept: "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "en-US,en;q=0.9",
+    Referer: "https://finance.yahoo.com/",
+  };
+};
+
+class HttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
 
 const toFiniteNumber = (value: unknown): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -40,69 +67,54 @@ const normalizeTradingDay = (timestamp?: number | null): string | undefined => {
   }
 };
 
-const buildAlphaVantageResponse = (
-  quote: Record<string, string>,
-  ticker: string
-) => {
-  const price = toFiniteNumber(quote["05. price"]);
+interface YahooQuoteResult {
+  symbol?: string;
+  regularMarketPrice?: number | string;
+  regularMarketChange?: number | string;
+  regularMarketChangePercent?: number | string;
+  regularMarketDayHigh?: number | string;
+  regularMarketDayLow?: number | string;
+  regularMarketVolume?: number | string;
+  regularMarketTime?: number | null;
+}
 
-  if (typeof price !== "number") {
-    throw new Error("Alpha Vantage response missing price");
-  }
-
-  const change = toFiniteNumber(quote["09. change"]);
-  const changePercentRaw = quote["10. change percent"] ?? "";
-  const changePercent =
-    typeof changePercentRaw === "string"
-      ? toFiniteNumber(changePercentRaw.replace("%", ""))
-      : undefined;
-  const high = toFiniteNumber(quote["03. high"]);
-  const low = toFiniteNumber(quote["04. low"]);
-  const volume = toFiniteNumber(quote["06. volume"]);
-
-  return {
-    symbol: ticker,
-    price,
-    change: change ?? 0,
-    changePercent: changePercent ?? 0,
-    high: high ?? undefined,
-    low: low ?? undefined,
-    volume: typeof volume === "number" ? Math.round(volume) : undefined,
-    tradingDay: quote["07. latest trading day"],
-    provider: "alphavantage" as const,
-  };
-};
-
-const fetchYahooFinanceQuote = async (
-  ticker: string,
-  corsHeaders: HeadersInit
-): Promise<Response> => {
+const fetchYahooFinanceQuote = async (ticker: string) => {
   const yahooResponse = await fetch(
     `${YAHOO_FINANCE_ENDPOINT}${encodeURIComponent(ticker)}`,
     {
-      headers: { "User-Agent": YAHOO_USER_AGENT },
-    }
+      headers: getYahooRequestHeaders(),
+    },
   );
 
   if (!yahooResponse.ok) {
-    throw new Error(`Yahoo Finance API error: ${yahooResponse.status}`);
+    const upstreamStatus = yahooResponse.status;
+    throw new HttpError(
+      `Yahoo Finance API error: ${upstreamStatus}`,
+      upstreamStatus >= 400 && upstreamStatus < 500 ? upstreamStatus : 502,
+    );
   }
 
   const yahooData = await yahooResponse.json();
-  const result =
+  const results: YahooQuoteResult[] =
     yahooData?.quoteResponse?.result &&
     Array.isArray(yahooData.quoteResponse.result)
-      ? yahooData.quoteResponse.result[0]
-      : undefined;
+      ? yahooData.quoteResponse.result
+      : [];
+
+  const result = results[0];
 
   if (!result) {
-    throw new Error("Yahoo Finance returned no results");
+    throw new HttpError(
+      "Stock not found or invalid ticker symbol",
+      404,
+      yahooData,
+    );
   }
 
   const price = toFiniteNumber(result.regularMarketPrice);
 
   if (typeof price !== "number") {
-    throw new Error("Yahoo Finance response missing price");
+    throw new HttpError("Yahoo Finance response missing price", 502, result);
   }
 
   const change = toFiniteNumber(result.regularMarketChange) ?? 0;
@@ -111,9 +123,9 @@ const fetchYahooFinanceQuote = async (
   const high = toFiniteNumber(result.regularMarketDayHigh);
   const low = toFiniteNumber(result.regularMarketDayLow);
   const volume = toFiniteNumber(result.regularMarketVolume);
-  const tradingDay = normalizeTradingDay(result.regularMarketTime);
+  const tradingDay = normalizeTradingDay(result.regularMarketTime ?? undefined);
 
-  const stockData = {
+  return {
     symbol: result.symbol ?? ticker,
     price,
     change,
@@ -124,11 +136,6 @@ const fetchYahooFinanceQuote = async (
     tradingDay,
     provider: "yfinance" as const,
   };
-
-  return new Response(JSON.stringify(stockData), {
-    status: 200,
-    headers: { "Content-Type": "application/json", ...corsHeaders },
-  });
 };
 
 export const handleFetchStockPrice = async (
@@ -157,135 +164,28 @@ export const handleFetchStockPrice = async (
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }
+    console.log(`Fetching stock data from Yahoo Finance for: ${ticker}`);
 
-    const ALPHA_VANTAGE_API_KEY = Deno.env.get("ALPHA_VANTAGE_API_KEY");
-    if (!ALPHA_VANTAGE_API_KEY) {
-      console.error("ALPHA_VANTAGE_API_KEY not set");
-      return new Response(JSON.stringify({ error: "API key not configured" }), {
-        status: 500,
+    const stockData = await fetchYahooFinanceQuote(ticker);
+
+    return new Response(JSON.stringify(stockData), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    });
+  } catch (err) {
+    console.error("Error in fetch-stock-price:", err);
+    if (err instanceof HttpError) {
+      const body: Record<string, unknown> = { error: err.message };
+      if (err.details) {
+        body.details = err.details;
+      }
+
+      return new Response(JSON.stringify(body), {
+        status: err.status,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }
 
-    console.log(`Fetching stock data for: ${ticker}`);
-
-    const r = await fetch(
-      `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(
-        ticker
-      )}&apikey=${ALPHA_VANTAGE_API_KEY}`
-    );
-
-    if (!r.ok) {
-      throw new Error(`Alpha Vantage API error: ${r.status} ${r.statusText}`);
-    }
-
-    const data = await r.json();
-
-    const fallbackNote = data["Note"];
-    const fallbackInformation = data["Information"];
-
-    const tryYahooFallback = async () => {
-      console.warn(
-        "Falling back to Yahoo Finance due to Alpha Vantage response",
-        { fallbackNote, fallbackInformation }
-      );
-      return await fetchYahooFinanceQuote(ticker, corsHeaders);
-    };
-
-    if (fallbackNote) {
-      try {
-        return await tryYahooFallback();
-      } catch (fallbackError) {
-        console.error("Yahoo Finance fallback failed after rate limit", fallbackError);
-        return new Response(
-          JSON.stringify({
-            error: "API rate limit reached. Please try again shortly.",
-            details: fallbackNote,
-          }),
-          {
-            status: 429,
-            headers: {
-              "Content-Type": "application/json",
-              "Retry-After": "60",
-              ...corsHeaders,
-            },
-          },
-        );
-      }
-    }
-
-    if (fallbackInformation) {
-      try {
-        return await tryYahooFallback();
-      } catch (fallbackError) {
-        console.error(
-          "Yahoo Finance fallback failed after informational response",
-          fallbackError
-        );
-        return new Response(
-          JSON.stringify({
-            error: "Alpha Vantage temporarily unavailable.",
-            details: fallbackInformation,
-          }),
-          {
-            status: 503,
-            headers: { "Content-Type": "application/json", ...corsHeaders },
-          },
-        );
-      }
-    }
-
-    if (data["Error Message"]) {
-      console.error("Alpha Vantage error:", data["Error Message"]);
-      return new Response(
-        JSON.stringify({
-          error: "Stock not found or invalid ticker symbol",
-          details: data["Error Message"],
-        }),
-        {
-          status: 404,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        },
-      );
-    }
-
-    const quote = data["Global Quote"] as Record<string, string> | undefined;
-
-    if (quote && Object.keys(quote).length > 0) {
-      try {
-        const stockData = buildAlphaVantageResponse(quote, ticker);
-        return new Response(JSON.stringify(stockData), {
-          status: 200,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        });
-      } catch (mappingError) {
-        console.error("Alpha Vantage response missing price:", mappingError);
-        return new Response(
-          JSON.stringify({
-            error: "Stock data incomplete or unavailable",
-            details: "Price field missing in Alpha Vantage response.",
-          }),
-          {
-            status: 502,
-            headers: { "Content-Type": "application/json", ...corsHeaders },
-          },
-        );
-      }
-    } else {
-      console.error(`No data for ticker: ${ticker}`, data);
-      return new Response(
-        JSON.stringify({
-          error: "Stock not found or invalid ticker symbol",
-          details: data,
-        }),
-        {
-          status: 404,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
-      );
-    }
-  } catch (err) {
-    console.error("Error in fetch-stock-price:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return new Response(
       JSON.stringify({ error: message, details: "Failed to fetch stock data" }),
