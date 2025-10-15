@@ -27,6 +27,7 @@ type FetchStockPriceResponse = {
   high?: number;
   low?: number;
   tradingDay?: string;
+  provider?: string;
 };
 
 type HistoricalEntry = {
@@ -170,7 +171,7 @@ class MarketDataServiceImpl {
       changePercent: this.round(changePercent),
       volume: typeof volume === 'number' ? Math.round(volume) : undefined,
       lastUpdated,
-      provider: 'supabase'
+      provider: data.provider ?? undefined
     };
   }
 

@@ -43,6 +43,10 @@ supabase functions deploy <function-name>
 ```
 When invoking from the frontend, use the helper exported by `src/integrations/supabase/env.ts` to resolve the correct function URL.
 
+### External market data providers
+
+The `fetch-stock-price` edge function first queries Alpha Vantage and automatically falls back to the Yahoo Finance quote API (`https://query1.finance.yahoo.com/v7/finance/quote`) when Alpha Vantage returns informational or rate limit responses. Yahoo Finance expects a descriptive `User-Agent` header; the function currently sends `PortfolioOpusSupabaseFunction/1.0`, which you can adjust to fit your deployment requirements.
+
 ## Deployment
 
 Portfolio Opus is optimized for deployment on Vercel:
