@@ -2,14 +2,28 @@
 const DEFAULT_ALLOWED_ORIGINS = new Set([
   "https://gptapp-khaki.vercel.app",
   "http://localhost:3000",
+  "http://localhost:8080",
 ]);
+
+const isAllowedOrigin = (origin: string) => {
+  if (DEFAULT_ALLOWED_ORIGINS.has(origin) || origin === "*") {
+    return true;
+  }
+
+  if (origin.startsWith("http://localhost:") || origin.startsWith("https://localhost:")) {
+    return true;
+  }
+
+  if (origin.endsWith(".vercel.app")) {
+    return true;
+  }
+
+  return false;
+};
 
 export function getCorsHeaders(origin: string | null) {
   // Never throw. Fall back to "*", or reflect allowed origin.
-  const allowOrigin =
-    origin && (DEFAULT_ALLOWED_ORIGINS.has(origin) || origin === "*")
-      ? origin
-      : "*";
+  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "*";
 
   return {
     "Access-Control-Allow-Origin": allowOrigin,
