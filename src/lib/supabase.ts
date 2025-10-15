@@ -57,7 +57,7 @@ export interface Profile {
   base_currency: string;
   timezone: string;
   default_lot_method: 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
-  market_data_provider: 'alphavantage' | 'yfinance';
+  market_data_provider: 'alphavantage' | 'yfinance' | 'finnhub';
   created_at: string;
   updated_at: string;
 }
