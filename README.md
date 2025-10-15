@@ -35,6 +35,12 @@ Portfolio Opus is an investment operations workspace that brings together portfo
    npm run test
    ```
 
+   Supabase edge functions run on Deno. To exercise the `fetch-stock-price`
+   fallback logic locally you can execute the dedicated test suite:
+   ```sh
+   deno test --allow-env supabase/functions/fetch-stock-price/index.test.ts
+   ```
+
 ## Supabase functions
 
 Edge functions live in `supabase/functions`. Each function imports shared utilities from `_shared`. Deploy the latest changes by running:
@@ -42,6 +48,10 @@ Edge functions live in `supabase/functions`. Each function imports shared utilit
 supabase functions deploy <function-name>
 ```
 When invoking from the frontend, use the helper exported by `src/integrations/supabase/env.ts` to resolve the correct function URL.
+
+### External market data providers
+
+The `fetch-stock-price` edge function now queries the Yahoo Finance quote API (`https://query1.finance.yahoo.com/v7/finance/quote`) directly for live prices. Yahoo Finance expects a browser-like `User-Agent` header; the function defaults to `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36` and also forwards standard `Accept`/`Accept-Language`/`Referer` headers. If Yahoo requires something different for your deployment, set a custom `YAHOO_USER_AGENT` environment variable in the Supabase function configuration — e.g. copy the `User-Agent` string from your browser's devtools and paste it into the function's environment settings.
 
 ## Deployment
 
