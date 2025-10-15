@@ -53,16 +53,89 @@ serve(async (req: Request): Promise<Response> => {
 
     const data = await r.json();
 
-    if (data["Global Quote"] && Object.keys(data["Global Quote"]).length > 0) {
-      const quote = data["Global Quote"];
+    if (data["Note"]) {
+      console.error("Alpha Vantage rate limit reached:", data["Note"]);
+      return new Response(
+        JSON.stringify({
+          error: "API rate limit reached. Please try again shortly.",
+          details: data["Note"],
+        }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": "60",
+            ...corsHeaders,
+          },
+        },
+      );
+    }
+
+    if (data["Information"]) {
+      console.error("Alpha Vantage informational response:", data["Information"]);
+      return new Response(
+        JSON.stringify({
+          error: "Alpha Vantage temporarily unavailable.",
+          details: data["Information"],
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        },
+      );
+    }
+
+    if (data["Error Message"]) {
+      console.error("Alpha Vantage error:", data["Error Message"]);
+      return new Response(
+        JSON.stringify({
+          error: "Stock not found or invalid ticker symbol",
+          details: data["Error Message"],
+        }),
+        {
+          status: 404,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        },
+      );
+    }
+
+    const quote = data["Global Quote"] as Record<string, string> | undefined;
+
+    if (quote && Object.keys(quote).length > 0) {
+      const price = Number.parseFloat(quote["05. price"]);
+
+      if (!Number.isFinite(price)) {
+        console.error("Alpha Vantage response missing price:", quote);
+        return new Response(
+          JSON.stringify({
+            error: "Stock data incomplete or unavailable",
+            details: "Price field missing in Alpha Vantage response.",
+          }),
+          {
+            status: 502,
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          },
+        );
+      }
+
+      const change = Number.parseFloat(quote["09. change"] ?? "");
+      const changePercentRaw = quote["10. change percent"] ?? "";
+      const changePercent =
+        typeof changePercentRaw === "string"
+          ? Number.parseFloat(changePercentRaw.replace("%", ""))
+          : Number.NaN;
+      const high = Number.parseFloat(quote["03. high"] ?? "");
+      const low = Number.parseFloat(quote["04. low"] ?? "");
+      const volume = Number.parseInt(quote["06. volume"] ?? "", 10);
+
       const stockData = {
         symbol: ticker,
-        price: parseFloat(quote["05. price"]),
-        change: parseFloat(quote["09. change"]),
-        changePercent: parseFloat(quote["10. change percent"]?.replace("%", "")),
-        high: parseFloat(quote["03. high"]),
-        low: parseFloat(quote["04. low"]),
-        volume: parseInt(quote["06. volume"]),
+        price,
+        change: Number.isFinite(change) ? change : 0,
+        changePercent: Number.isFinite(changePercent) ? changePercent : 0,
+        high: Number.isFinite(high) ? high : undefined,
+        low: Number.isFinite(low) ? low : undefined,
+        volume: Number.isFinite(volume) ? volume : undefined,
         tradingDay: quote["07. latest trading day"],
       };
 
