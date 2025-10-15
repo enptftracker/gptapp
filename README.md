@@ -51,7 +51,7 @@ When invoking from the frontend, use the helper exported by `src/integrations/su
 
 ### External market data providers
 
-The `fetch-stock-price` edge function now queries the Yahoo Finance quote API (`https://query1.finance.yahoo.com/v7/finance/quote`) directly for live prices. Yahoo Finance expects a browser-like `User-Agent` header; the function defaults to `Mozilla/5.0 (compatible; PortfolioOpusSupabaseFunction/1.0; +https://github.com/openai/gptapp)` and also forwards standard `Accept`/`Accept-Language`/`Referer` headers. If Yahoo requires something different for your deployment, set a custom `YAHOO_USER_AGENT` environment variable in the Supabase function configuration.
+The `fetch-stock-price` edge function now queries the Finnhub quote API (`https://finnhub.io/api/v1/quote`) for live prices. Configure a `FINNHUB_API_KEY` environment variable in the Supabase function so the edge runtime can authenticate each request. Finnhub responses include the latest price (`c`), daily change (`d`), percent change (`dp`), and trading day timestamp (`t`), all of which the function normalizes before returning to the frontend.
 
 ## Deployment
 

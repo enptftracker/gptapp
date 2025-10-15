@@ -11,8 +11,8 @@ const createRequest = (body: unknown) =>
     body: JSON.stringify(body),
   });
 
-Deno.test("returns Yahoo Finance quote for valid ticker", async () => {
-  Deno.env.set("YAHOO_USER_AGENT", "SupabaseTestAgent/1.0");
+Deno.test("returns Finnhub quote for valid ticker", async () => {
+  Deno.env.set("FINNHUB_API_KEY", "test-token");
 
   const originalFetch = globalThis.fetch;
   const calls: Array<{ input: Request | string; init?: RequestInit }>
@@ -24,22 +24,14 @@ Deno.test("returns Yahoo Finance quote for valid ticker", async () => {
   ): Promise<Response> => {
     calls.push({ input, init });
 
-    if (typeof input === "string" && input.includes("finance.yahoo.com")) {
+    if (typeof input === "string" && input.includes("finnhub.io")) {
       const payload = {
-        quoteResponse: {
-          result: [
-            {
-              symbol: "AAPL",
-              regularMarketPrice: 173.21,
-              regularMarketChange: 1.21,
-              regularMarketChangePercent: 0.7,
-              regularMarketDayHigh: 174.12,
-              regularMarketDayLow: 171.58,
-              regularMarketVolume: 38200341,
-              regularMarketTime: 1710950400,
-            },
-          ],
-        },
+        c: 173.21,
+        d: 1.21,
+        dp: 0.7,
+        h: 174.12,
+        l: 171.58,
+        t: 1710950400,
       };
 
       return new Response(JSON.stringify(payload), { status: 200 });
@@ -58,32 +50,29 @@ Deno.test("returns Yahoo Finance quote for valid ticker", async () => {
     assertEquals(result.change, 1.21);
     assertEquals(result.changePercent, 0.7);
     assertEquals(result.tradingDay, "2024-03-20");
-    assertEquals(result.provider, "yfinance");
+    assertEquals(result.provider, "finnhub");
 
     assertEquals(calls.length, 1);
-    const headers = new Headers(calls[0].init?.headers);
-    assertEquals(headers.get("User-Agent"), "SupabaseTestAgent/1.0");
-    assertEquals(headers.get("Accept"), "application/json, text/javascript, */*; q=0.01");
-    assertEquals(headers.get("Accept-Language"), "en-US,en;q=0.9");
-    assertEquals(headers.get("Referer"), "https://finance.yahoo.com/");
+    const requestUrl =
+      typeof calls[0].input === "string" ? calls[0].input : calls[0].input.url;
+    const url = new URL(requestUrl);
+    assertEquals(url.searchParams.get("token"), "test-token");
+    assertEquals(url.searchParams.get("symbol"), "AAPL");
   } finally {
     globalThis.fetch = originalFetch;
-    Deno.env.delete("YAHOO_USER_AGENT");
+    Deno.env.delete("FINNHUB_API_KEY");
   }
 });
 
-Deno.test("returns 404 when Yahoo returns no results", async () => {
+Deno.test("returns 404 when Finnhub returns no price", async () => {
+  Deno.env.set("FINNHUB_API_KEY", "test-token");
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = (async (
     input: Request | string,
   ): Promise<Response> => {
-    if (typeof input === "string" && input.includes("finance.yahoo.com")) {
-      const payload = {
-        quoteResponse: {
-          result: [],
-        },
-      };
+    if (typeof input === "string" && input.includes("finnhub.io")) {
+      const payload = { c: null };
 
       return new Response(JSON.stringify(payload), { status: 200 });
     }
@@ -98,16 +87,18 @@ Deno.test("returns 404 when Yahoo returns no results", async () => {
     assertMatch(payload.error, /stock not found/i);
   } finally {
     globalThis.fetch = originalFetch;
+    Deno.env.delete("FINNHUB_API_KEY");
   }
 });
 
-Deno.test("returns 502 when Yahoo responds with server error", async () => {
+Deno.test("returns 502 when Finnhub responds with server error", async () => {
+  Deno.env.set("FINNHUB_API_KEY", "test-token");
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = (async (
     input: Request | string,
   ): Promise<Response> => {
-    if (typeof input === "string" && input.includes("finance.yahoo.com")) {
+    if (typeof input === "string" && input.includes("finnhub.io")) {
       return new Response("upstream error", { status: 503 });
     }
 
@@ -118,13 +109,15 @@ Deno.test("returns 502 when Yahoo responds with server error", async () => {
     const response = await handleFetchStockPrice(createRequest({ ticker: "AAPL" }));
     assertEquals(response.status, 502);
     const payload = await response.json();
-    assertMatch(payload.error, /yahoo finance api error/i);
+    assertMatch(payload.error, /finnhub api error/i);
   } finally {
     globalThis.fetch = originalFetch;
+    Deno.env.delete("FINNHUB_API_KEY");
   }
 });
 
-Deno.test("returns 500 when Yahoo request throws", async () => {
+Deno.test("returns 500 when Finnhub request throws", async () => {
+  Deno.env.set("FINNHUB_API_KEY", "test-token");
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = (async (): Promise<Response> => {
@@ -138,5 +131,6 @@ Deno.test("returns 500 when Yahoo request throws", async () => {
     assertMatch(payload.error, /network failure/i);
   } finally {
     globalThis.fetch = originalFetch;
+    Deno.env.delete("FINNHUB_API_KEY");
   }
 });

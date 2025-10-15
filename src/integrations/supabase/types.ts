@@ -211,7 +211,7 @@ export type Database = {
           created_at: string
           default_lot_method: Database["public"]["Enums"]["lot_method"]
           id: string
-          market_data_provider: 'alphavantage' | 'yfinance'
+          market_data_provider: 'alphavantage' | 'yfinance' | 'finnhub'
           owner_id: string
           timezone: string
           updated_at: string
@@ -221,7 +221,7 @@ export type Database = {
           created_at?: string
           default_lot_method?: Database["public"]["Enums"]["lot_method"]
           id?: string
-          market_data_provider?: 'alphavantage' | 'yfinance'
+          market_data_provider?: 'alphavantage' | 'yfinance' | 'finnhub'
           owner_id: string
           timezone?: string
           updated_at?: string
@@ -231,7 +231,7 @@ export type Database = {
           created_at?: string
           default_lot_method?: Database["public"]["Enums"]["lot_method"]
           id?: string
-          market_data_provider?: 'alphavantage' | 'yfinance'
+          market_data_provider?: 'alphavantage' | 'yfinance' | 'finnhub'
           owner_id?: string
           timezone?: string
           updated_at?: string
