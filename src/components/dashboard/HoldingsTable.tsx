@@ -1,6 +1,5 @@
 import React from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { Holding } from '@/lib/types';
@@ -41,26 +40,34 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
         <TableBody>
           {holdings.map((holding) => {
             const isProfit = holding.unrealizedPL >= 0;
-            const ticker = holding.symbol.ticker.toUpperCase();
+            const ticker = holding.symbol.ticker || '—';
             const name = holding.symbol.name || '—';
-            const badgeParts = [holding.symbol.assetType, ticker, holding.symbol.exchange]
+            const metadataParts = [holding.symbol.assetType, holding.symbol.exchange]
               .filter(Boolean)
-              .map((part) => String(part).toUpperCase());
-            const badgeLabel = badgeParts.length > 0 ? badgeParts.join(' · ') : ticker;
+              .map((part) => String(part));
 
             return (
               <TableRow key={`${holding.portfolioId}-${holding.symbolId}`}>
                 <TableCell className="sticky left-0 z-10 bg-background">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex min-w-0 items-start gap-2 sm:items-center sm:gap-3">
                     <InstrumentIcon ticker={ticker} name={name} size="sm" className="flex-shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-medium uppercase tracking-wide text-[0.75rem] md:text-sm truncate">{name}</p>
-                      <Badge
-                        variant="secondary"
-                        className="mt-1 w-fit text-[0.6rem] uppercase tracking-wide"
-                      >
-                        {badgeLabel}
-                      </Badge>
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="truncate text-sm font-semibold leading-tight">{ticker}</p>
+                      <p className="truncate text-xs text-muted-foreground leading-tight">{name}</p>
+                      {metadataParts.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.625rem] text-muted-foreground/80">
+                          {metadataParts.map((part, index) => (
+                            <React.Fragment key={`${ticker}-${part}-${index}`}>
+                              <span className="truncate">{part}</span>
+                              {index < metadataParts.length - 1 && (
+                                <span aria-hidden="true" className="text-muted-foreground/60">
+                                  •
+                                </span>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </TableCell>
