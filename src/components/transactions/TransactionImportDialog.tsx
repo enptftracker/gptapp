@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -315,11 +315,71 @@ export default function TransactionImportDialog({
   const [parseMessages, setParseMessages] = useState<string[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [selectedRows, setSelectedRows] = useState<Record<number, boolean>>({});
+  const [availableTypes, setAvailableTypes] = useState<Transaction['type'][]>([]);
+  const [activeTypes, setActiveTypes] = useState<Transaction['type'][]>([]);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const selectedCount = parsedTransactions.reduce((total, _item, index) => {
-    return total + (selectedRows[index] ? 1 : 0);
-  }, 0);
+  const typeCounts = useMemo(() => {
+    return parsedTransactions.reduce<Partial<Record<Transaction['type'], number>>>((acc, item) => {
+      acc[item.type] = (acc[item.type] ?? 0) + 1;
+      return acc;
+    }, {});
+  }, [parsedTransactions]);
+
+  const filteredIndices = useMemo(() => {
+    if (parsedTransactions.length === 0) return [];
+    if (activeTypes.length === 0) return [];
+
+    return parsedTransactions.reduce<number[]>((acc, item, index) => {
+      if (activeTypes.includes(item.type)) {
+        acc.push(index);
+      }
+      return acc;
+    }, []);
+  }, [activeTypes, parsedTransactions]);
+
+  const selectedCount = useMemo(() => {
+    return filteredIndices.reduce((total, index) => {
+      return total + (selectedRows[index] ? 1 : 0);
+    }, 0);
+  }, [filteredIndices, selectedRows]);
+
+  useEffect(() => {
+    setCurrentPage(prev => {
+      if (filteredIndices.length === 0) {
+        return 1;
+      }
+
+      const totalPages = Math.max(1, Math.ceil(filteredIndices.length / ROWS_PER_PAGE));
+      return Math.min(prev, totalPages);
+    });
+  }, [filteredIndices.length]);
+
+  const handleTypeToggle = (type: Transaction['type'], nextState?: boolean) => {
+    setActiveTypes(prev => {
+      const isActive = prev.includes(type);
+      const willBeActive = typeof nextState === 'boolean' ? nextState : !isActive;
+
+      setSelectedRows(prevRows => {
+        const updated = { ...prevRows };
+        parsedTransactions.forEach((item, index) => {
+          if (item.type === type) {
+            updated[index] = willBeActive;
+          }
+        });
+        return updated;
+      });
+
+      if (!willBeActive) {
+        return prev.filter(currentType => currentType !== type);
+      }
+
+      const next = isActive ? prev : [...prev, type];
+      return availableTypes.length > 0
+        ? next.sort((a, b) => availableTypes.indexOf(a) - availableTypes.indexOf(b))
+        : next;
+    });
+  };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -331,6 +391,8 @@ export default function TransactionImportDialog({
     setImportErrors([]);
     setParsedTransactions([]);
     setSelectedRows({});
+    setAvailableTypes([]);
+    setActiveTypes([]);
     setCurrentPage(1);
 
     try {
@@ -338,6 +400,9 @@ export default function TransactionImportDialog({
       const { parsed, skipped } = parseTrading212Rows(rows);
       setParsedTransactions(parsed);
       setParseMessages(skipped);
+      const uniqueTypes = Array.from(new Set(parsed.map(item => item.type)));
+      setAvailableTypes(uniqueTypes);
+      setActiveTypes(uniqueTypes);
       if (parsed.length > 0) {
         const initialSelection = parsed.reduce<Record<number, boolean>>((acc, _item, index) => {
           acc[index] = true;
@@ -379,6 +444,8 @@ export default function TransactionImportDialog({
     setIsParsing(false);
     setIsImporting(false);
     setSelectedRows({});
+    setAvailableTypes([]);
+    setActiveTypes([]);
     setCurrentPage(1);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -395,7 +462,7 @@ export default function TransactionImportDialog({
   const handleImport = async () => {
     if (parsedTransactions.length === 0) return;
 
-    const rowsToImport = parsedTransactions.filter((_, index) => selectedRows[index]);
+    const rowsToImport = parsedTransactions.filter((item, index) => selectedRows[index] && activeTypes.includes(item.type));
     if (rowsToImport.length === 0) {
       toast({
         title: 'No rows selected',
@@ -483,20 +550,25 @@ export default function TransactionImportDialog({
   const renderReview = () => {
     if (parsedTransactions.length === 0) return null;
 
-    const totalPages = Math.max(1, Math.ceil(parsedTransactions.length / ROWS_PER_PAGE));
+    const filteredCount = filteredIndices.length;
+    const totalPages = Math.max(1, Math.ceil(filteredCount / ROWS_PER_PAGE));
     const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
-    const pageItems = parsedTransactions.slice(startIndex, startIndex + ROWS_PER_PAGE);
+    const pageIndices = filteredIndices.slice(startIndex, startIndex + ROWS_PER_PAGE);
+    const pageItems = pageIndices.map(index => parsedTransactions[index]);
 
     const handleSelectAllChange = (checked: boolean) => {
-      const updated = { ...selectedRows };
-      parsedTransactions.forEach((_item, index) => {
-        updated[index] = checked;
+      if (filteredCount === 0) return;
+      setSelectedRows(prev => {
+        const updated = { ...prev };
+        filteredIndices.forEach(index => {
+          updated[index] = checked;
+        });
+        return updated;
       });
-      setSelectedRows(updated);
     };
 
-    const allSelected = parsedTransactions.length > 0 && selectedCount === parsedTransactions.length;
-    const someSelected = selectedCount > 0 && selectedCount < parsedTransactions.length;
+    const allSelected = filteredCount > 0 && selectedCount === filteredCount;
+    const someSelected = selectedCount > 0 && selectedCount < filteredCount;
 
     return (
       <div className="space-y-3">
@@ -509,6 +581,40 @@ export default function TransactionImportDialog({
           </div>
           <Badge variant="secondary">{selectedCount} selected</Badge>
         </div>
+        {availableTypes.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/20 p-3">
+            <p className="text-xs font-medium uppercase text-muted-foreground">Types</p>
+            <div className="flex flex-wrap gap-2">
+              {availableTypes.map(type => {
+                const isActive = activeTypes.includes(type);
+                const count = typeCounts[type] ?? 0;
+                const id = `transaction-type-${type.toLowerCase()}`;
+                return (
+                  <label
+                    key={type}
+                    htmlFor={id}
+                    className={cn(
+                      'flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-xs transition-colors',
+                      isActive
+                        ? 'border-primary/60 bg-primary/10 text-primary'
+                        : 'border-muted bg-background text-muted-foreground hover:bg-muted'
+                    )}
+                  >
+                    <Checkbox
+                      id={id}
+                      checked={isActive}
+                      onCheckedChange={value => handleTypeToggle(type, value === true)}
+                      className="h-3 w-3"
+                      aria-label={`Toggle ${type} transactions`}
+                    />
+                    <span className="font-medium">{type}</span>
+                    <Badge variant={isActive ? 'secondary' : 'outline'}>{count}</Badge>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="rounded-md border">
           <div className="w-full overflow-auto">
             <Table>
@@ -519,6 +625,7 @@ export default function TransactionImportDialog({
                     checked={someSelected ? 'indeterminate' : allSelected}
                     onCheckedChange={value => handleSelectAllChange(value !== false)}
                     aria-label="Select all rows"
+                    disabled={filteredCount === 0}
                   />
                 </TableHead>
                 <TableHead>Type</TableHead>
@@ -529,10 +636,13 @@ export default function TransactionImportDialog({
             </TableHeader>
             <TableBody>
               {pageItems.map((item, index) => {
-                const globalIndex = startIndex + index;
+                const globalIndex = pageIndices[index];
                 const amount = formatCurrency(item.unitPrice * item.quantity, item.tradeCurrency);
                 return (
-                  <TableRow key={`${item.actionLabel}-${item.ticker ?? globalIndex}`} data-state={selectedRows[globalIndex] ? 'selected' : undefined}>
+                  <TableRow
+                    key={`${item.actionLabel}-${item.ticker ?? globalIndex}`}
+                    data-state={selectedRows[globalIndex] ? 'selected' : undefined}
+                  >
                     <TableCell className="w-12">
                       <Checkbox
                         checked={Boolean(selectedRows[globalIndex])}
@@ -552,11 +662,18 @@ export default function TransactionImportDialog({
                   </TableRow>
                 );
               })}
+              {filteredCount === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-24 text-center text-sm text-muted-foreground">
+                    No transactions match the selected filters.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
             </Table>
           </div>
         </div>
-        {totalPages > 1 && (
+        {totalPages > 1 && filteredCount > 0 && (
           <Pagination>
             <PaginationContent>
               <PaginationItem>
