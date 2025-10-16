@@ -96,6 +96,7 @@ export function SymbolSearch({ value, onSelect, placeholder = "Search tickers...
 
   return (
     <Popover
+      modal
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen && inputRef.current && document.activeElement === inputRef.current) {
@@ -127,7 +128,14 @@ export function SymbolSearch({ value, onSelect, placeholder = "Search tickers...
           )}
         </div>
       </PopoverTrigger>
-      <PopoverContent className="z-50 w-[90vw] max-w-[400px] p-0 bg-popover border border-border shadow-md" align="start" side="bottom">
+      <PopoverContent
+        forceMount
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        className="z-50 w-[90vw] max-w-[400px] p-0 bg-popover border border-border shadow-md"
+        align="start"
+        side="bottom"
+      >
         <Command shouldFilter={false}>
           <CommandList id={listId} ref={commandListRef} className="max-h-[300px] overflow-y-auto">
             {symbols.length === 0 ? <CommandEmpty>No tickers found.</CommandEmpty> : null}
