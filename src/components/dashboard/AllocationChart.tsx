@@ -10,6 +10,7 @@ import {
 import { Holding } from '@/lib/types';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
+import { useResizeObserver } from '@/hooks/useResizeObserver';
 
 interface AllocationChartProps {
   holdings: Holding[];
@@ -70,6 +71,11 @@ const AllocationChart: React.FC<AllocationChartProps> = ({ holdings }) => {
     );
   };
 
+  const { ref: containerRef, width, height } = useResizeObserver<HTMLDivElement>();
+  const minDimension = Math.min(width, height);
+  const computedOuterRadius = minDimension > 0 ? (minDimension / 2) * 0.78 : undefined;
+  const computedInnerRadius = computedOuterRadius ? computedOuterRadius * 0.6 : undefined;
+
   if (holdings.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -87,29 +93,32 @@ const AllocationChart: React.FC<AllocationChartProps> = ({ holdings }) => {
   }));
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <PieChart>
-        <Pie
-          data={chartData}
-          dataKey="value"
-          nameKey="name"
-          innerRadius={60}
-          outerRadius={90}
-          paddingAngle={4}
-        >
-          {chartData.map((entry, index) => (
-            <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
-          ))}
-        </Pie>
-        <Tooltip content={renderTooltip} />
-        <Legend
-          verticalAlign="bottom"
-          align="center"
-          iconType="circle"
-          formatter={(value: string) => <span className="text-xs text-muted-foreground">{value}</span>}
-        />
-      </PieChart>
-    </ResponsiveContainer>
+    <div ref={containerRef} className="flex h-full min-h-[18rem] w-full flex-col">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart margin={{ top: 8, right: 8, bottom: 40, left: 8 }}>
+          <Pie
+            data={chartData}
+            dataKey="value"
+            nameKey="name"
+            innerRadius={computedInnerRadius ?? '48%'}
+            outerRadius={computedOuterRadius ?? '82%'}
+            paddingAngle={4}
+          >
+            {chartData.map((entry, index) => (
+              <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip content={renderTooltip} />
+          <Legend
+            verticalAlign="bottom"
+            align="center"
+            iconType="circle"
+            wrapperStyle={{ paddingTop: 8 }}
+            formatter={(value: string) => <span className="text-xs text-muted-foreground">{value}</span>}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
   );
 };
 
