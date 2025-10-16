@@ -88,7 +88,11 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
   };
 
   const { ref: containerRef, width, height } = useResizeObserver<HTMLDivElement>();
-  const minDimension = Math.min(width, height);
+  const chartMargin = 16;
+  const marginOffset = chartMargin * 2;
+  const safeWidth = Math.max(width - marginOffset, 0);
+  const safeHeight = Math.max(height - marginOffset, 0);
+  const minDimension = Math.min(safeWidth, safeHeight);
   const computedOuterRadius = minDimension > 0 ? (minDimension / 2) * 0.8 : undefined;
   const computedInnerRadius = computedOuterRadius ? computedOuterRadius * 0.6 : undefined;
 
@@ -113,33 +117,38 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div ref={containerRef} className="h-64 w-full md:h-72 lg:h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                innerRadius={computedInnerRadius ?? '45%'}
-                outerRadius={computedOuterRadius ?? '80%'}
-                paddingAngle={2}
-                dataKey="value"
-              >
-                {chartData.map((entry, index) => (
-                  <Cell 
-                    key={`cell-${index}`} 
-                    fill={entry.color}
-                    stroke="hsl(var(--background))"
-                    strokeWidth={2}
-                  />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-              <Legend content={<CustomLegend />} />
-            </PieChart>
-          </ResponsiveContainer>
+        <div className="pt-4">
+          <div
+            ref={containerRef}
+            className="h-64 w-full md:h-72 lg:h-80 flex items-center justify-center"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart margin={{ top: chartMargin, right: chartMargin, bottom: chartMargin, left: chartMargin }}>
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={computedInnerRadius ?? '45%'}
+                  outerRadius={computedOuterRadius ?? '80%'}
+                  paddingAngle={2}
+                  dataKey="value"
+                >
+                  {chartData.map((entry, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={entry.color}
+                      stroke="hsl(var(--background))"
+                      strokeWidth={2}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <Legend content={<CustomLegend />} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        
+
         {/* Top holdings list */}
         <div className="mt-4 space-y-2">
           <h4 className="text-sm font-medium text-muted-foreground">Top Holdings</h4>
