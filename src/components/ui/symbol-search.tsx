@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Check, ChevronsUpDown, Search } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import React, { useState, useEffect, useRef, useId } from 'react';
+import { Check, Search } from 'lucide-react';
+import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { MarketDataService } from '@/lib/marketData';
+
+type SymbolResult = { ticker: string; name: string; type: string };
 
 interface SymbolSearchProps {
   value?: string;
@@ -17,7 +19,12 @@ interface SymbolSearchProps {
 export function SymbolSearch({ value, onSelect, placeholder = "Search tickers...", className }: SymbolSearchProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [symbols, setSymbols] = useState<Array<{ ticker: string; name: string; type: string }>>([]);
+  const [symbols, setSymbols] = useState<SymbolResult[]>([]);
+  const [selectedSymbol, setSelectedSymbol] = useState<SymbolResult | null>(null);
+  const [inputValue, setInputValue] = useState(value ?? "");
+  const commandListRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
 
   useEffect(() => {
     const searchSymbols = async () => {
@@ -30,57 +37,106 @@ export function SymbolSearch({ value, onSelect, placeholder = "Search tickers...
         setSymbols(defaultResults.slice(0, 8));
       }
     };
-    
+
     const debounceTimer = setTimeout(searchSymbols, 300);
     return () => clearTimeout(debounceTimer);
   }, [searchQuery]);
 
-  const selectedSymbol = symbols.find(symbol => symbol.ticker === value);
+  useEffect(() => {
+    if (value) {
+      setInputValue(value);
+      setSearchQuery(value);
+    } else {
+      setInputValue("");
+      setSearchQuery("");
+      setSelectedSymbol(null);
+    }
+  }, [value]);
+
+  useEffect(() => {
+    if (!value) {
+      return;
+    }
+
+    const match = symbols.find((symbol) => symbol.ticker === value);
+    setSelectedSymbol(match ?? null);
+  }, [symbols, value]);
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = event.target.value;
+    setInputValue(newValue);
+    setSearchQuery(newValue);
+    setOpen(true);
+  };
+
+  const showSelectedBadge = Boolean(selectedSymbol && inputValue === selectedSymbol.ticker);
+
+  const handleSelect = (symbol: SymbolResult) => {
+    onSelect(symbol.ticker, symbol.name, symbol.type);
+    setSelectedSymbol(symbol);
+    setInputValue(symbol.ticker);
+    setSearchQuery(symbol.ticker);
+    setOpen(false);
+  };
+
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setOpen(true);
+      const firstItem = commandListRef.current?.querySelector('[role="option"]');
+      if (firstItem instanceof HTMLElement) {
+        firstItem.focus();
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setOpen(false);
+      inputRef.current?.blur();
+    }
+  };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && inputRef.current && document.activeElement === inputRef.current) {
+          return;
+        }
+        setOpen(nextOpen);
+      }}
+    >
       <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className={cn("justify-between", className)}
-        >
-          {selectedSymbol ? (
-            <div className="flex items-center gap-2">
-              <span className="font-medium">{selectedSymbol.ticker}</span>
-              <Badge variant="secondary" className="text-xs">
-                {selectedSymbol.type}
-              </Badge>
-            </div>
-          ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
+        <div className="relative w-full">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            role="combobox"
+            aria-expanded={open}
+            aria-autocomplete="list"
+            aria-controls={listId}
+            placeholder={placeholder}
+            value={inputValue}
+            onChange={handleInputChange}
+            onFocus={() => setOpen(true)}
+            onKeyDown={handleInputKeyDown}
+            ref={inputRef}
+            className={cn('w-full pl-9 pr-24', className)}
+          />
+          {showSelectedBadge && selectedSymbol && (
+            <Badge variant="secondary" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs">
+              {selectedSymbol.type}
+            </Badge>
           )}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
+        </div>
       </PopoverTrigger>
       <PopoverContent className="z-50 w-[90vw] max-w-[400px] p-0 bg-popover border border-border shadow-md" align="start" side="bottom">
-        <Command>
-          <div className="flex items-center border-b px-3">
-            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-            <CommandInput
-              placeholder="Search tickers..."
-              value={searchQuery}
-              onValueChange={setSearchQuery}
-              className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            />
-          </div>
-          <CommandList>
-            <CommandEmpty>No tickers found.</CommandEmpty>
+        <Command shouldFilter={false}>
+          <CommandList id={listId} ref={commandListRef} className="max-h-[300px] overflow-y-auto">
+            {symbols.length === 0 ? <CommandEmpty>No tickers found.</CommandEmpty> : null}
             <CommandGroup>
               {symbols.map((symbol) => (
                 <CommandItem
                   key={symbol.ticker}
                   value={symbol.ticker}
-                  onSelect={() => {
-                    onSelect(symbol.ticker, symbol.name, symbol.type);
-                    setOpen(false);
-                  }}
+                  onSelect={() => handleSelect(symbol)}
                   className="flex items-center justify-between p-3"
                 >
                   <div className="flex flex-col">
