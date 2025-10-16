@@ -2,6 +2,29 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { formatCurrency } from '@/lib/calculations';
 
+const ABBREVIATION_UNITS = [
+  { value: 1_000_000_000_000, suffix: 'T' },
+  { value: 1_000_000_000, suffix: 'B' },
+  { value: 1_000_000, suffix: 'M' },
+  { value: 1_000, suffix: 'k' }
+];
+
+function formatCurrencyTick(value: number): string {
+  const isNegative = value < 0;
+  const absoluteValue = Math.abs(value);
+
+  for (const unit of ABBREVIATION_UNITS) {
+    if (absoluteValue >= unit.value) {
+      const truncated = Math.floor((absoluteValue / unit.value) * 10) / 10;
+      const formattedNumber = Number.isInteger(truncated) ? truncated.toFixed(0) : truncated.toFixed(1);
+      return `${isNegative ? '-' : ''}$${formattedNumber}${unit.suffix}`;
+    }
+  }
+
+  const formatted = formatCurrency(value);
+  return formatted.endsWith('.00') ? formatted.slice(0, -3) : formatted;
+}
+
 interface DataPoint {
   date: string;
   value: number;
@@ -71,10 +94,10 @@ export function HistoricalValueChart({ data, title = "Portfolio Value Over Time"
                 stroke="hsl(var(--muted-foreground))"
                 fontSize={12}
               />
-              <YAxis 
+              <YAxis
                 stroke="hsl(var(--muted-foreground))"
                 fontSize={12}
-                tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                tickFormatter={formatCurrencyTick}
               />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
