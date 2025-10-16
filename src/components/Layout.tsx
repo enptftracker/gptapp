@@ -31,7 +31,7 @@ export default function Layout() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="sticky top-0 z-50 border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="container flex h-14 md:h-16 items-center justify-between px-4">
+        <div className="container flex h-14 md:h-16 items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 md:h-8 md:w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <DollarSign className="h-4 w-4 md:h-5 md:w-5" />
@@ -53,7 +53,7 @@ export default function Layout() {
       </header>
 
       {/* Main Content */}
-      <main className="container pb-20 pt-4 md:pt-6 px-4">
+      <main className="container pb-20 pt-4 md:pt-6">
         <Outlet />
       </main>
 
