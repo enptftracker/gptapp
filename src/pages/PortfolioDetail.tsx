@@ -17,6 +17,7 @@ import { HistoricalValueChart } from '@/components/analytics/HistoricalValueChar
 import { PerformanceBreakdown } from '@/components/analytics/PerformanceBreakdown';
 import { AssetTypeBreakdown } from '@/components/analytics/AssetTypeBreakdown';
 import PortfolioChart from '@/components/portfolio/PortfolioChart';
+import { useProfile } from '@/hooks/useProfile';
 
 export default function PortfolioDetail() {
   const { id } = useParams<{ id: string }>();
@@ -24,6 +25,7 @@ export default function PortfolioDetail() {
   const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(id!);
   const { data: holdings = [], isLoading: holdingsLoading } = usePortfolioHoldings(id!);
   const { data: metrics, isLoading: metricsLoading } = usePortfolioMetrics(id!);
+  const { data: profile } = useProfile();
 
   const portfolio = portfolios.find(p => p.id === id);
   const isLoading = transactionsLoading || holdingsLoading || metricsLoading;
@@ -226,7 +228,7 @@ export default function PortfolioDetail() {
               <CardTitle>Holdings</CardTitle>
             </CardHeader>
             <CardContent>
-              <HoldingsTable holdings={holdings} />
+              <HoldingsTable holdings={holdings} lotMethod={profile?.default_lot_method} />
             </CardContent>
           </Card>
         </TabsContent>

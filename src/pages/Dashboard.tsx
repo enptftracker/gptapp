@@ -21,6 +21,7 @@ import { MarketDataService } from '@/lib/marketData';
 import { priceService } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import type { ConsolidatedHolding } from '@/lib/types';
+import { useProfile } from '@/hooks/useProfile';
 
 type RefreshResult = { symbol: string; success: boolean; message?: string };
 
@@ -35,6 +36,7 @@ export default function Dashboard() {
     data?: ConsolidatedHolding[];
     isLoading: boolean;
   };
+  const { data: profile } = useProfile();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [refreshTotal, setRefreshTotal] = useState<number | null>(null);
@@ -400,7 +402,7 @@ export default function Dashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <HoldingsTable 
+              <HoldingsTable
                 holdings={consolidatedHoldings.map(h => ({
                   portfolioId: '',
                   symbolId: h.symbolId,
@@ -412,7 +414,8 @@ export default function Dashboard() {
                   unrealizedPLPercent: h.totalUnrealizedPLPercent,
                   allocationPercent: h.allocationPercent,
                   currentPrice: h.currentPrice
-                }))} 
+                }))}
+                lotMethod={profile?.default_lot_method}
               />
             </CardContent>
           </Card>
