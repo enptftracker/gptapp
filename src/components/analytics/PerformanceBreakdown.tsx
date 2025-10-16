@@ -12,11 +12,11 @@ interface PerformanceBreakdownProps {
 export function PerformanceBreakdown({ holdings, title = "Performance by Position", className }: PerformanceBreakdownProps) {
   const chartData = holdings
     .map(holding => {
-      const pl = 'unrealizedPL' in holding ? holding.unrealizedPL : 
+      const pl = 'unrealizedPL' in holding ? holding.unrealizedPL :
                  ('totalUnrealizedPL' in holding ? holding.totalUnrealizedPL : 0);
       const plPercent = 'unrealizedPLPercent' in holding ? holding.unrealizedPLPercent :
                        ('totalUnrealizedPLPercent' in holding ? holding.totalUnrealizedPLPercent : 0);
-      
+
       return {
         name: holding.symbol.ticker,
         pl,
@@ -25,6 +25,24 @@ export function PerformanceBreakdown({ holdings, title = "Performance by Positio
     })
     .sort((a, b) => Math.abs(b.pl) - Math.abs(a.pl))
     .slice(0, 10);
+
+  const formatYAxisTick = (value: number) => {
+    const absValue = Math.abs(value);
+
+    if (absValue >= 1_000_000) {
+      return `${value < 0 ? '-' : ''}$${(absValue / 1_000_000).toFixed(1)}M`;
+    }
+
+    if (absValue >= 1_000) {
+      return `${value < 0 ? '-' : ''}$${(absValue / 1_000).toFixed(1)}k`;
+    }
+
+    if (absValue >= 1) {
+      return `${value < 0 ? '-' : ''}$${absValue.toFixed(0)}`;
+    }
+
+    return `${value < 0 ? '-' : ''}$${absValue.toFixed(2)}`;
+  };
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -74,10 +92,10 @@ export function PerformanceBreakdown({ holdings, title = "Performance by Positio
                 textAnchor="end"
                 height={80}
               />
-              <YAxis 
+              <YAxis
                 stroke="hsl(var(--muted-foreground))"
                 fontSize={12}
-                tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                tickFormatter={formatYAxisTick}
               />
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="pl" radius={[4, 4, 0, 0]}>
