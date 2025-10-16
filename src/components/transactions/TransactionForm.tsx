@@ -14,20 +14,50 @@ import { symbolService, Transaction } from '@/lib/supabase';
 import { Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
+const preprocessNumberField = (
+  fieldLabel: string,
+  options?: { defaultValue?: number }
+) =>
+  z.preprocess((value) => {
+    if (value === '' || value === undefined || value === null) {
+      return options?.defaultValue;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = parseFloat(value);
+      if (Number.isNaN(parsed)) {
+        return undefined;
+      }
+      return parsed;
+    }
+
+    return value;
+  }, z.number({ invalid_type_error: `${fieldLabel} is required` }).min(0, `${fieldLabel} must be positive`));
+
 const transactionSchema = z.object({
   portfolioId: z.string().min(1, 'Portfolio is required'),
   ticker: z.string().min(1, 'Symbol is required'),
   type: z.enum(['BUY', 'SELL', 'DIVIDEND', 'DEPOSIT', 'WITHDRAW', 'FEE']),
-  quantity: z.number().min(0, 'Quantity must be positive'),
-  unitPrice: z.number().min(0, 'Unit price must be positive'),
-  fee: z.number().min(0, 'Fee must be positive').default(0),
-  fxRate: z.number().min(0, 'FX rate must be positive').default(1),
+  quantity: preprocessNumberField('Quantity'),
+  unitPrice: preprocessNumberField('Unit price'),
+  fee: preprocessNumberField('Fee', { defaultValue: 0 }),
+  fxRate: preprocessNumberField('FX rate', { defaultValue: 1 }),
   tradeCurrency: z.string().default('USD'),
   tradeDate: z.string().min(1, 'Trade date is required'),
   notes: z.string().optional(),
 });
 
 type TransactionFormData = z.infer<typeof transactionSchema>;
+type TransactionFormValues = Omit<
+  TransactionFormData,
+  'quantity' | 'unitPrice' | 'fee' | 'fxRate' | 'notes'
+> & {
+  quantity: string;
+  unitPrice: string;
+  fee: string;
+  fxRate: string;
+  notes: string;
+};
 
 interface TransactionFormProps {
   portfolios: Array<{ id: string; name: string }>;
@@ -53,33 +83,42 @@ export default function TransactionForm({
     setOpen(!!existingTransaction);
   }, [existingTransaction]);
 
-  const form = useForm<TransactionFormData>({
+  const form = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionSchema),
     defaultValues: existingTransaction ? {
       portfolioId: existingTransaction.portfolio_id,
       ticker: '', // We'll need to fetch this
       type: existingTransaction.type === 'TRANSFER' ? 'BUY' : existingTransaction.type,
-      quantity: existingTransaction.quantity,
-      unitPrice: existingTransaction.unit_price,
-      fee: existingTransaction.fee,
-      fxRate: existingTransaction.fx_rate,
+      quantity: existingTransaction.quantity !== null && existingTransaction.quantity !== undefined
+        ? existingTransaction.quantity.toString()
+        : '',
+      unitPrice: existingTransaction.unit_price !== null && existingTransaction.unit_price !== undefined
+        ? existingTransaction.unit_price.toString()
+        : '',
+      fee: existingTransaction.fee !== null && existingTransaction.fee !== undefined
+        ? existingTransaction.fee.toString()
+        : '',
+      fxRate: existingTransaction.fx_rate !== null && existingTransaction.fx_rate !== undefined
+        ? existingTransaction.fx_rate.toString()
+        : '',
       tradeCurrency: existingTransaction.trade_currency,
       tradeDate: existingTransaction.trade_date,
       notes: existingTransaction.notes || '',
     } : {
       portfolioId: defaultPortfolioId || '',
       type: 'BUY',
-      quantity: 0,
-      unitPrice: 0,
-      fee: 0,
-      fxRate: 1,
+      quantity: '',
+      unitPrice: '',
+      fee: '',
+      fxRate: '',
       tradeCurrency: 'USD',
       tradeDate: new Date().toISOString().split('T')[0],
       notes: '',
     },
   });
 
-  const onSubmit = async (data: TransactionFormData) => {
+  const onSubmit = async (values: TransactionFormValues) => {
+    const data = transactionSchema.parse(values);
     try {
       // Find or create symbol
       const symbol = await symbolService.findOrCreate(
@@ -129,10 +168,11 @@ export default function TransactionForm({
         title: existingTransaction ? "Transaction updated" : "Transaction added",
         description: `${data.type} ${data.quantity} ${data.ticker} ${existingTransaction ? 'updated' : 'recorded'} successfully`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'An unexpected error occurred';
       toast({
         title: existingTransaction ? "Error updating transaction" : "Error adding transaction",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     }
@@ -250,12 +290,14 @@ export default function TransactionForm({
                   <FormItem>
                     <FormLabel className="text-sm">Quantity</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="number" 
+                      <Input
+                        type="number"
                         step="0.000001"
                         className="text-sm"
+                        placeholder="100"
                         {...field}
-                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                        value={field.value ?? ''}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormMessage />
@@ -270,12 +312,14 @@ export default function TransactionForm({
                   <FormItem>
                     <FormLabel className="text-sm">Unit Price</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="number" 
+                      <Input
+                        type="number"
                         step="0.01"
                         className="text-sm"
+                        placeholder="150.25"
                         {...field}
-                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                        value={field.value ?? ''}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormMessage />
@@ -292,12 +336,14 @@ export default function TransactionForm({
                   <FormItem>
                     <FormLabel className="text-sm">Fee</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="number" 
+                      <Input
+                        type="number"
                         step="0.01"
                         className="text-sm"
+                        placeholder="2.50"
                         {...field}
-                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                        value={field.value ?? ''}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormMessage />
