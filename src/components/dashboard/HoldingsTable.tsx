@@ -6,12 +6,15 @@ import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { Holding } from '@/lib/types';
 import { InstrumentIcon } from '@/components/shared/InstrumentIcon';
 
+type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
+
 interface HoldingsTableProps {
   holdings: Holding[];
   className?: string;
+  lotMethod?: LotMethod;
 }
 
-export default function HoldingsTable({ holdings, className }: HoldingsTableProps) {
+export default function HoldingsTable({ holdings, className, lotMethod }: HoldingsTableProps) {
   if (holdings.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-6 md:p-8 text-center">
@@ -19,6 +22,8 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
       </div>
     );
   }
+
+  const buyPriceLabel = `Buy Price${lotMethod ? ` (${lotMethod})` : ''}`;
 
   return (
     <div className={cn("rounded-lg border overflow-x-auto", className)}>
@@ -28,10 +33,10 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
             <TableHead className="text-xs md:text-sm">Ticker</TableHead>
             <TableHead className="text-xs md:text-sm">Instrument</TableHead>
             <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
-            <TableHead className="text-right text-xs md:text-sm hidden sm:table-cell">Avg Cost</TableHead>
+            <TableHead className="text-right text-xs md:text-sm hidden sm:table-cell">{buyPriceLabel}</TableHead>
+            <TableHead className="text-right text-xs md:text-sm hidden sm:table-cell">Current Price</TableHead>
             <TableHead className="text-right text-xs md:text-sm">Market Value</TableHead>
             <TableHead className="text-right text-xs md:text-sm">P/L</TableHead>
-            <TableHead className="text-right text-xs md:text-sm hidden lg:table-cell">Allocation</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -72,6 +77,9 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
                 <TableCell className="text-right font-mono text-xs md:text-sm hidden sm:table-cell whitespace-nowrap">
                   {formatCurrency(holding.avgCostBase)}
                 </TableCell>
+                <TableCell className="text-right font-mono text-xs md:text-sm hidden sm:table-cell whitespace-nowrap">
+                  {formatCurrency(holding.currentPrice)}
+                </TableCell>
                 <TableCell className="text-right font-mono font-medium text-xs md:text-sm whitespace-nowrap">
                   {formatCurrency(holding.marketValueBase)}
                 </TableCell>
@@ -89,9 +97,6 @@ export default function HoldingsTable({ holdings, className }: HoldingsTableProp
                       ({formatPercent(holding.unrealizedPLPercent)})
                     </span>
                   </div>
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs md:text-sm text-muted-foreground hidden lg:table-cell">
-                  {formatPercent(holding.allocationPercent)}
                 </TableCell>
               </TableRow>
             );
