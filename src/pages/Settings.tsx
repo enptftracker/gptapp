@@ -530,7 +530,7 @@ export default function Settings() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('settings.baseCurrency')}</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select value={field.value ?? ''} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select your base currency" />
@@ -558,7 +558,7 @@ export default function Settings() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('settings.timezone')}</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select value={field.value ?? ''} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select your timezone" />
@@ -624,7 +624,7 @@ export default function Settings() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('settings.lotMethod')}</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select value={field.value ?? ''} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select lot accounting method" />
