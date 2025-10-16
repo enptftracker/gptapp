@@ -109,8 +109,7 @@ export default function TransactionHistory({
                 <TableRow>
                   <TableHead className="text-xs md:text-sm">Date</TableHead>
                   <TableHead className="text-xs md:text-sm">Type</TableHead>
-                  <TableHead className="text-xs md:text-sm">Ticker</TableHead>
-                  <TableHead className="text-xs md:text-sm">Instrument</TableHead>
+                  <TableHead className="sticky left-0 z-20 bg-background text-xs md:text-sm">Instrument</TableHead>
                   <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
                   <TableHead className="text-right text-xs md:text-sm">Unit Price</TableHead>
                   <TableHead className="text-right text-xs md:text-sm">Total Value</TableHead>
@@ -126,6 +125,10 @@ export default function TransactionHistory({
                   const name = transaction.symbol?.name || (ticker === 'CASH' ? 'Cash' : '—');
                   const assetType = transaction.symbol?.asset_type || (ticker === 'CASH' ? 'CASH' : '');
                   const secondaryLabel = transaction.symbol?.exchange || '';
+                  const badgeParts = [assetType, ticker, secondaryLabel]
+                    .filter(Boolean)
+                    .map((part) => String(part).toUpperCase());
+                  const badgeLabel = badgeParts.length > 0 ? badgeParts.join(' · ') : ticker;
 
                   return (
                     <TableRow key={transaction.id}>
@@ -137,22 +140,17 @@ export default function TransactionHistory({
                           {transaction.type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs md:text-sm">
-                        <span className="font-mono font-medium truncate block">
-                          {ticker}
-                        </span>
-                        {assetType && (
-                          <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">{assetType}</p>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs md:text-sm">
-                        <div className="flex items-center gap-2 min-w-0">
+                      <TableCell className="sticky left-0 z-10 bg-background text-xs md:text-sm">
+                        <div className="flex items-center gap-3 min-w-0">
                           <InstrumentIcon ticker={ticker} name={name} size="sm" className="flex-shrink-0" />
                           <div className="min-w-0">
-                            <p className="font-medium truncate">{name}</p>
-                            {secondaryLabel && (
-                              <p className="text-[0.65rem] text-muted-foreground truncate">{secondaryLabel}</p>
-                            )}
+                            <p className="font-medium uppercase tracking-wide text-[0.7rem] md:text-xs truncate">{name}</p>
+                            <Badge
+                              variant="secondary"
+                              className="mt-1 w-fit text-[0.6rem] uppercase tracking-wide"
+                            >
+                              {badgeLabel}
+                            </Badge>
                           </div>
                         </div>
                       </TableCell>

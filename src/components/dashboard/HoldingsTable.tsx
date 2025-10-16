@@ -30,8 +30,7 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="text-xs md:text-sm">Ticker</TableHead>
-            <TableHead className="text-xs md:text-sm">Instrument</TableHead>
+            <TableHead className="sticky left-0 z-20 bg-background text-xs md:text-sm">Instrument</TableHead>
             <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
             <TableHead className="text-right text-xs md:text-sm">{buyPriceLabel}</TableHead>
             <TableHead className="text-right text-xs md:text-sm">Current Price</TableHead>
@@ -44,30 +43,24 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
             const isProfit = holding.unrealizedPL >= 0;
             const ticker = holding.symbol.ticker.toUpperCase();
             const name = holding.symbol.name || '—';
+            const badgeParts = [holding.symbol.assetType, ticker, holding.symbol.exchange]
+              .filter(Boolean)
+              .map((part) => String(part).toUpperCase());
+            const badgeLabel = badgeParts.length > 0 ? badgeParts.join(' · ') : ticker;
 
             return (
               <TableRow key={`${holding.portfolioId}-${holding.symbolId}`}>
-                <TableCell>
-                  <div className="flex flex-col gap-1">
-                    <span className="font-medium text-sm md:text-base">{holding.symbol.ticker}</span>
-                    <Badge
-                      variant="outline"
-                      className="w-fit text-xs"
-                    >
-                      {holding.symbol.assetType}
-                    </Badge>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2 min-w-0">
+                <TableCell className="sticky left-0 z-10 bg-background">
+                  <div className="flex items-center gap-3 min-w-0">
                     <InstrumentIcon ticker={ticker} name={name} size="sm" className="flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="font-medium text-sm md:text-base truncate">{name}</p>
-                      {holding.symbol.exchange && (
-                        <p className="text-xs text-muted-foreground truncate">
-                          {holding.symbol.exchange}
-                        </p>
-                      )}
+                      <p className="font-medium uppercase tracking-wide text-[0.75rem] md:text-sm truncate">{name}</p>
+                      <Badge
+                        variant="secondary"
+                        className="mt-1 w-fit text-[0.6rem] uppercase tracking-wide"
+                      >
+                        {badgeLabel}
+                      </Badge>
                     </div>
                   </div>
                 </TableCell>
