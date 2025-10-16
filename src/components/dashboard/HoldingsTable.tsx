@@ -33,8 +33,8 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
             <TableHead className="text-xs md:text-sm">Ticker</TableHead>
             <TableHead className="text-xs md:text-sm">Instrument</TableHead>
             <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
-            <TableHead className="text-right text-xs md:text-sm hidden sm:table-cell">{buyPriceLabel}</TableHead>
-            <TableHead className="text-right text-xs md:text-sm hidden sm:table-cell">Current Price</TableHead>
+            <TableHead className="text-right text-xs md:text-sm">{buyPriceLabel}</TableHead>
+            <TableHead className="text-right text-xs md:text-sm">Current Price</TableHead>
             <TableHead className="text-right text-xs md:text-sm">Market Value</TableHead>
             <TableHead className="text-right text-xs md:text-sm">P/L</TableHead>
           </TableRow>
@@ -74,10 +74,10 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
                 <TableCell className="text-right font-mono text-xs md:text-sm whitespace-nowrap">
                   {holding.quantity.toLocaleString()}
                 </TableCell>
-                <TableCell className="text-right font-mono text-xs md:text-sm hidden sm:table-cell whitespace-nowrap">
+                <TableCell className="text-right font-mono text-xs md:text-sm whitespace-nowrap">
                   {formatCurrency(holding.avgCostBase)}
                 </TableCell>
-                <TableCell className="text-right font-mono text-xs md:text-sm hidden sm:table-cell whitespace-nowrap">
+                <TableCell className="text-right font-mono text-xs md:text-sm whitespace-nowrap">
                   {formatCurrency(holding.currentPrice)}
                 </TableCell>
                 <TableCell className="text-right font-mono font-medium text-xs md:text-sm whitespace-nowrap">
