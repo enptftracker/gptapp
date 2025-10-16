@@ -1,31 +1,93 @@
 import { Transaction as DbTransaction, Symbol as DbSymbol, PriceData as DbPriceData } from './supabase';
 import { Holding, PortfolioMetrics, ConsolidatedHolding } from './types';
 
+type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
+
 export class PortfolioCalculations {
   /**
    * Calculate average cost basis for a position based on lot method
    */
-  static calculateAverageCost(transactions: DbTransaction[], lotMethod: string = 'FIFO'): number {
-    const buys = transactions.filter(t => t.type === 'BUY');
-    if (buys.length === 0) return 0;
-    
-    switch (lotMethod) {
-      case 'AVERAGE':
-        // Weighted average cost
-        const totalCost = buys.reduce((sum, t) => sum + (t.quantity * t.unit_price), 0);
-        const totalQuantity = buys.reduce((sum, t) => sum + t.quantity, 0);
-        return totalQuantity > 0 ? totalCost / totalQuantity : 0;
-      
-      case 'FIFO':
-      case 'LIFO':
-      case 'HIFO':
-      default:
-        // For these methods, we need to calculate based on remaining lots
-        // For simplicity, we'll use weighted average but this should be enhanced
-        const costSum = buys.reduce((sum, t) => sum + (t.quantity * t.unit_price), 0);
-        const qtySum = buys.reduce((sum, t) => sum + t.quantity, 0);
-        return qtySum > 0 ? costSum / qtySum : 0;
+  static calculateAverageCost(transactions: DbTransaction[], lotMethod: LotMethod = 'FIFO'): number {
+    const relevantTransactions = [...transactions]
+      .filter(t => t.type === 'BUY' || t.type === 'SELL')
+      .sort((a, b) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime());
+
+    if (relevantTransactions.length === 0) {
+      return 0;
     }
+
+    if (lotMethod === 'AVERAGE') {
+      let totalQuantity = 0;
+      let totalCost = 0;
+
+      for (const transaction of relevantTransactions) {
+        if (transaction.type === 'BUY') {
+          totalQuantity += transaction.quantity;
+          totalCost += transaction.quantity * transaction.unit_price;
+        } else if (transaction.type === 'SELL' && totalQuantity > 0) {
+          const averageCost = totalQuantity > 0 ? totalCost / totalQuantity : 0;
+          const quantityToRemove = Math.min(transaction.quantity, totalQuantity);
+
+          totalQuantity -= quantityToRemove;
+          totalCost -= averageCost * quantityToRemove;
+        }
+      }
+
+      return totalQuantity > 0 ? totalCost / totalQuantity : 0;
+    }
+
+    const lots: Array<{ quantity: number; unitPrice: number }> = [];
+
+    const getLotIndex = (): number => {
+      if (lotMethod === 'LIFO') {
+        return lots.length - 1;
+      }
+
+      if (lotMethod === 'HIFO') {
+        let highestIndex = 0;
+        for (let index = 1; index < lots.length; index += 1) {
+          if (lots[index].unitPrice > lots[highestIndex].unitPrice) {
+            highestIndex = index;
+          }
+        }
+        return highestIndex;
+      }
+
+      return 0; // FIFO
+    };
+
+    for (const transaction of relevantTransactions) {
+      if (transaction.type === 'BUY') {
+        lots.push({
+          quantity: transaction.quantity,
+          unitPrice: transaction.unit_price
+        });
+        continue;
+      }
+
+      let remainingToSell = transaction.quantity;
+
+      while (remainingToSell > 0 && lots.length > 0) {
+        const lotIndex = getLotIndex();
+        const lot = lots[lotIndex];
+        const quantityToSell = Math.min(remainingToSell, lot.quantity);
+
+        lot.quantity -= quantityToSell;
+        remainingToSell -= quantityToSell;
+
+        if (lot.quantity === 0) {
+          lots.splice(lotIndex, 1);
+        }
+      }
+    }
+
+    const remainingQuantity = lots.reduce((sum, lot) => sum + lot.quantity, 0);
+    if (remainingQuantity === 0) {
+      return 0;
+    }
+
+    const remainingCost = lots.reduce((sum, lot) => sum + (lot.quantity * lot.unitPrice), 0);
+    return remainingCost / remainingQuantity;
   }
 
   /**
@@ -98,7 +160,7 @@ export class PortfolioCalculations {
     transactions: DbTransaction[],
     symbols: DbSymbol[],
     prices: DbPriceData[],
-    lotMethod: string = 'FIFO'
+    lotMethod: LotMethod = 'FIFO'
   ): Holding[] {
     const portfolioTransactions = transactions.filter(t => t.portfolio_id === portfolioId);
     const symbolGroups = new Map<string, DbTransaction[]>();
@@ -176,7 +238,7 @@ export class PortfolioCalculations {
     transactions: DbTransaction[],
     symbols: DbSymbol[],
     prices: DbPriceData[],
-    lotMethod: string = 'FIFO'
+    lotMethod: LotMethod = 'FIFO'
   ): PortfolioMetrics {
     const holdings = this.calculateHoldings(portfolioId, transactions, symbols, prices, lotMethod);
     
@@ -209,7 +271,7 @@ export class PortfolioCalculations {
     transactions: DbTransaction[],
     symbols: DbSymbol[],
     prices: DbPriceData[],
-    lotMethod: string = 'FIFO'
+    lotMethod: LotMethod = 'FIFO'
   ): ConsolidatedHolding[] {
     const symbolHoldings = new Map<string, {
       symbol: DbSymbol;
