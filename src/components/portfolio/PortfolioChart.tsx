@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recha
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Holding, ConsolidatedHolding } from '@/lib/types';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
+import { useResizeObserver } from '@/hooks/useResizeObserver';
 
 interface PortfolioChartProps {
   holdings: Holding[] | ConsolidatedHolding[];
@@ -86,6 +87,11 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
     );
   };
 
+  const { ref: containerRef, width, height } = useResizeObserver<HTMLDivElement>();
+  const minDimension = Math.min(width, height);
+  const computedOuterRadius = minDimension > 0 ? (minDimension / 2) * 0.8 : undefined;
+  const computedInnerRadius = computedOuterRadius ? computedOuterRadius * 0.6 : undefined;
+
   if (chartData.length === 0) {
     return (
       <Card className={className}>
@@ -107,15 +113,15 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-64">
+        <div ref={containerRef} className="h-64 w-full md:h-72 lg:h-80">
           <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
+            <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
               <Pie
                 data={chartData}
                 cx="50%"
                 cy="50%"
-                innerRadius={50}
-                outerRadius={100}
+                innerRadius={computedInnerRadius ?? '45%'}
+                outerRadius={computedOuterRadius ?? '80%'}
                 paddingAngle={2}
                 dataKey="value"
               >
