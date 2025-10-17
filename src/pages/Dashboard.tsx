@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import MetricCard from '@/components/dashboard/MetricCard';
-import HoldingsTable from '@/components/dashboard/HoldingsTable';
+import HoldingsTableContainer from '@/components/dashboard/HoldingsTableContainer';
 import { usePortfolios } from '@/hooks/usePortfolios';
 import { useTransactions } from '@/hooks/useTransactions';
 import { useConsolidatedHoldings } from '@/hooks/useHoldings';
@@ -82,7 +82,9 @@ export default function Dashboard() {
           await priceService.updatePrice(holding.symbolId, quote.price, {
             change: quote.change,
             changePercent: quote.changePercent,
-            asof: quote.lastUpdated
+            asof: quote.lastUpdated,
+            high: quote.high ?? null,
+            low: quote.low ?? null
           });
           results.push({ symbol: holding.ticker, success: true });
         } catch (error) {
@@ -402,7 +404,7 @@ export default function Dashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <HoldingsTable
+              <HoldingsTableContainer
                 holdings={consolidatedHoldings.map(h => ({
                   portfolioId: '',
                   symbolId: h.symbolId,

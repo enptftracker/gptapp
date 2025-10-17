@@ -1,3 +1,5 @@
+import { MarketDataService } from './marketData';
+
 const clearbitDomains: Record<string, string> = {
   AAPL: 'apple.com',
   MSFT: 'microsoft.com',
@@ -48,7 +50,7 @@ const directLogos: Record<string, string> = {
   'MATIC-USD': 'https://assets.coingecko.com/coins/images/4713/thumb/polygon.png?1698233745',
 };
 
-function buildFallbackLabel(ticker: string, name?: string) {
+export function getInstrumentFallbackLabel(ticker: string, name?: string) {
   const normalized = ticker.trim().toUpperCase();
   if (!normalized) {
     return '—';
@@ -80,21 +82,37 @@ export interface InstrumentBranding {
   fallbackLabel: string;
 }
 
-export function getInstrumentBranding(ticker: string, name?: string): InstrumentBranding {
+export async function getInstrumentBranding(
+  ticker: string,
+  name?: string
+): Promise<InstrumentBranding> {
   const normalizedTicker = (ticker || '').trim().toUpperCase();
+  const fallbackLabel = getInstrumentFallbackLabel(normalizedTicker, name);
 
   if (!normalizedTicker) {
     return {
       logoUrl: null,
-      fallbackLabel: '—',
+      fallbackLabel,
     };
+  }
+
+  try {
+    const finnhubLogo = await MarketDataService.getLogo(normalizedTicker);
+    if (finnhubLogo) {
+      return {
+        logoUrl: finnhubLogo,
+        fallbackLabel,
+      };
+    }
+  } catch (error) {
+    console.error('Error retrieving Finnhub logo:', error);
   }
 
   const directLogo = directLogos[normalizedTicker];
   if (directLogo) {
     return {
       logoUrl: directLogo,
-      fallbackLabel: buildFallbackLabel(normalizedTicker, name),
+      fallbackLabel,
     };
   }
 
@@ -102,13 +120,13 @@ export function getInstrumentBranding(ticker: string, name?: string): Instrument
   if (domain) {
     return {
       logoUrl: `https://logo.clearbit.com/${domain}?size=128`,
-      fallbackLabel: buildFallbackLabel(normalizedTicker, name),
+      fallbackLabel,
     };
   }
 
   return {
     logoUrl: null,
-    fallbackLabel: buildFallbackLabel(normalizedTicker, name),
+    fallbackLabel,
   };
 }
 

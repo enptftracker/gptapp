@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface SymbolNewsItem {
   title: string;
@@ -10,20 +11,10 @@ export interface SymbolNewsItem {
   sentiment?: 'positive' | 'negative' | 'neutral';
 }
 
-interface YahooNewsItem {
-  title?: string;
-  link?: string;
-  url?: string;
-  publisher?: string;
-  provider?: { name?: string };
-  pubDate?: string;
-  published_at?: string;
-  summary?: string;
-  excerpt?: string;
-}
-
-interface YahooNewsResponse {
-  news?: YahooNewsItem[];
+interface FetchCompanyNewsResponse {
+  symbol?: string;
+  provider?: string;
+  news?: SymbolNewsItem[];
 }
 
 export const createFallbackNews = (ticker: string): SymbolNewsItem[] => [
@@ -54,27 +45,30 @@ export const createFallbackNews = (ticker: string): SymbolNewsItem[] => [
 ];
 
 async function fetchSymbolNews(ticker: string): Promise<SymbolNewsItem[]> {
-  const response = await fetch(
-    `https://query1.finance.yahoo.com/v1/finance/search?q=${ticker}&newsCount=6`
-  );
+  try {
+    const { data, error } = await supabase.functions.invoke<FetchCompanyNewsResponse>(
+      'fetch-company-news',
+      {
+        body: { ticker }
+      }
+    );
 
-  if (!response.ok) {
-    throw new Error('Failed to fetch news');
+    if (error) {
+      throw error;
+    }
+
+    const articles: SymbolNewsItem[] = Array.isArray(data?.news)
+      ? data.news.map((item) => ({
+          ...item,
+          sentiment: item.sentiment ?? 'neutral'
+        }))
+      : [];
+
+    return articles.length > 0 ? articles : createFallbackNews(ticker);
+  } catch (err) {
+    console.error('Error fetching symbol news:', err);
+    throw err instanceof Error ? err : new Error('Failed to fetch news');
   }
-
-  const payload: YahooNewsResponse = await response.json();
-  const articles = Array.isArray(payload.news)
-    ? payload.news.slice(0, 6).map((item): SymbolNewsItem => ({
-        title: item.title || `${ticker} update`,
-        url: item.link || item.url || `https://www.google.com/search?q=${ticker}+stock`,
-        publisher: item.publisher || item.provider?.name || 'Market News',
-        publishedAt: item.pubDate || item.published_at || new Date().toISOString(),
-        summary: item.summary || item.excerpt || `Latest update related to ${ticker}.`,
-        sentiment: 'neutral'
-      }))
-    : [];
-
-  return articles.length > 0 ? articles : createFallbackNews(ticker);
 }
 
 export function useSymbolNews(ticker: string | undefined) {

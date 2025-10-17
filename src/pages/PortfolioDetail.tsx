@@ -8,8 +8,8 @@ import { ArrowLeft, Plus, TrendingUp, TrendingDown } from 'lucide-react';
 import { usePortfolios } from '@/hooks/usePortfolios';
 import { usePortfolioTransactions } from '@/hooks/useTransactions';
 import { usePortfolioHoldings, usePortfolioMetrics } from '@/hooks/useHoldings';
-import HoldingsTable from '@/components/dashboard/HoldingsTable';
-import TransactionHistory from '@/components/transactions/TransactionHistory';
+import HoldingsTableContainer from '@/components/dashboard/HoldingsTableContainer';
+import TransactionHistoryContainer from '@/components/transactions/TransactionHistoryContainer';
 import TransactionForm from '@/components/transactions/TransactionForm';
 import MetricCard from '@/components/dashboard/MetricCard';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
@@ -228,13 +228,13 @@ export default function PortfolioDetail() {
               <CardTitle>Holdings</CardTitle>
             </CardHeader>
             <CardContent>
-              <HoldingsTable holdings={holdings} lotMethod={profile?.default_lot_method} />
+              <HoldingsTableContainer holdings={holdings} lotMethod={profile?.default_lot_method} />
             </CardContent>
           </Card>
         </TabsContent>
-        
+
         <TabsContent value="transactions">
-          <TransactionHistory 
+          <TransactionHistoryContainer
             transactions={transactions}
             title={`Transactions (${transactions.length})`}
             portfolios={portfolios}
