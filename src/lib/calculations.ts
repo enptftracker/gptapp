@@ -22,6 +22,7 @@ const addDays = (date: Date, amount: number): Date => {
 type PositionState = {
   quantity: number;
   cost: number;
+  lots: Array<{ quantity: number; unitCost: number }>;
 };
 
 export interface PortfolioHistoryPoint {
@@ -31,7 +32,7 @@ export interface PortfolioHistoryPoint {
   cost: number;
 }
 
-type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
+export type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
 
 export class PortfolioCalculations {
   /**
@@ -393,6 +394,7 @@ export class PortfolioCalculations {
   static calculatePortfolioHistory(
     transactions: DbTransaction[],
     prices: DbPriceData[],
+    lotMethod: LotMethod = 'FIFO',
     options: {
       locale?: string;
       endDate?: Date;
@@ -448,40 +450,104 @@ export class PortfolioCalculations {
           continue;
         }
 
-        const position = positions.get(symbolId) ?? { quantity: 0, cost: 0 };
+        const position = positions.get(symbolId) ?? { quantity: 0, cost: 0, lots: [] };
         const tradePrice = typeof transaction.unit_price === 'number' ? transaction.unit_price : 0;
         const quantity = typeof transaction.quantity === 'number' ? transaction.quantity : 0;
         const fee = typeof transaction.fee === 'number' ? transaction.fee : 0;
 
+        const getLotIndex = (): number => {
+          if (lotMethod === 'LIFO') {
+            return position.lots.length - 1;
+          }
+
+          if (lotMethod === 'HIFO') {
+            let highestIndex = 0;
+            for (let index = 1; index < position.lots.length; index += 1) {
+              if (position.lots[index].unitCost > position.lots[highestIndex].unitCost) {
+                highestIndex = index;
+              }
+            }
+            return highestIndex;
+          }
+
+          return 0; // FIFO
+        };
+
         switch (transaction.type) {
           case 'BUY': {
             const totalCost = (quantity * tradePrice) + fee;
-            position.quantity += quantity;
-            position.cost += totalCost;
+            if (quantity > 0) {
+              position.quantity += quantity;
+              position.cost += totalCost;
+              const unitCost = quantity > 0 ? totalCost / quantity : 0;
+              position.lots.push({ quantity, unitCost: Number.isFinite(unitCost) ? unitCost : 0 });
+            }
             break;
           }
           case 'SELL': {
             const quantityToRemove = Math.min(quantity, position.quantity);
             if (quantityToRemove > 0 && position.quantity > 0) {
-              const avgCost = position.cost / position.quantity;
-              const costReduction = avgCost * quantityToRemove;
-              position.quantity -= quantityToRemove;
-              position.cost = Math.max(0, position.cost - costReduction);
+              if (lotMethod === 'AVERAGE') {
+                const avgCost = position.quantity > 0 ? position.cost / position.quantity : 0;
+                const costReduction = avgCost * quantityToRemove;
+                position.quantity -= quantityToRemove;
+                position.cost = Math.max(0, position.cost - costReduction);
+              } else {
+                let remainingToSell = quantityToRemove;
+                while (remainingToSell > 0 && position.lots.length > 0) {
+                  const lotIndex = getLotIndex();
+                  const lot = position.lots[lotIndex];
+                  const sellQuantity = Math.min(remainingToSell, lot.quantity);
+                  const costReduction = sellQuantity * lot.unitCost;
+
+                  lot.quantity -= sellQuantity;
+                  position.quantity -= sellQuantity;
+                  position.cost = Math.max(0, position.cost - costReduction);
+                  remainingToSell -= sellQuantity;
+
+                  if (lot.quantity === 0) {
+                    position.lots.splice(lotIndex, 1);
+                  }
+                }
+              }
             }
             break;
           }
           case 'TRANSFER': {
             if (quantity >= 0) {
               const totalCost = quantity * tradePrice;
-              position.quantity += quantity;
-              position.cost += totalCost;
+              if (quantity > 0) {
+                position.quantity += quantity;
+                position.cost += totalCost;
+                const unitCost = quantity > 0 ? totalCost / quantity : 0;
+                position.lots.push({ quantity, unitCost: Number.isFinite(unitCost) ? unitCost : 0 });
+              }
             } else {
               const quantityToRemove = Math.min(Math.abs(quantity), position.quantity);
               if (quantityToRemove > 0 && position.quantity > 0) {
-                const avgCost = position.cost / position.quantity;
-                const costReduction = avgCost * quantityToRemove;
-                position.quantity -= quantityToRemove;
-                position.cost = Math.max(0, position.cost - costReduction);
+                if (lotMethod === 'AVERAGE') {
+                  const avgCost = position.quantity > 0 ? position.cost / position.quantity : 0;
+                  const costReduction = avgCost * quantityToRemove;
+                  position.quantity -= quantityToRemove;
+                  position.cost = Math.max(0, position.cost - costReduction);
+                } else {
+                  let remainingToRemove = quantityToRemove;
+                  while (remainingToRemove > 0 && position.lots.length > 0) {
+                    const lotIndex = getLotIndex();
+                    const lot = position.lots[lotIndex];
+                    const removeQuantity = Math.min(remainingToRemove, lot.quantity);
+                    const costReduction = removeQuantity * lot.unitCost;
+
+                    lot.quantity -= removeQuantity;
+                    position.quantity -= removeQuantity;
+                    position.cost = Math.max(0, position.cost - costReduction);
+                    remainingToRemove -= removeQuantity;
+
+                    if (lot.quantity === 0) {
+                      position.lots.splice(lotIndex, 1);
+                    }
+                  }
+                }
               }
             }
             break;
@@ -492,6 +558,10 @@ export class PortfolioCalculations {
 
         position.cost = Math.max(0, position.cost);
         position.quantity = Math.max(0, position.quantity);
+        if (position.quantity === 0) {
+          position.cost = 0;
+          position.lots = [];
+        }
         positions.set(symbolId, position);
 
         if (tradePrice > 0) {

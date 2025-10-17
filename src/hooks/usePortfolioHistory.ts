@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { priceService, transactionService, Transaction as DbTransaction } from '@/lib/supabase';
-import { PortfolioCalculations, PortfolioHistoryPoint } from '@/lib/calculations';
+import { priceService, transactionService, Transaction as DbTransaction, profileService } from '@/lib/supabase';
+import { PortfolioCalculations, PortfolioHistoryPoint, LotMethod } from '@/lib/calculations';
 
 async function buildHistoryForTransactions(transactions: DbTransaction[]) {
   if (!transactions || transactions.length === 0) {
@@ -13,11 +13,18 @@ async function buildHistoryForTransactions(transactions: DbTransaction[]) {
       .map(transaction => transaction.symbol_id!)
   )];
 
+  const profilePromise = profileService.get();
   const prices = symbolIds.length > 0
     ? await priceService.getManyLatest(symbolIds)
     : [];
+  const profile = await profilePromise;
 
-  return PortfolioCalculations.calculatePortfolioHistory(transactions, prices);
+  const lotMethod = profile?.default_lot_method;
+  const isLotMethod = (value: unknown): value is LotMethod =>
+    value === 'FIFO' || value === 'LIFO' || value === 'HIFO' || value === 'AVERAGE';
+  const normalizedLotMethod: LotMethod = isLotMethod(lotMethod) ? lotMethod : 'FIFO';
+
+  return PortfolioCalculations.calculatePortfolioHistory(transactions, prices, normalizedLotMethod);
 }
 
 export function useAllPortfoliosHistory() {
