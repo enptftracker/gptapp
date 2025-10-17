@@ -91,7 +91,7 @@ describe('PortfolioCalculations.calculatePortfolioHistory', () => {
     endDate: new Date('2024-01-04T00:00:00Z')
   } as const;
 
-  it('uses FIFO lots when calculating history cost basis', () => {
+  it('tracks cumulative net investment over time when using FIFO lots', () => {
     const history = PortfolioCalculations.calculatePortfolioHistory(
       mixedPriceTransactions,
       [],
@@ -99,10 +99,10 @@ describe('PortfolioCalculations.calculatePortfolioHistory', () => {
       historyOptions
     );
 
-    expect(history.map(point => point.cost)).toEqual([100, 300, 200, 0]);
+    expect(history.map(point => point.cost)).toEqual([100, 300, 150, -25]);
   });
 
-  it('uses HIFO lots when calculating history cost basis', () => {
+  it('tracks the same cumulative investment regardless of lot method', () => {
     const history = PortfolioCalculations.calculatePortfolioHistory(
       mixedPriceTransactions,
       [],
@@ -110,7 +110,7 @@ describe('PortfolioCalculations.calculatePortfolioHistory', () => {
       historyOptions
     );
 
-    expect(history.map(point => point.cost)).toEqual([100, 300, 100, 0]);
+    expect(history.map(point => point.cost)).toEqual([100, 300, 150, -25]);
   });
 
   it('uses trade prices before quotes become effective and aligns latest point with consolidated holdings', () => {
@@ -151,6 +151,7 @@ describe('PortfolioCalculations.calculatePortfolioHistory', () => {
 
     expect(history[0].value).toBeCloseTo(100); // Trade price applied on first day
     expect(history[history.length - 1].value).toBeCloseTo(120); // Quote applied after its asof
+    expect(history.map(point => point.cost)).toEqual([100, 100, 100, 100]);
 
     const symbol = {
       id: 'symbol-quote',

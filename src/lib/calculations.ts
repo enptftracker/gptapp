@@ -466,6 +466,7 @@ export class PortfolioCalculations {
 
     const positions = new Map<string, PositionState>();
     const lastKnownPrice = new Map<string, { price: number; dateKey: string }>();
+    let cumulativeNetInvestment = 0;
     const history: PortfolioHistoryPoint[] = [];
 
     let transactionIndex = 0;
@@ -490,6 +491,7 @@ export class PortfolioCalculations {
         const tradePrice = typeof transaction.unit_price === 'number' ? transaction.unit_price : 0;
         const quantity = typeof transaction.quantity === 'number' ? transaction.quantity : 0;
         const fee = typeof transaction.fee === 'number' ? transaction.fee : 0;
+        let cashImpact = 0;
 
         const getLotIndex = (): number => {
           if (lotMethod === 'LIFO') {
@@ -517,12 +519,17 @@ export class PortfolioCalculations {
               position.cost += totalCost;
               const unitCost = quantity > 0 ? totalCost / quantity : 0;
               position.lots.push({ quantity, unitCost: Number.isFinite(unitCost) ? unitCost : 0 });
+              if (totalCost !== 0 && Number.isFinite(totalCost)) {
+                cashImpact += totalCost;
+              }
             }
             break;
           }
           case 'SELL': {
             const quantityToRemove = Math.min(quantity, position.quantity);
             if (quantityToRemove > 0 && position.quantity > 0) {
+              const grossProceeds = quantityToRemove * tradePrice;
+              const netProceeds = grossProceeds - fee;
               if (lotMethod === 'AVERAGE') {
                 const avgCost = position.quantity > 0 ? position.cost / position.quantity : 0;
                 const costReduction = avgCost * quantityToRemove;
@@ -546,6 +553,9 @@ export class PortfolioCalculations {
                   }
                 }
               }
+              if (Number.isFinite(netProceeds) && netProceeds !== 0) {
+                cashImpact -= netProceeds;
+              }
             }
             break;
           }
@@ -557,6 +567,9 @@ export class PortfolioCalculations {
                 position.cost += totalCost;
                 const unitCost = quantity > 0 ? totalCost / quantity : 0;
                 position.lots.push({ quantity, unitCost: Number.isFinite(unitCost) ? unitCost : 0 });
+                if (Number.isFinite(totalCost) && totalCost !== 0) {
+                  cashImpact += totalCost;
+                }
               }
             } else {
               const quantityToRemove = Math.min(Math.abs(quantity), position.quantity);
@@ -585,6 +598,10 @@ export class PortfolioCalculations {
                   }
                 }
               }
+              const grossValue = quantityToRemove * tradePrice;
+              if (Number.isFinite(grossValue) && grossValue !== 0) {
+                cashImpact -= grossValue;
+              }
             }
             break;
           }
@@ -603,9 +620,12 @@ export class PortfolioCalculations {
         if (tradePrice > 0) {
           lastKnownPrice.set(symbolId, { price: tradePrice, dateKey: cursorKey });
         }
+
+        if (cashImpact !== 0 && Number.isFinite(cashImpact)) {
+          cumulativeNetInvestment += cashImpact;
+        }
       }
 
-      let totalCost = 0;
       let totalValue = 0;
 
       positions.forEach((position, symbolId) => {
@@ -615,7 +635,6 @@ export class PortfolioCalculations {
         }
 
         const costBasis = Math.max(0, position.cost);
-        totalCost += costBasis;
 
         const fallbackPrice = position.quantity > 0 ? costBasis / position.quantity : 0;
         const latestQuote = findLatestQuoteForDate(symbolId, cursor);
@@ -639,7 +658,9 @@ export class PortfolioCalculations {
       const point: PortfolioHistoryPoint = {
         date: formatDisplayDate(cursor, locale),
         isoDate: cursorKey,
-        cost: Number.isFinite(totalCost) ? Number(totalCost.toFixed(2)) : 0,
+        cost: Number.isFinite(cumulativeNetInvestment)
+          ? Number(cumulativeNetInvestment.toFixed(2))
+          : 0,
         value: Number.isFinite(totalValue) ? Number(totalValue.toFixed(2)) : 0
       };
 
