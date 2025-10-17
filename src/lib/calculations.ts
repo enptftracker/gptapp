@@ -412,12 +412,48 @@ export class PortfolioCalculations {
       return [];
     }
 
-    const priceMap = new Map<string, number>();
+    type PriceEntry = { data: DbPriceData; asofTime: number };
+    const priceMap = new Map<string, PriceEntry[]>();
+
     prices.forEach(price => {
-      if (price && price.symbol_id && typeof price.price === 'number') {
-        priceMap.set(price.symbol_id, price.price);
+      if (!price || !price.symbol_id || typeof price.price !== 'number' || Number.isNaN(price.price)) {
+        return;
       }
+
+      const asofDate = new Date(price.asof);
+      if (Number.isNaN(asofDate.getTime())) {
+        return;
+      }
+
+      asofDate.setHours(0, 0, 0, 0);
+      const entries = priceMap.get(price.symbol_id) ?? [];
+      entries.push({ data: price, asofTime: asofDate.getTime() });
+      priceMap.set(price.symbol_id, entries);
     });
+
+    priceMap.forEach(entries => {
+      entries.sort((a, b) => a.asofTime - b.asofTime);
+    });
+
+    const findLatestQuoteForDate = (symbolId: string, date: Date): PriceEntry | undefined => {
+      const entries = priceMap.get(symbolId);
+      if (!entries || entries.length === 0) {
+        return undefined;
+      }
+
+      const cursorDate = new Date(date);
+      cursorDate.setHours(0, 0, 0, 0);
+      const cursorTime = cursorDate.getTime();
+
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const entry = entries[index];
+        if (entry.asofTime <= cursorTime) {
+          return entry;
+        }
+      }
+
+      return undefined;
+    };
 
     const locale = options.locale ?? 'en-US';
     const startDate = new Date(relevantTransactions[0].trade_date);
@@ -429,7 +465,7 @@ export class PortfolioCalculations {
     }
 
     const positions = new Map<string, PositionState>();
-    const lastKnownPrice = new Map<string, number>();
+    const lastKnownPrice = new Map<string, { price: number; dateKey: string }>();
     const history: PortfolioHistoryPoint[] = [];
 
     let transactionIndex = 0;
@@ -565,7 +601,7 @@ export class PortfolioCalculations {
         positions.set(symbolId, position);
 
         if (tradePrice > 0) {
-          lastKnownPrice.set(symbolId, tradePrice);
+          lastKnownPrice.set(symbolId, { price: tradePrice, dateKey: cursorKey });
         }
       }
 
@@ -582,7 +618,18 @@ export class PortfolioCalculations {
         totalCost += costBasis;
 
         const fallbackPrice = position.quantity > 0 ? costBasis / position.quantity : 0;
-        const marketPrice = priceMap.get(symbolId) ?? lastKnownPrice.get(symbolId) ?? fallbackPrice;
+        const latestQuote = findLatestQuoteForDate(symbolId, cursor);
+        const tradeInfo = lastKnownPrice.get(symbolId);
+
+        let marketPrice = fallbackPrice;
+
+        if (tradeInfo && tradeInfo.price > 0 && tradeInfo.dateKey === cursorKey) {
+          marketPrice = tradeInfo.price;
+        } else if (latestQuote && latestQuote.data.price > 0) {
+          marketPrice = latestQuote.data.price;
+        } else if (tradeInfo && tradeInfo.price > 0) {
+          marketPrice = tradeInfo.price;
+        }
 
         if (marketPrice > 0) {
           totalValue += position.quantity * marketPrice;
