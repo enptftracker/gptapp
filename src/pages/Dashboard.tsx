@@ -22,6 +22,7 @@ import { priceService } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import type { ConsolidatedHolding } from '@/lib/types';
 import { useProfile } from '@/hooks/useProfile';
+import { useAllPortfoliosHistory } from '@/hooks/usePortfolioHistory';
 
 type RefreshResult = { symbol: string; success: boolean; message?: string };
 
@@ -37,6 +38,7 @@ export default function Dashboard() {
     isLoading: boolean;
   };
   const { data: profile } = useProfile();
+  const { data: portfolioHistory = [], isLoading: historyLoading } = useAllPortfoliosHistory();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [refreshTotal, setRefreshTotal] = useState<number | null>(null);
@@ -158,7 +160,7 @@ export default function Dashboard() {
     refreshPricesMutation.mutate(consolidatedHoldings);
   };
 
-  const isLoading = portfoliosLoading || transactionsLoading || holdingsLoading;
+  const isLoading = portfoliosLoading || transactionsLoading || holdingsLoading || historyLoading;
 
   // Calculate real metrics from holdings
   const totalPortfolios = portfolios.length;
@@ -172,29 +174,29 @@ export default function Dashboard() {
   const dailyPL = totalPL * 0.1;
   const dailyPLPercent = totalEquity > 0 ? (dailyPL / totalEquity) * 100 : 0;
 
-  // Generate mock historical data (in real app, this would come from database)
-  const historicalData = useMemo(() => {
-    if (totalEquity === 0) return [];
-    
-    const days = 30;
-    const data = [];
-    const startValue = totalCost;
-    const endValue = totalEquity;
-    const step = (endValue - startValue) / days;
-    
-    for (let i = 0; i <= days; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - (days - i));
-      const value = startValue + (step * i) + (Math.random() - 0.5) * (totalEquity * 0.02);
-      
-      data.push({
-        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        value: Math.max(0, value),
-        cost: totalCost
-      });
+  const sparklinePoints = useMemo(() => {
+    if (!portfolioHistory || portfolioHistory.length === 0) {
+      return [] as Array<{ height: number }>;
     }
-    return data;
-  }, [totalEquity, totalCost]);
+
+    const recentPoints = portfolioHistory.slice(-10);
+    if (recentPoints.length === 0) {
+      return [];
+    }
+
+    const values = recentPoints.map(point => point.value);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+
+    return recentPoints.map(point => {
+      if (max === min) {
+        return { height: 60 };
+      }
+
+      const normalized = (point.value - min) / (max - min);
+      return { height: 30 + (normalized * 70) };
+    });
+  }, [portfolioHistory]);
 
   if (isLoading) {
     return (
@@ -277,11 +279,11 @@ export default function Dashboard() {
               <p className="text-2xl font-bold">{formatCurrency(totalCost)}</p>
               <div className="mt-3 h-16">
                 <div className="w-full h-full flex items-end gap-1">
-                  {historicalData.slice(-10).map((_, i) => (
-                    <div 
-                      key={i} 
+                  {sparklinePoints.map((point, i) => (
+                    <div
+                      key={i}
                       className="flex-1 bg-primary/20 rounded-t"
-                      style={{ height: `${30 + Math.random() * 70}%` }}
+                      style={{ height: `${point.height}%` }}
                     />
                   ))}
                 </div>
@@ -345,7 +347,7 @@ export default function Dashboard() {
         <>
           {/* Analytics Charts */}
           <div className="grid gap-4 md:grid-cols-2">
-            <HistoricalValueChart data={historicalData} />
+            <HistoricalValueChart data={portfolioHistory} />
             <PortfolioChart
               holdings={consolidatedHoldings.map(h => ({
                 portfolioId: '',

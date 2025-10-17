@@ -30,6 +30,7 @@ export function useCreateTransaction() {
       queryClient.invalidateQueries({ queryKey: ['holdings'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
       queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolio-history'] });
       
       // Force refresh of price data for better accuracy
       queryClient.invalidateQueries({ queryKey: ['market-data'] });
@@ -63,6 +64,7 @@ export function useUpdateTransaction() {
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
       queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
       queryClient.invalidateQueries({ queryKey: ['market-data'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolio-history'] });
       
       toast({
         title: "Transaction updated",
@@ -91,6 +93,7 @@ export function useDeleteTransaction() {
       queryClient.invalidateQueries({ queryKey: ['holdings'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
       queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolio-history'] });
       
       toast({
         title: "Transaction deleted",
