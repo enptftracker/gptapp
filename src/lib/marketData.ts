@@ -15,7 +15,12 @@ export type HistoricalRange = '1D' | '1M' | '3M' | '1Y' | '5Y' | 'MAX';
 
 export interface HistoricalPricePoint {
   time: string;
+  timestamp: number;
   price: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  volume?: number;
 }
 
 type FetchStockPriceResponse = {
@@ -33,12 +38,17 @@ type FetchStockPriceResponse = {
 type HistoricalEntry = {
   timestamp?: number;
   date?: string;
+  open?: number;
+  high?: number;
+  low?: number;
   close?: number;
+  volume?: number;
 };
 
 type FetchHistoricalDataResponse = {
   symbol?: string;
   period?: string;
+  resolution?: string;
   data?: HistoricalEntry[];
 };
 
@@ -199,12 +209,23 @@ class MarketDataServiceImpl {
           return null;
         }
 
+        const open = this.toNumber(entry.open);
+        const high = this.toNumber(entry.high);
+        const low = this.toNumber(entry.low);
+        const volume = this.toNumber(entry.volume);
+
         return {
           time: new Date(timestamp).toISOString(),
-          price: this.round(price)
+          timestamp,
+          price: this.round(price),
+          open: typeof open === 'number' ? this.round(open) : undefined,
+          high: typeof high === 'number' ? this.round(high) : undefined,
+          low: typeof low === 'number' ? this.round(low) : undefined,
+          volume: typeof volume === 'number' ? Math.round(volume) : undefined,
         };
       })
-      .filter((point): point is HistoricalPricePoint => point !== null);
+      .filter((point): point is HistoricalPricePoint => point !== null)
+      .sort((a, b) => a.timestamp - b.timestamp);
   }
 
   static async searchSymbols(query: string): Promise<Array<{ ticker: string; name: string; type: string }>> {
