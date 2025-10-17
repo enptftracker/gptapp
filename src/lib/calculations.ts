@@ -1,6 +1,36 @@
 import { Transaction as DbTransaction, Symbol as DbSymbol, PriceData as DbPriceData } from './supabase';
 import { Holding, PortfolioMetrics, ConsolidatedHolding } from './types';
 
+const MS_IN_DAY = 24 * 60 * 60 * 1000;
+
+const SUPPORTED_HISTORY_TYPES = new Set(['BUY', 'SELL', 'TRANSFER']);
+
+const formatDateKey = (date: Date): string => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().split('T')[0];
+};
+
+const formatDisplayDate = (date: Date, locale: string = 'en-US'): string => {
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(date);
+};
+
+const addDays = (date: Date, amount: number): Date => {
+  return new Date(date.getTime() + (amount * MS_IN_DAY));
+};
+
+type PositionState = {
+  quantity: number;
+  cost: number;
+};
+
+export interface PortfolioHistoryPoint {
+  date: string;
+  isoDate: string;
+  value: number;
+  cost: number;
+}
+
 type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
 
 export class PortfolioCalculations {
@@ -358,6 +388,149 @@ export class PortfolioCalculations {
     });
 
     return consolidatedHoldings.sort((a, b) => b.totalMarketValue - a.totalMarketValue);
+  }
+
+  static calculatePortfolioHistory(
+    transactions: DbTransaction[],
+    prices: DbPriceData[],
+    options: {
+      locale?: string;
+      endDate?: Date;
+    } = {}
+  ): PortfolioHistoryPoint[] {
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+      return [];
+    }
+
+    const relevantTransactions = [...transactions]
+      .filter(transaction => transaction.trade_date && SUPPORTED_HISTORY_TYPES.has(transaction.type))
+      .sort((a, b) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime());
+
+    if (relevantTransactions.length === 0) {
+      return [];
+    }
+
+    const priceMap = new Map<string, number>();
+    prices.forEach(price => {
+      if (price && price.symbol_id && typeof price.price === 'number') {
+        priceMap.set(price.symbol_id, price.price);
+      }
+    });
+
+    const locale = options.locale ?? 'en-US';
+    const startDate = new Date(relevantTransactions[0].trade_date);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = options.endDate ? new Date(options.endDate) : new Date();
+    endDate.setHours(0, 0, 0, 0);
+    if (endDate.getTime() < startDate.getTime()) {
+      endDate.setTime(startDate.getTime());
+    }
+
+    const positions = new Map<string, PositionState>();
+    const lastKnownPrice = new Map<string, number>();
+    const history: PortfolioHistoryPoint[] = [];
+
+    let transactionIndex = 0;
+    let cursor = new Date(startDate);
+
+    while (cursor.getTime() <= endDate.getTime()) {
+      const cursorKey = formatDateKey(cursor);
+
+      while (
+        transactionIndex < relevantTransactions.length &&
+        formatDateKey(new Date(relevantTransactions[transactionIndex].trade_date)) === cursorKey
+      ) {
+        const transaction = relevantTransactions[transactionIndex];
+        transactionIndex += 1;
+
+        const symbolId = transaction.symbol_id;
+        if (!symbolId) {
+          continue;
+        }
+
+        const position = positions.get(symbolId) ?? { quantity: 0, cost: 0 };
+        const tradePrice = typeof transaction.unit_price === 'number' ? transaction.unit_price : 0;
+        const quantity = typeof transaction.quantity === 'number' ? transaction.quantity : 0;
+        const fee = typeof transaction.fee === 'number' ? transaction.fee : 0;
+
+        switch (transaction.type) {
+          case 'BUY': {
+            const totalCost = (quantity * tradePrice) + fee;
+            position.quantity += quantity;
+            position.cost += totalCost;
+            break;
+          }
+          case 'SELL': {
+            const quantityToRemove = Math.min(quantity, position.quantity);
+            if (quantityToRemove > 0 && position.quantity > 0) {
+              const avgCost = position.cost / position.quantity;
+              const costReduction = avgCost * quantityToRemove;
+              position.quantity -= quantityToRemove;
+              position.cost = Math.max(0, position.cost - costReduction);
+            }
+            break;
+          }
+          case 'TRANSFER': {
+            if (quantity >= 0) {
+              const totalCost = quantity * tradePrice;
+              position.quantity += quantity;
+              position.cost += totalCost;
+            } else {
+              const quantityToRemove = Math.min(Math.abs(quantity), position.quantity);
+              if (quantityToRemove > 0 && position.quantity > 0) {
+                const avgCost = position.cost / position.quantity;
+                const costReduction = avgCost * quantityToRemove;
+                position.quantity -= quantityToRemove;
+                position.cost = Math.max(0, position.cost - costReduction);
+              }
+            }
+            break;
+          }
+          default:
+            break;
+        }
+
+        position.cost = Math.max(0, position.cost);
+        position.quantity = Math.max(0, position.quantity);
+        positions.set(symbolId, position);
+
+        if (tradePrice > 0) {
+          lastKnownPrice.set(symbolId, tradePrice);
+        }
+      }
+
+      let totalCost = 0;
+      let totalValue = 0;
+
+      positions.forEach((position, symbolId) => {
+        if (position.quantity <= 0) {
+          positions.delete(symbolId);
+          return;
+        }
+
+        const costBasis = Math.max(0, position.cost);
+        totalCost += costBasis;
+
+        const fallbackPrice = position.quantity > 0 ? costBasis / position.quantity : 0;
+        const marketPrice = priceMap.get(symbolId) ?? lastKnownPrice.get(symbolId) ?? fallbackPrice;
+
+        if (marketPrice > 0) {
+          totalValue += position.quantity * marketPrice;
+        }
+      });
+
+      const point: PortfolioHistoryPoint = {
+        date: formatDisplayDate(cursor, locale),
+        isoDate: cursorKey,
+        cost: Number.isFinite(totalCost) ? Number(totalCost.toFixed(2)) : 0,
+        value: Number.isFinite(totalValue) ? Number(totalValue.toFixed(2)) : 0
+      };
+
+      history.push(point);
+      cursor = addDays(cursor, 1);
+    }
+
+    return history;
   }
 }
 

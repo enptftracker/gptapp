@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { PerformanceBreakdown } from '@/components/analytics/PerformanceBreakdow
 import { AssetTypeBreakdown } from '@/components/analytics/AssetTypeBreakdown';
 import PortfolioChart from '@/components/portfolio/PortfolioChart';
 import { useProfile } from '@/hooks/useProfile';
+import { usePortfolioHistory } from '@/hooks/usePortfolioHistory';
 
 export default function PortfolioDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,34 +26,11 @@ export default function PortfolioDetail() {
   const { data: transactions = [], isLoading: transactionsLoading } = usePortfolioTransactions(id!);
   const { data: holdings = [], isLoading: holdingsLoading } = usePortfolioHoldings(id!);
   const { data: metrics, isLoading: metricsLoading } = usePortfolioMetrics(id!);
+  const { data: history = [], isLoading: historyLoading } = usePortfolioHistory(id!);
   const { data: profile } = useProfile();
 
   const portfolio = portfolios.find(p => p.id === id);
-  const isLoading = transactionsLoading || holdingsLoading || metricsLoading;
-
-  // Generate mock historical data
-  const historicalData = useMemo(() => {
-    if (!metrics || metrics.totalEquity === 0) return [];
-    
-    const days = 30;
-    const data = [];
-    const startValue = metrics.totalCost;
-    const endValue = metrics.totalEquity;
-    const step = (endValue - startValue) / days;
-    
-    for (let i = 0; i <= days; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - (days - i));
-      const value = startValue + (step * i) + (Math.random() - 0.5) * (metrics.totalEquity * 0.02);
-      
-      data.push({
-        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        value: Math.max(0, value),
-        cost: metrics.totalCost
-      });
-    }
-    return data;
-  }, [metrics]);
+  const isLoading = transactionsLoading || holdingsLoading || metricsLoading || historyLoading;
 
   if (!portfolio) {
     return (
@@ -204,7 +182,7 @@ export default function PortfolioDetail() {
       {holdings.length > 0 && (
         <>
           <div className="grid gap-6 md:grid-cols-2">
-            <HistoricalValueChart data={historicalData} title="Portfolio Value Over Time" />
+            <HistoricalValueChart data={history} title="Portfolio Value Over Time" />
             <PortfolioChart holdings={holdings} title="Portfolio Allocation" />
           </div>
 
