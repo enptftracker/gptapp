@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Holding, ConsolidatedHolding } from '@/lib/types';
@@ -33,6 +33,7 @@ interface ChartData {
 }
 
 export default function PortfolioChart({ holdings, title = "Portfolio Allocation", className }: PortfolioChartProps) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const chartData: ChartData[] = holdings
     .filter(holding => {
       // Handle both Holding and ConsolidatedHolding types
@@ -132,6 +133,8 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
                   outerRadius={computedOuterRadius ?? '80%'}
                   paddingAngle={2}
                   dataKey="value"
+                  onMouseEnter={(_, index) => setActiveIndex(index)}
+                  onMouseLeave={() => setActiveIndex(null)}
                 >
                   {chartData.map((entry, index) => (
                     <Cell
@@ -139,10 +142,11 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
                       fill={entry.color}
                       stroke="hsl(var(--background))"
                       strokeWidth={2}
+                      fillOpacity={activeIndex === null || activeIndex === index ? 1 : 0.45}
                     />
                   ))}
                 </Pie>
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip />} cursor={false} />
                 <Legend content={<CustomLegend />} />
               </PieChart>
             </ResponsiveContainer>
