@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import type { TooltipProps } from 'recharts';
+import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,7 +15,7 @@ interface StockChartProps {
   currency: string;
 }
 
-type TimeRange = '1M' | '3M' | '1Y' | '5Y';
+type TimeRange = '1D' | '1M' | '3M' | '1Y' | '5Y' | 'MAX';
 
 const rangeDisplayFormat: Record<HistoricalRange, string> = {
   '1D': 'HH:mm',
@@ -34,10 +36,12 @@ const rangeTooltipFormat: Record<HistoricalRange, string> = {
 };
 
 const rangeMap: Record<TimeRange, HistoricalRange> = {
+  '1D': '1D',
   '1M': '1M',
   '3M': '3M',
   '1Y': '1Y',
   '5Y': '5Y',
+  'MAX': 'MAX',
 };
 
 export function StockChart({ ticker, currency }: StockChartProps) {
@@ -53,16 +57,16 @@ export function StockChart({ ticker, currency }: StockChartProps) {
     isSuccess,
   } = useHistoricalPrices(ticker, historicalRange);
 
-  const historicalPrices = data ?? [];
+  const historicalPrices = useMemo(() => data ?? [], [data]);
 
   const chartData = useMemo(
     () =>
       historicalPrices.map((point) => ({
-        date: format(new Date(point.time), rangeDisplayFormat[historicalRange]),
+        timestamp: point.timestamp,
         iso: point.time,
         price: Number(point.price.toFixed(2)),
       })),
-    [historicalPrices, historicalRange]
+    [historicalPrices]
   );
 
   const showNoData = isSuccess && historicalPrices.length === 0;
@@ -71,21 +75,35 @@ export function StockChart({ ticker, currency }: StockChartProps) {
   const minPrice = prices.length ? Math.min(...prices) : 0;
   const maxPrice = prices.length ? Math.max(...prices) : 0;
 
-  const CustomTooltip = ({ active, payload }: any) => {
+  const xTickFormatter = useCallback(
+    (value: number) => format(new Date(value), rangeDisplayFormat[historicalRange]),
+    [historicalRange]
+  );
+
+  const CustomTooltip = useCallback(({ active, payload }: TooltipProps<ValueType, NameType>) => {
     if (active && payload && payload.length) {
-      const iso = payload[0]?.payload?.iso as string | undefined;
-      const label = iso ? format(new Date(iso), rangeTooltipFormat[historicalRange]) : payload[0].payload.date;
+      const firstPayload = payload[0];
+      const dataPoint = firstPayload?.payload as { iso?: string; timestamp?: number } | undefined;
+      const labelDate = dataPoint?.iso
+        ? new Date(dataPoint.iso)
+        : dataPoint?.timestamp
+          ? new Date(dataPoint.timestamp)
+          : null;
+      const label = labelDate ? format(labelDate, rangeTooltipFormat[historicalRange]) : undefined;
       return (
         <div className="bg-card border border-border rounded-lg p-2 shadow-lg">
           <p className="text-xs text-muted-foreground">{label}</p>
           <p className="text-sm font-semibold text-card-foreground">
-            {formatCurrency(payload[0].value, currency)}
+            {formatCurrency(Number(firstPayload?.value ?? 0), currency)}
           </p>
         </div>
       );
     }
     return null;
-  };
+  }, [currency, historicalRange]);
+
+  const priceRange = maxPrice - minPrice;
+  const showTwoDecimals = priceRange < 5 || maxPrice < 100;
 
   return (
     <Card>
@@ -93,7 +111,7 @@ export function StockChart({ ticker, currency }: StockChartProps) {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle className="text-base md:text-lg">Price History</CardTitle>
           <div className="flex gap-1 overflow-x-auto pb-1">
-            {(['1M', '3M', '1Y', '5Y'] as TimeRange[]).map((range) => (
+            {(['1D', '1M', '3M', '1Y', '5Y', 'MAX'] as TimeRange[]).map((range) => (
               <Button
                 key={range}
                 variant={timeRange === range ? 'default' : 'outline'}
@@ -123,19 +141,22 @@ export function StockChart({ ticker, currency }: StockChartProps) {
             </div>
           ) : chartData.length ? (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+              <LineChart key={historicalRange} data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
-                  dataKey="date"
+                  dataKey="timestamp"
+                  type="number"
+                  domain={['dataMin', 'dataMax']}
                   tick={{ fontSize: 10 }}
                   stroke="hsl(var(--muted-foreground))"
-                  interval="preserveStartEnd"
+                  tickFormatter={xTickFormatter}
+                  minTickGap={20}
                 />
                 <YAxis
                   domain={[minPrice * 0.98, maxPrice * 1.02]}
                   tick={{ fontSize: 10 }}
                   stroke="hsl(var(--muted-foreground))"
-                  tickFormatter={(value) => `${value.toFixed(0)}`}
+                  tickFormatter={(value) => `${value.toFixed(showTwoDecimals ? 2 : 0)}`}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Line
