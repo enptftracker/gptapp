@@ -348,15 +348,17 @@ serve(async (req) => {
         }
       }
 
-      let earliestCached = cachedPoints.length
+      let earliestCachedSeconds = cachedPoints.length
         ? Math.floor(cachedPoints[0].timestamp / 1000)
         : Number.POSITIVE_INFINITY;
 
-      if (!Number.isFinite(earliestCached)) {
-        earliestCached = Number.POSITIVE_INFINITY;
+      if (!Number.isFinite(earliestCachedSeconds)) {
+        earliestCachedSeconds = Number.POSITIVE_INFINITY;
       }
 
-      let to = Number.isFinite(earliestCached) ? earliestCached - 1 : now - chunkSize;
+      let to = Number.isFinite(earliestCachedSeconds)
+        ? earliestCachedSeconds - 1
+        : now - chunkSize;
       let iterations = 0;
 
       while (to > 0 && iterations < maxIterations) {
@@ -382,11 +384,11 @@ serve(async (req) => {
           break;
         }
 
-        if (earliestCached <= chunkEarliest * 1000) {
+        if (earliestCachedSeconds <= chunkEarliest) {
           break;
         }
 
-        earliestCached = Math.min(earliestCached, chunkEarliest * 1000);
+        earliestCachedSeconds = Math.min(earliestCachedSeconds, chunkEarliest);
         to = chunkEarliest - 1;
       }
     } else {
