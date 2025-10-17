@@ -170,7 +170,9 @@ export type Database = {
           change_24h: number | null
           change_percent_24h: number | null
           created_at: string
+          high_24h: number | null
           id: string
+          low_24h: number | null
           price: number
           price_currency: string
           symbol_id: string
@@ -180,7 +182,9 @@ export type Database = {
           change_24h?: number | null
           change_percent_24h?: number | null
           created_at?: string
+          high_24h?: number | null
           id?: string
+          low_24h?: number | null
           price: number
           price_currency: string
           symbol_id: string
@@ -190,7 +194,9 @@ export type Database = {
           change_24h?: number | null
           change_percent_24h?: number | null
           created_at?: string
+          high_24h?: number | null
           id?: string
+          low_24h?: number | null
           price?: number
           price_currency?: string
           symbol_id?: string

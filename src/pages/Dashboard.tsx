@@ -82,7 +82,9 @@ export default function Dashboard() {
           await priceService.updatePrice(holding.symbolId, quote.price, {
             change: quote.change,
             changePercent: quote.changePercent,
-            asof: quote.lastUpdated
+            asof: quote.lastUpdated,
+            high: quote.high ?? null,
+            low: quote.low ?? null
           });
           results.push({ symbol: holding.ticker, success: true });
         } catch (error) {

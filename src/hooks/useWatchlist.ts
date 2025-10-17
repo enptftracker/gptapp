@@ -22,6 +22,8 @@ export interface WatchlistItem {
     change_24h: number;
     change_percent_24h: number;
     lastUpdated?: number;
+    high_24h?: number;
+    low_24h?: number;
   };
 }
 
@@ -54,7 +56,7 @@ export function useWatchlist() {
       }
       const { data: priceData } = await supabase
         .from('price_cache')
-        .select('symbol_id, price, change_24h, change_percent_24h, asof')
+        .select('symbol_id, price, change_24h, change_percent_24h, high_24h, low_24h, asof')
         .in('symbol_id', symbolIds);
 
       const priceMap = new Map(
@@ -65,6 +67,8 @@ export function useWatchlist() {
             change_24h: Number(entry.change_24h ?? 0),
             change_percent_24h: Number(entry.change_percent_24h ?? 0),
             asof: entry.asof ? new Date(entry.asof).getTime() : undefined,
+            high_24h: entry.high_24h != null ? Number(entry.high_24h) : undefined,
+            low_24h: entry.low_24h != null ? Number(entry.low_24h) : undefined,
           }
         ])
       );
@@ -81,6 +85,8 @@ export function useWatchlist() {
                 change_24h: cached.change_24h,
                 change_percent_24h: cached.change_percent_24h,
                 lastUpdated: cached.asof,
+                high_24h: cached.high_24h,
+                low_24h: cached.low_24h,
               }
             : undefined;
 
@@ -94,6 +100,8 @@ export function useWatchlist() {
                 change_24h: fresh.change,
                 change_percent_24h: fresh.changePercent,
                 lastUpdated: fresh.lastUpdated?.getTime() ?? Date.now(),
+                high_24h: fresh.high,
+                low_24h: fresh.low,
               };
             }
           }

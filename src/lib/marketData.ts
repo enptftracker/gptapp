@@ -5,6 +5,8 @@ export interface LiveQuote {
   price: number;
   change: number;
   changePercent: number;
+  high?: number;
+  low?: number;
   volume?: number;
   marketCap?: number;
   lastUpdated: Date;
@@ -160,6 +162,8 @@ class MarketDataServiceImpl {
     const change = this.toNumber(data.change) ?? 0;
     const changePercent = this.toNumber(data.changePercent) ?? 0;
     const volume = this.toNumber(data.volume);
+    const high = this.toNumber(data.high);
+    const low = this.toNumber(data.low);
     const lastUpdated = data.tradingDay
       ? new Date(`${data.tradingDay}T00:00:00Z`)
       : new Date();
@@ -169,6 +173,8 @@ class MarketDataServiceImpl {
       price: this.round(price),
       change: this.round(change),
       changePercent: this.round(changePercent),
+      high: typeof high === 'number' ? this.round(high) : undefined,
+      low: typeof low === 'number' ? this.round(low) : undefined,
       volume: typeof volume === 'number' ? Math.round(volume) : undefined,
       lastUpdated,
       provider: data.provider ?? undefined
