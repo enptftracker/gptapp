@@ -112,4 +112,66 @@ describe('PortfolioCalculations.calculatePortfolioHistory', () => {
 
     expect(history.map(point => point.cost)).toEqual([100, 300, 100, 0]);
   });
+
+  it('uses trade prices before quotes become effective and aligns latest point with consolidated holdings', () => {
+    const transactions: DbTransaction[] = [
+      buildTransaction({
+        id: 'trade-1',
+        type: 'BUY',
+        quantity: 2,
+        unit_price: 50,
+        symbol_id: 'symbol-quote',
+        trade_date: '2024-01-01T00:00:00Z'
+      })
+    ];
+
+    const prices = [
+      {
+        id: 'price-1',
+        symbol_id: 'symbol-quote',
+        price: 60,
+        price_currency: 'USD',
+        change_24h: 0,
+        change_percent_24h: 0,
+        high_24h: null,
+        low_24h: null,
+        asof: '2024-01-03T00:00:00Z',
+        created_at: '2024-01-03T00:00:00Z'
+      }
+    ];
+
+    const endDate = new Date('2024-01-04T00:00:00Z');
+
+    const history = PortfolioCalculations.calculatePortfolioHistory(
+      transactions,
+      prices,
+      'FIFO',
+      { endDate }
+    );
+
+    expect(history[0].value).toBeCloseTo(100); // Trade price applied on first day
+    expect(history[history.length - 1].value).toBeCloseTo(120); // Quote applied after its asof
+
+    const symbol = {
+      id: 'symbol-quote',
+      owner_id: 'user-1',
+      ticker: 'QUO',
+      name: 'Quote Corp',
+      asset_type: 'EQUITY' as const,
+      exchange: 'NYSE',
+      quote_currency: 'USD',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z'
+    };
+
+    const consolidated = PortfolioCalculations.calculateConsolidatedHoldings(
+      [{ id: 'portfolio-1', name: 'Primary' }],
+      transactions,
+      [symbol],
+      prices,
+      'FIFO'
+    );
+
+    expect(consolidated[0]?.totalMarketValue).toBeCloseTo(history[history.length - 1].value);
+  });
 });
