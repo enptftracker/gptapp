@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import MetricCard from '@/components/dashboard/MetricCard';
-import HoldingsTable from '@/components/dashboard/HoldingsTable';
+import HoldingsTableContainer from '@/components/dashboard/HoldingsTableContainer';
 import { usePortfolios } from '@/hooks/usePortfolios';
 import { useTransactions } from '@/hooks/useTransactions';
 import { useConsolidatedHoldings } from '@/hooks/useHoldings';
@@ -404,7 +404,7 @@ export default function Dashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <HoldingsTable
+              <HoldingsTableContainer
                 holdings={consolidatedHoldings.map(h => ({
                   portfolioId: '',
                   symbolId: h.symbolId,

@@ -5,9 +5,9 @@ import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { Holding } from '@/lib/types';
 import { InstrumentIcon } from '@/components/shared/InstrumentIcon';
 
-type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
+export type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
 
-interface HoldingsTableProps {
+export interface HoldingsTableProps {
   holdings: Holding[];
   className?: string;
   lotMethod?: LotMethod;

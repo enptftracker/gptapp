@@ -13,7 +13,7 @@ import TransactionForm from './TransactionForm';
 import TransactionImportDialog from './TransactionImportDialog';
 import { InstrumentIcon } from '@/components/shared/InstrumentIcon';
 
-interface TransactionHistoryProps {
+export interface TransactionHistoryProps {
   transactions: Transaction[];
   title?: string;
   className?: string;
