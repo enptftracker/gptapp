@@ -1,5 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Rectangle } from 'recharts';
+import type { RectangleProps } from 'recharts';
+
+type ActiveBarProps = RectangleProps & { payload?: { pl?: number } };
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { Holding, ConsolidatedHolding } from '@/lib/types';
 
@@ -83,6 +86,11 @@ export function PerformanceBreakdown({ holdings, title = "Performance by Positio
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 60 }}>
+              <defs>
+                <filter id="performanceBarShadow" x="-20%" y="-20%" width="140%" height="160%" colorInterpolationFilters="sRGB">
+                  <feDropShadow dx="0" dy="8" stdDeviation="6" floodColor="rgba(15, 23, 42, 0.45)" />
+                </filter>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis 
                 dataKey="name" 
@@ -98,11 +106,23 @@ export function PerformanceBreakdown({ holdings, title = "Performance by Positio
                 tickFormatter={formatYAxisTick}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="pl" radius={[4, 4, 0, 0]}>
+              <Bar
+                dataKey="pl"
+                radius={[4, 4, 0, 0]}
+                activeBar={(props: ActiveBarProps) => (
+                  <Rectangle
+                    {...props}
+                    stroke="none"
+                    radius={props?.payload?.pl >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4]}
+                    filter="url(#performanceBarShadow)"
+                  />
+                )}
+              >
                 {chartData.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
                     fill={entry.pl >= 0 ? 'hsl(var(--chart-2))' : 'hsl(var(--chart-5))'}
+                    radius={entry.pl >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4]}
                   />
                 ))}
               </Bar>
