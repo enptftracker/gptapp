@@ -47,6 +47,8 @@ export interface PriceData {
   price_currency: string;
   change_24h?: number;
   change_percent_24h?: number;
+  high_24h?: number | null;
+  low_24h?: number | null;
   asof: string;
   created_at: string;
 }
@@ -243,6 +245,8 @@ type UpdatePriceOptions = {
   change?: number | null;
   changePercent?: number | null;
   asof?: Date;
+  high?: number | null;
+  low?: number | null;
 };
 
 export const priceService = {
@@ -289,7 +293,14 @@ export const priceService = {
   async updatePrice(
     symbolId: string,
     price: number,
-    { currency = 'USD', change = null, changePercent = null, asof }: UpdatePriceOptions = {}
+    {
+      currency = 'USD',
+      change = null,
+      changePercent = null,
+      asof,
+      high = null,
+      low = null
+    }: UpdatePriceOptions = {}
   ): Promise<void> {
     const { error } = await supabase
       .from('price_cache')
@@ -300,6 +311,8 @@ export const priceService = {
           price_currency: currency,
           change_24h: change,
           change_percent_24h: changePercent,
+          high_24h: high,
+          low_24h: low,
           asof: (asof ?? new Date()).toISOString()
         },
         { onConflict: 'symbol_id' }

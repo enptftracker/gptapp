@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/calculations';
 import { StockChart } from './StockChart';
 import { StockNews } from './StockNews';
 import { SymbolSummary } from './SymbolSummary';
+import { useMarketData } from '@/hooks/useMarketData';
 
 interface StockDetailProps {
   open: boolean;
@@ -15,9 +16,21 @@ interface StockDetailProps {
 }
 
 export function StockDetail({ open, onOpenChange, item }: StockDetailProps) {
+  const ticker = item?.symbol.ticker ?? '';
+  const { data: liveQuote } = useMarketData(ticker);
+
   if (!item) return null;
 
-  const priceValue = item.price?.price || 0;
+  const highValue = liveQuote?.high ?? item.price?.high_24h;
+  const lowValue = liveQuote?.low ?? item.price?.low_24h;
+
+  const highDisplay = typeof highValue === 'number'
+    ? formatCurrency(highValue, item.symbol.quote_currency)
+    : 'Not available';
+
+  const lowDisplay = typeof lowValue === 'number'
+    ? formatCurrency(lowValue, item.symbol.quote_currency)
+    : 'Not available';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -67,13 +80,13 @@ export function StockDetail({ open, onOpenChange, item }: StockDetailProps) {
                 <div className="flex justify-between p-2.5 md:p-3 bg-muted/50 rounded-lg">
                   <span className="text-xs md:text-sm text-foreground">24h High</span>
                   <span className="font-semibold text-xs md:text-sm text-success">
-                    {formatCurrency(priceValue * 1.05, item.symbol.quote_currency)}
+                    {highDisplay}
                   </span>
                 </div>
                 <div className="flex justify-between p-2.5 md:p-3 bg-muted/50 rounded-lg">
                   <span className="text-xs md:text-sm text-foreground">24h Low</span>
                   <span className="font-semibold text-xs md:text-sm text-destructive">
-                    {formatCurrency(priceValue * 0.95, item.symbol.quote_currency)}
+                    {lowDisplay}
                   </span>
                 </div>
               </div>
