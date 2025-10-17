@@ -50,3 +50,66 @@ describe('PortfolioCalculations.calculateAverageCost', () => {
     expect(avgCost).toBeCloseTo(99.7222222, 6);
   });
 });
+
+describe('PortfolioCalculations.calculatePortfolioHistory', () => {
+  const mixedPriceTransactions: DbTransaction[] = [
+    buildTransaction({
+      id: 'fifo-hifo-1',
+      type: 'BUY',
+      quantity: 1,
+      unit_price: 100,
+      symbol_id: 'symbol-1',
+      trade_date: '2024-01-01T00:00:00Z'
+    }),
+    buildTransaction({
+      id: 'fifo-hifo-2',
+      type: 'BUY',
+      quantity: 1,
+      unit_price: 200,
+      symbol_id: 'symbol-1',
+      trade_date: '2024-01-02T00:00:00Z'
+    }),
+    buildTransaction({
+      id: 'fifo-hifo-3',
+      type: 'SELL',
+      quantity: 1,
+      unit_price: 150,
+      symbol_id: 'symbol-1',
+      trade_date: '2024-01-03T00:00:00Z'
+    }),
+    buildTransaction({
+      id: 'fifo-hifo-4',
+      type: 'SELL',
+      quantity: 1,
+      unit_price: 175,
+      symbol_id: 'symbol-1',
+      trade_date: '2024-01-04T00:00:00Z'
+    })
+  ];
+
+  const historyOptions = {
+    endDate: new Date('2024-01-04T00:00:00Z')
+  } as const;
+
+  it('uses FIFO lots when calculating history cost basis', () => {
+    const history = PortfolioCalculations.calculatePortfolioHistory(
+      mixedPriceTransactions,
+      [],
+      'FIFO',
+      historyOptions
+    );
+
+    expect(history.map(point => point.cost)).toEqual([100, 300, 200, 0]);
+  });
+
+  it('uses HIFO lots when calculating history cost basis', () => {
+    const history = PortfolioCalculations.calculatePortfolioHistory(
+      mixedPriceTransactions,
+      [],
+      'HIFO',
+      historyOptions
+    );
+
+    expect(history.map(point => point.cost)).toEqual([100, 300, 100, 0]);
+  });
+});
