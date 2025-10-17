@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { formatCurrency } from '@/lib/calculations';
@@ -38,23 +39,55 @@ interface HistoricalValueChartProps {
 }
 
 export function HistoricalValueChart({ data, title = "Portfolio Value Over Time", className }: HistoricalValueChartProps) {
+  const [hoveredLine, setHoveredLine] = useState<string | null>(null);
+
   const CustomTooltip = ({ active, payload }: any) => {
+    useEffect(() => {
+      if (active && payload && payload.length) {
+        const defaultKey = payload[0]?.dataKey as string | undefined;
+        if (defaultKey && hoveredLine === null) {
+          setHoveredLine(defaultKey);
+        }
+      } else if (!active && hoveredLine !== null) {
+        setHoveredLine(null);
+      }
+    }, [active, hoveredLine, payload]);
+
     if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      const pl = data.value - data.cost;
-      const plPercent = data.cost > 0 ? ((pl / data.cost) * 100).toFixed(2) : '0.00';
-      
+      const dataPoint = payload[0].payload;
+      const pl = dataPoint.value - dataPoint.cost;
+      const plPercent = dataPoint.cost > 0 ? ((pl / dataPoint.cost) * 100).toFixed(2) : '0.00';
+
       return (
-        <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
-          <p className="font-medium text-card-foreground mb-2">{data.date}</p>
-          <div className="space-y-1 text-sm">
-            <p className="text-primary">
-              Value: {formatCurrency(data.value)}
-            </p>
-            <p className="text-muted-foreground">
-              Cost: {formatCurrency(data.cost)}
-            </p>
-            <p className={pl >= 0 ? 'text-profit' : 'text-loss'}>
+        <div
+          className="bg-card border border-border rounded-lg p-3 shadow-lg"
+          onMouseLeave={() => setHoveredLine(payload[0]?.dataKey ?? null)}
+        >
+          <p className="font-medium text-card-foreground mb-2">{dataPoint.date}</p>
+          <div className="space-y-2 text-sm">
+            {payload.map((entry: any) => {
+              const key = entry.dataKey as string;
+              const isActive = hoveredLine === null || hoveredLine === key;
+              return (
+                <div
+                  key={key}
+                  className={`flex items-center justify-between gap-3 transition-colors ${isActive ? 'text-card-foreground' : 'text-muted-foreground'}`}
+                  onMouseEnter={() => setHoveredLine(key)}
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: entry.color || entry.stroke }}
+                    />
+                    {entry.name}
+                  </span>
+                  <span className={`font-medium ${isActive ? 'text-card-foreground' : 'text-muted-foreground'}`}>
+                    {formatCurrency(entry.value)}
+                  </span>
+                </div>
+              );
+            })}
+            <p className={`text-xs ${pl >= 0 ? 'text-profit' : 'text-loss'}`}>
               P/L: {formatCurrency(pl)} ({plPercent}%)
             </p>
           </div>
@@ -87,7 +120,11 @@ export function HistoricalValueChart({ data, title = "Portfolio Value Over Time"
       <CardContent>
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <LineChart
+              data={data}
+              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+              onMouseLeave={() => setHoveredLine(null)}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis 
                 dataKey="date" 
@@ -99,13 +136,14 @@ export function HistoricalValueChart({ data, title = "Portfolio Value Over Time"
                 fontSize={12}
                 tickFormatter={formatCurrencyTick}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip />} cursor={false} />
               <Legend />
               <Line
                 type="monotone"
                 dataKey="value"
                 stroke="hsl(var(--chart-1))"
-                strokeWidth={2}
+                strokeWidth={hoveredLine === 'value' || hoveredLine === null ? 2.5 : 1.5}
+                strokeOpacity={hoveredLine === 'value' || hoveredLine === null ? 1 : 0.35}
                 name="Market Value"
                 dot={false}
               />
@@ -113,7 +151,8 @@ export function HistoricalValueChart({ data, title = "Portfolio Value Over Time"
                 type="monotone"
                 dataKey="cost"
                 stroke="hsl(var(--chart-4))"
-                strokeWidth={2}
+                strokeWidth={hoveredLine === 'cost' || hoveredLine === null ? 2.5 : 1.5}
+                strokeOpacity={hoveredLine === 'cost' || hoveredLine === null ? 1 : 0.35}
                 strokeDasharray="5 5"
                 name="Cost Basis"
                 dot={false}

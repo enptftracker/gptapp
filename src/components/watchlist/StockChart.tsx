@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
@@ -46,6 +46,7 @@ const rangeMap: Record<TimeRange, HistoricalRange> = {
 
 export function StockChart({ ticker, currency }: StockChartProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>('1Y');
+  const [hoveredSeries, setHoveredSeries] = useState<string | null>(null);
 
   const historicalRange = rangeMap[timeRange];
   const {
@@ -75,23 +76,28 @@ export function StockChart({ ticker, currency }: StockChartProps) {
   const minPrice = prices.length ? Math.min(...prices) : 0;
   const maxPrice = prices.length ? Math.max(...prices) : 0;
 
-  const xTickFormatter = useCallback(
-    (value: number) => format(new Date(value), rangeDisplayFormat[historicalRange]),
-    [historicalRange]
-  );
+  const CustomTooltip = ({ active, payload }: any) => {
+    useEffect(() => {
+      if (active && payload && payload.length) {
+        const defaultKey = payload[0]?.dataKey as string | undefined;
+        if (defaultKey && hoveredSeries === null) {
+          setHoveredSeries(defaultKey);
+        }
+      } else if (!active && hoveredSeries !== null) {
+        setHoveredSeries(null);
+      }
+    }, [active, hoveredSeries, payload]);
 
-  const CustomTooltip = useCallback(({ active, payload }: TooltipProps<ValueType, NameType>) => {
     if (active && payload && payload.length) {
-      const firstPayload = payload[0];
-      const dataPoint = firstPayload?.payload as { iso?: string; timestamp?: number } | undefined;
-      const labelDate = dataPoint?.iso
-        ? new Date(dataPoint.iso)
-        : dataPoint?.timestamp
-          ? new Date(dataPoint.timestamp)
-          : null;
-      const label = labelDate ? format(labelDate, rangeTooltipFormat[historicalRange]) : undefined;
+      const iso = payload[0]?.payload?.iso as string | undefined;
+      const label = iso ? format(new Date(iso), rangeTooltipFormat[historicalRange]) : payload[0].payload.date;
+      const key = payload[0]?.dataKey as string | undefined;
       return (
-        <div className="bg-card border border-border rounded-lg p-2 shadow-lg">
+        <div
+          className="bg-card border border-border rounded-lg p-2 shadow-lg"
+          onMouseEnter={() => key && setHoveredSeries(key)}
+          onMouseLeave={() => key && setHoveredSeries(key)}
+        >
           <p className="text-xs text-muted-foreground">{label}</p>
           <p className="text-sm font-semibold text-card-foreground">
             {formatCurrency(Number(firstPayload?.value ?? 0), currency)}
@@ -141,7 +147,11 @@ export function StockChart({ ticker, currency }: StockChartProps) {
             </div>
           ) : chartData.length ? (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart key={historicalRange} data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+              <LineChart
+                data={chartData}
+                margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
+                onMouseLeave={() => setHoveredSeries(null)}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
                   dataKey="timestamp"
@@ -158,12 +168,13 @@ export function StockChart({ ticker, currency }: StockChartProps) {
                   stroke="hsl(var(--muted-foreground))"
                   tickFormatter={(value) => `${value.toFixed(showTwoDecimals ? 2 : 0)}`}
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip />} cursor={false} />
                 <Line
                   type="monotone"
                   dataKey="price"
                   stroke="hsl(var(--chart-1))"
-                  strokeWidth={2}
+                  strokeWidth={hoveredSeries === 'price' || hoveredSeries === null ? 2.5 : 1.5}
+                  strokeOpacity={hoveredSeries === 'price' || hoveredSeries === null ? 1 : 0.4}
                   dot={false}
                   activeDot={{ r: 4 }}
                 />
