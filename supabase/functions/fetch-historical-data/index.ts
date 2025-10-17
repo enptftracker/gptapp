@@ -217,14 +217,67 @@ serve(async (req) => {
   }
 
   try {
-    const { ticker, period } = await req.json() as HistoricalRequest;
+    const method = req.method.toUpperCase();
+    const isJson = req.headers.get('content-type')?.includes('application/json') ?? false;
 
-    if (!ticker) {
+    let payload: Partial<HistoricalRequest> = {};
+
+    if (method === 'POST') {
+      if (!isJson) {
+        return new Response(
+          JSON.stringify({ error: 'Request body must be JSON' }),
+          {
+            status: 415,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        );
+      }
+
+      try {
+        payload = await req.json() as Partial<HistoricalRequest>;
+      } catch (parseError) {
+        console.error('Failed to parse fetch-historical-data payload', parseError);
+        return new Response(
+          JSON.stringify({ error: 'Invalid JSON payload' }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        );
+      }
+    } else if (method === 'GET') {
+      const url = new URL(req.url);
+      const tickerParam = url.searchParams.get('ticker') ?? undefined;
+      const periodParam = url.searchParams.get('period') ?? undefined;
+      payload = {
+        ticker: tickerParam ?? undefined,
+        period: periodParam as HistoricalRequest['period'] | undefined,
+      };
+    } else {
+      return new Response(
+        JSON.stringify({ error: 'Method not allowed' }),
+        {
+          status: 405,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
+    const ticker = typeof payload.ticker === 'string' ? payload.ticker : '';
+    const normalizedTicker = normalizeTicker(ticker);
+
+    if (!normalizedTicker) {
       return new Response(
         JSON.stringify({ error: 'Ticker symbol is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const allowedPeriods: HistoricalRequest['period'][] = ['1D', '1M', '3M', '1Y', '5Y', 'MAX'];
+    const periodInput = typeof payload.period === 'string'
+      ? payload.period.toUpperCase()
+      : undefined;
+    const period = allowedPeriods.find((value) => value === periodInput) ?? undefined;
 
     const apiKey = Deno.env.get('FINNHUB_API_KEY');
     if (!apiKey) {
@@ -235,7 +288,13 @@ serve(async (req) => {
       );
     }
 
-    const normalizedTicker = normalizeTicker(ticker);
+    if (!period) {
+      return new Response(
+        JSON.stringify({ error: 'Unsupported period' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const supabase = createSupabaseClient();
     let symbolId: string | null = null;
 
@@ -348,15 +407,17 @@ serve(async (req) => {
         }
       }
 
-      let earliestCached = cachedPoints.length
+      let earliestCachedSeconds = cachedPoints.length
         ? Math.floor(cachedPoints[0].timestamp / 1000)
         : Number.POSITIVE_INFINITY;
 
-      if (!Number.isFinite(earliestCached)) {
-        earliestCached = Number.POSITIVE_INFINITY;
+      if (!Number.isFinite(earliestCachedSeconds)) {
+        earliestCachedSeconds = Number.POSITIVE_INFINITY;
       }
 
-      let to = Number.isFinite(earliestCached) ? earliestCached - 1 : now - chunkSize;
+      let to = Number.isFinite(earliestCachedSeconds)
+        ? earliestCachedSeconds - 1
+        : now - chunkSize;
       let iterations = 0;
 
       while (to > 0 && iterations < maxIterations) {
@@ -382,11 +443,11 @@ serve(async (req) => {
           break;
         }
 
-        if (earliestCached <= chunkEarliest * 1000) {
+        if (earliestCachedSeconds <= chunkEarliest) {
           break;
         }
 
-        earliestCached = Math.min(earliestCached, chunkEarliest * 1000);
+        earliestCachedSeconds = Math.min(earliestCachedSeconds, chunkEarliest);
         to = chunkEarliest - 1;
       }
     } else {
