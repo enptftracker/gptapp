@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
@@ -58,17 +58,13 @@ export function StockChart({ ticker, currency }: StockChartProps) {
     isSuccess,
   } = useHistoricalPrices(ticker, historicalRange);
 
-  const historicalPrices = useMemo(() => data ?? [], [data]);
+  const historicalPrices = data ?? [];
 
-  const chartData = useMemo(
-    () =>
-      historicalPrices.map((point) => ({
-        timestamp: point.timestamp,
-        iso: point.time,
-        price: Number(point.price.toFixed(2)),
-      })),
-    [historicalPrices]
-  );
+  const chartData = historicalPrices.map((point) => ({
+    timestamp: point.timestamp,
+    iso: point.time,
+    price: Number(point.price.toFixed(2)),
+  }));
 
   const showNoData = isSuccess && historicalPrices.length === 0;
 
@@ -76,7 +72,7 @@ export function StockChart({ ticker, currency }: StockChartProps) {
   const minPrice = prices.length ? Math.min(...prices) : 0;
   const maxPrice = prices.length ? Math.max(...prices) : 0;
 
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: TooltipProps<ValueType, NameType>) => {
     useEffect(() => {
       if (active && payload && payload.length) {
         const defaultKey = payload[0]?.dataKey as string | undefined;
@@ -88,28 +84,41 @@ export function StockChart({ ticker, currency }: StockChartProps) {
       }
     }, [active, hoveredSeries, payload]);
 
-    if (active && payload && payload.length) {
-      const iso = payload[0]?.payload?.iso as string | undefined;
-      const label = iso ? format(new Date(iso), rangeTooltipFormat[historicalRange]) : payload[0].payload.date;
-      const key = payload[0]?.dataKey as string | undefined;
-      return (
-        <div
-          className="bg-card border border-border rounded-lg p-2 shadow-lg"
-          onMouseEnter={() => key && setHoveredSeries(key)}
-          onMouseLeave={() => key && setHoveredSeries(key)}
-        >
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-sm font-semibold text-card-foreground">
-            {formatCurrency(Number(firstPayload?.value ?? 0), currency)}
-          </p>
-        </div>
-      );
+    if (!(active && payload && payload.length)) {
+      return null;
     }
-    return null;
-  }, [currency, historicalRange]);
+
+    const firstPayload = payload[0];
+    const iso = firstPayload?.payload?.iso as string | undefined;
+    const label = iso
+      ? format(new Date(iso), rangeTooltipFormat[historicalRange])
+      : (firstPayload?.payload as { date?: string })?.date;
+    const key = firstPayload?.dataKey as string | undefined;
+
+    return (
+      <div
+        className="bg-card border border-border rounded-lg p-2 shadow-lg"
+        onMouseEnter={() => key && setHoveredSeries(key)}
+        onMouseLeave={() => setHoveredSeries(null)}
+      >
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-sm font-semibold text-card-foreground">
+          {formatCurrency(Number(firstPayload?.value ?? 0), currency)}
+        </p>
+      </div>
+    );
+  };
 
   const priceRange = maxPrice - minPrice;
   const showTwoDecimals = priceRange < 5 || maxPrice < 100;
+
+  const xTickFormatter = (value: number) => {
+    try {
+      return format(new Date(value), rangeDisplayFormat[historicalRange]);
+    } catch {
+      return '';
+    }
+  };
 
   return (
     <Card>
