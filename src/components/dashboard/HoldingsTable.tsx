@@ -114,32 +114,32 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
             </CardHeader>
             {isExpanded && (
               <CardContent className="p-0" id={metricsId}>
-                <div className="divide-y divide-border/80">
-                  <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="grid grid-cols-1 gap-3 sm:divide-y sm:divide-border/80 sm:gap-0">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
                     <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quantity</span>
                     <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
                       {holding.quantity.toLocaleString()}
                     </span>
                   </div>
-                  <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
                     <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{buyPriceLabel}</span>
                     <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
                       {formatCurrency(holding.avgCostBase)}
                     </span>
                   </div>
-                  <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
                     <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current Price</span>
                     <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
                       {formatCurrency(holding.currentPrice)}
                     </span>
                   </div>
-                  <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
                     <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Market Value</span>
                     <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
                       {formatCurrency(holding.marketValueBase)}
                     </span>
                   </div>
-                  <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
                     <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Unrealized P/L</span>
                     <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
                       <span
