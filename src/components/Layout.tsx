@@ -53,12 +53,12 @@ export default function Layout() {
       </header>
 
       {/* Main Content */}
-      <main className="container pb-[calc(4.5rem+env(safe-area-inset-bottom))] pt-4 md:pt-6">
+      <main className="container pb-[calc(5rem+env(safe-area-inset-bottom,0px))] pt-4 md:pt-6 px-4">
         <Outlet />
       </main>
 
       {/* Bottom Navigation - Mobile First */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 h-16 border-t bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur supports-[backdrop-filter]:bg-card/80 safe-area-inset-bottom">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 pb-[env(safe-area-inset-bottom,0px)]">
         <div className="container px-0">
           <div className="flex items-center justify-around">
             {navItems.map((item) => (
