@@ -59,10 +59,10 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
                 onClick={toggleExpanded}
                 aria-expanded={isExpanded}
                 aria-controls={metricsId}
-                className="flex w-full flex-col gap-4 bg-gradient-to-r from-primary/15 to-transparent px-5 py-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex w-full flex-col gap-3 bg-gradient-to-r from-primary/15 to-transparent px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:gap-4 sm:px-5 sm:py-4"
               >
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-start gap-3">
+                <div className="flex items-center justify-between gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
                     <InstrumentIcon ticker={ticker} name={name} size="sm" className="flex-shrink-0" />
                     <div className="min-w-0 space-y-2">
                       <div className="space-y-1">
