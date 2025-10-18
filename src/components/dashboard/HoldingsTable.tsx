@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { Holding } from '@/lib/types';
@@ -25,84 +25,77 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
   const buyPriceLabel = `Buy Price${lotMethod ? ` (${lotMethod})` : ''}`;
 
   return (
-    <div className={cn("rounded-lg border overflow-x-auto", className)}>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="sticky left-0 z-20 bg-background text-xs md:text-sm">Instrument</TableHead>
-            <TableHead className="text-right text-xs md:text-sm">Quantity</TableHead>
-            <TableHead className="text-right text-xs md:text-sm">{buyPriceLabel}</TableHead>
-            <TableHead className="text-right text-xs md:text-sm">Current Price</TableHead>
-            <TableHead className="text-right text-xs md:text-sm">Market Value</TableHead>
-            <TableHead className="text-right text-xs md:text-sm">P/L</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {holdings.map((holding) => {
-            const isProfit = holding.unrealizedPL >= 0;
-            const ticker = holding.symbol.ticker || '—';
-            const name = holding.symbol.name || '—';
-            const metadataParts = [holding.symbol.assetType, holding.symbol.exchange]
-              .filter(Boolean)
-              .map((part) => String(part));
+    <div className={cn('space-y-4', className)}>
+      {holdings.map((holding) => {
+        const isProfit = holding.unrealizedPL >= 0;
+        const ticker = holding.symbol.ticker || '—';
+        const name = holding.symbol.name || '—';
+        const metadataParts = [holding.symbol.assetType, holding.symbol.exchange]
+          .filter(Boolean)
+          .map((part) => String(part));
+        const metricRowClass =
+          'flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4';
 
-            return (
-              <TableRow key={`${holding.portfolioId}-${holding.symbolId}`}>
-                <TableCell className="sticky left-0 z-10 bg-background">
-                  <div className="flex min-w-0 items-start gap-2 sm:items-center sm:gap-3">
-                    <InstrumentIcon ticker={ticker} name={name} size="sm" className="flex-shrink-0" />
-                    <div className="min-w-0 space-y-0.5">
-                      <p className="truncate text-sm font-semibold leading-tight">{ticker}</p>
-                      <p className="truncate text-xs text-muted-foreground leading-tight">{name}</p>
-                      {metadataParts.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.625rem] text-muted-foreground/80">
-                          {metadataParts.map((part, index) => (
-                            <React.Fragment key={`${ticker}-${part}-${index}`}>
-                              <span className="truncate">{part}</span>
-                              {index < metadataParts.length - 1 && (
-                                <span aria-hidden="true" className="text-muted-foreground/60">
-                                  •
-                                </span>
-                              )}
-                            </React.Fragment>
-                          ))}
-                        </div>
-                      )}
+        return (
+          <Card key={`${holding.portfolioId}-${holding.symbolId}`} className="border-border/80">
+            <CardHeader className="space-y-3 pb-4 pt-5 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 sm:pb-5 sm:pt-5">
+              <div className="flex min-w-0 items-start gap-3">
+                <InstrumentIcon ticker={ticker} name={name} size="sm" className="flex-shrink-0" />
+                <div className="min-w-0 space-y-1">
+                  <p className="truncate text-sm font-semibold leading-tight">{ticker}</p>
+                  <p className="truncate text-xs text-muted-foreground leading-tight">{name}</p>
+                  {metadataParts.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.625rem] text-muted-foreground/80">
+                      {metadataParts.map((part, index) => (
+                        <React.Fragment key={`${ticker}-${part}-${index}`}>
+                          <span className="truncate">{part}</span>
+                          {index < metadataParts.length - 1 && (
+                            <span aria-hidden="true" className="text-muted-foreground/60">
+                              •
+                            </span>
+                          )}
+                        </React.Fragment>
+                      ))}
                     </div>
-                  </div>
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs md:text-sm whitespace-nowrap">
-                  {holding.quantity.toLocaleString()}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs md:text-sm whitespace-nowrap">
-                  {formatCurrency(holding.avgCostBase)}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs md:text-sm whitespace-nowrap">
-                  {formatCurrency(holding.currentPrice)}
-                </TableCell>
-                <TableCell className="text-right font-mono font-medium text-xs md:text-sm whitespace-nowrap">
-                  {formatCurrency(holding.marketValueBase)}
-                </TableCell>
-                <TableCell className="text-right">
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className={metricRowClass}>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quantity</div>
+                  <div className="text-sm font-mono sm:text-right">{holding.quantity.toLocaleString()}</div>
+                </div>
+                <div className={metricRowClass}>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{buyPriceLabel}</div>
+                  <div className="text-sm font-mono sm:text-right">{formatCurrency(holding.avgCostBase)}</div>
+                </div>
+                <div className={metricRowClass}>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current Price</div>
+                  <div className="text-sm font-mono sm:text-right">{formatCurrency(holding.currentPrice)}</div>
+                </div>
+                <div className={metricRowClass}>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Market Value</div>
+                  <div className="text-sm font-mono font-semibold sm:text-right">{formatCurrency(holding.marketValueBase)}</div>
+                </div>
+                <div className={`${metricRowClass} sm:col-span-2`}>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Unrealized P/L</div>
                   <div
                     className={cn(
-                      'flex flex-col text-xs md:text-sm font-medium',
+                      'flex flex-col items-start text-sm font-medium sm:items-end sm:text-right',
                       isProfit ? 'text-profit' : 'text-loss'
                     )}
                   >
-                    <span className="font-mono whitespace-nowrap">
-                      {formatCurrency(holding.unrealizedPL)}
-                    </span>
-                    <span className="text-xs">
-                      ({formatPercent(holding.unrealizedPLPercent)})
-                    </span>
+                    <span className="font-mono">{formatCurrency(holding.unrealizedPL)}</span>
+                    <span className="text-xs sm:text-sm">({formatPercent(holding.unrealizedPLPercent)})</span>
                   </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }
