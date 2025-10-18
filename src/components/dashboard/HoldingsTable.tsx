@@ -63,8 +63,11 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
                   </div>
                 </div>
                 <div className="flex flex-col items-start gap-1 text-left sm:items-end sm:text-right">
+                  <span className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">
+                    Market Value
+                  </span>
                   <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
-                    {formatCurrency(holding.currentPrice)}
+                    {formatCurrency(holding.marketValueBase)}
                   </span>
                   <span
                     className={cn(
@@ -89,6 +92,12 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
                   <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{buyPriceLabel}</span>
                   <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
                     {formatCurrency(holding.avgCostBase)}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current Price</span>
+                  <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
+                    {formatCurrency(holding.currentPrice)}
                   </span>
                 </div>
                 <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
