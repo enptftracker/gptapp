@@ -1,5 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Rectangle } from 'recharts';
+import type { RectangleProps } from 'recharts';
+
+type ActiveBarProps = RectangleProps & { payload?: { pl?: number } };
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { Holding, ConsolidatedHolding } from '@/lib/types';
 
@@ -12,11 +15,11 @@ interface PerformanceBreakdownProps {
 export function PerformanceBreakdown({ holdings, title = "Performance by Position", className }: PerformanceBreakdownProps) {
   const chartData = holdings
     .map(holding => {
-      const pl = 'unrealizedPL' in holding ? holding.unrealizedPL : 
+      const pl = 'unrealizedPL' in holding ? holding.unrealizedPL :
                  ('totalUnrealizedPL' in holding ? holding.totalUnrealizedPL : 0);
       const plPercent = 'unrealizedPLPercent' in holding ? holding.unrealizedPLPercent :
                        ('totalUnrealizedPLPercent' in holding ? holding.totalUnrealizedPLPercent : 0);
-      
+
       return {
         name: holding.symbol.ticker,
         pl,
@@ -25,6 +28,24 @@ export function PerformanceBreakdown({ holdings, title = "Performance by Positio
     })
     .sort((a, b) => Math.abs(b.pl) - Math.abs(a.pl))
     .slice(0, 10);
+
+  const formatYAxisTick = (value: number) => {
+    const absValue = Math.abs(value);
+
+    if (absValue >= 1_000_000) {
+      return `${value < 0 ? '-' : ''}$${(absValue / 1_000_000).toFixed(1)}M`;
+    }
+
+    if (absValue >= 1_000) {
+      return `${value < 0 ? '-' : ''}$${(absValue / 1_000).toFixed(1)}k`;
+    }
+
+    if (absValue >= 1) {
+      return `${value < 0 ? '-' : ''}$${absValue.toFixed(0)}`;
+    }
+
+    return `${value < 0 ? '-' : ''}$${absValue.toFixed(2)}`;
+  };
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -65,6 +86,11 @@ export function PerformanceBreakdown({ holdings, title = "Performance by Positio
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 60 }}>
+              <defs>
+                <filter id="performanceBarShadow" x="-20%" y="-20%" width="140%" height="160%" colorInterpolationFilters="sRGB">
+                  <feDropShadow dx="0" dy="8" stdDeviation="6" floodColor="rgba(15, 23, 42, 0.45)" />
+                </filter>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis 
                 dataKey="name" 
@@ -74,17 +100,29 @@ export function PerformanceBreakdown({ holdings, title = "Performance by Positio
                 textAnchor="end"
                 height={80}
               />
-              <YAxis 
+              <YAxis
                 stroke="hsl(var(--muted-foreground))"
                 fontSize={12}
-                tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                tickFormatter={formatYAxisTick}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="pl" radius={[4, 4, 0, 0]}>
+              <Bar
+                dataKey="pl"
+                radius={[4, 4, 0, 0]}
+                activeBar={(props: ActiveBarProps) => (
+                  <Rectangle
+                    {...props}
+                    stroke="none"
+                    radius={props?.payload?.pl >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4]}
+                    filter="url(#performanceBarShadow)"
+                  />
+                )}
+              >
                 {chartData.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
                     fill={entry.pl >= 0 ? 'hsl(var(--chart-2))' : 'hsl(var(--chart-5))'}
+                    radius={entry.pl >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4]}
                   />
                 ))}
               </Bar>

@@ -5,6 +5,8 @@ export interface LiveQuote {
   price: number;
   change: number;
   changePercent: number;
+  high?: number;
+  low?: number;
   volume?: number;
   marketCap?: number;
   lastUpdated: Date;
@@ -15,7 +17,12 @@ export type HistoricalRange = '1D' | '1M' | '3M' | '1Y' | '5Y' | 'MAX';
 
 export interface HistoricalPricePoint {
   time: string;
+  timestamp: number;
   price: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  volume?: number;
 }
 
 type FetchStockPriceResponse = {
@@ -33,17 +40,24 @@ type FetchStockPriceResponse = {
 type HistoricalEntry = {
   timestamp?: number;
   date?: string;
+  open?: number;
+  high?: number;
+  low?: number;
   close?: number;
+  volume?: number;
 };
 
 type FetchHistoricalDataResponse = {
   symbol?: string;
   period?: string;
+  resolution?: string;
   data?: HistoricalEntry[];
 };
 
 class MarketDataServiceImpl {
   static readonly PROVIDER_STORAGE_KEY = 'market-data-provider';
+  private static readonly LOGO_ENDPOINT = 'https://finnhub.io/api/v1/stock/profile2';
+  private static readonly logoCache = new Map<string, string | null>();
 
   private static normalizeTicker(ticker: string): string | null {
     const normalized = ticker.trim().toUpperCase();
@@ -160,6 +174,8 @@ class MarketDataServiceImpl {
     const change = this.toNumber(data.change) ?? 0;
     const changePercent = this.toNumber(data.changePercent) ?? 0;
     const volume = this.toNumber(data.volume);
+    const high = this.toNumber(data.high);
+    const low = this.toNumber(data.low);
     const lastUpdated = data.tradingDay
       ? new Date(`${data.tradingDay}T00:00:00Z`)
       : new Date();
@@ -169,6 +185,8 @@ class MarketDataServiceImpl {
       price: this.round(price),
       change: this.round(change),
       changePercent: this.round(changePercent),
+      high: typeof high === 'number' ? this.round(high) : undefined,
+      low: typeof low === 'number' ? this.round(low) : undefined,
       volume: typeof volume === 'number' ? Math.round(volume) : undefined,
       lastUpdated,
       provider: data.provider ?? undefined
@@ -199,12 +217,23 @@ class MarketDataServiceImpl {
           return null;
         }
 
+        const open = this.toNumber(entry.open);
+        const high = this.toNumber(entry.high);
+        const low = this.toNumber(entry.low);
+        const volume = this.toNumber(entry.volume);
+
         return {
           time: new Date(timestamp).toISOString(),
-          price: this.round(price)
+          timestamp,
+          price: this.round(price),
+          open: typeof open === 'number' ? this.round(open) : undefined,
+          high: typeof high === 'number' ? this.round(high) : undefined,
+          low: typeof low === 'number' ? this.round(low) : undefined,
+          volume: typeof volume === 'number' ? Math.round(volume) : undefined,
         };
       })
-      .filter((point): point is HistoricalPricePoint => point !== null);
+      .filter((point): point is HistoricalPricePoint => point !== null)
+      .sort((a, b) => a.timestamp - b.timestamp);
   }
 
   static async searchSymbols(query: string): Promise<Array<{ ticker: string; name: string; type: string }>> {
@@ -260,6 +289,73 @@ class MarketDataServiceImpl {
       symbol.ticker.toLowerCase().includes(lowerQuery) ||
       symbol.name.toLowerCase().includes(lowerQuery)
     );
+  }
+
+  private static getFinnhubApiKey(): string | null {
+    const key = import.meta.env.VITE_FINNHUB_API_KEY;
+    if (typeof key !== 'string') {
+      return null;
+    }
+
+    const trimmed = key.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private static cacheLogo(ticker: string, value: string | null) {
+    this.logoCache.set(ticker, value);
+    return value;
+  }
+
+  static async getLogo(ticker: string): Promise<string | null> {
+    const normalized = this.normalizeTicker(ticker);
+    if (!normalized) {
+      return null;
+    }
+
+    if (this.logoCache.has(normalized)) {
+      return this.logoCache.get(normalized) ?? null;
+    }
+
+    const apiKey = this.getFinnhubApiKey();
+    if (!apiKey) {
+      console.warn('Finnhub API key not configured. Skipping logo lookup.');
+      return this.cacheLogo(normalized, null);
+    }
+
+    try {
+      const url = new URL(this.LOGO_ENDPOINT);
+      url.searchParams.set('symbol', normalized);
+      url.searchParams.set('token', apiKey);
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status >= 400 && response.status < 500) {
+          return this.cacheLogo(normalized, null);
+        }
+
+        throw new Error(`Finnhub logo request failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as { logo?: string | null } | null;
+
+      const logo = payload?.logo;
+      if (typeof logo === 'string') {
+        const trimmed = logo.trim();
+        if (trimmed.length > 0) {
+          return this.cacheLogo(normalized, trimmed);
+        }
+      }
+
+      return this.cacheLogo(normalized, null);
+    } catch (error) {
+      console.error('Error fetching Finnhub logo:', error);
+      return this.cacheLogo(normalized, null);
+    }
   }
 }
 

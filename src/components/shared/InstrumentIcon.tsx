@@ -1,6 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { getInstrumentBranding } from '@/lib/branding';
+import {
+  getInstrumentBranding,
+  getInstrumentFallbackLabel,
+  type InstrumentBranding,
+} from '@/lib/branding';
 
 export type InstrumentIconSize = 'sm' | 'md' | 'lg';
 
@@ -24,10 +28,47 @@ interface InstrumentIconProps {
 }
 
 export function InstrumentIcon({ ticker, name, size = 'md', className }: InstrumentIconProps) {
-  const { logoUrl, fallbackLabel } = getInstrumentBranding(ticker, name);
+  const fallbackLabel = useMemo(
+    () => getInstrumentFallbackLabel(ticker, name),
+    [ticker, name]
+  );
+  const [branding, setBranding] = useState<InstrumentBranding>({
+    logoUrl: null,
+    fallbackLabel,
+  });
   const [imageError, setImageError] = useState(false);
+  const [isImageLoaded, setIsImageLoaded] = useState(false);
+  const [isLoadingBranding, setIsLoadingBranding] = useState(true);
 
-  const showFallback = imageError || !logoUrl;
+  useEffect(() => {
+    let isActive = true;
+    setImageError(false);
+    setIsImageLoaded(false);
+    setIsLoadingBranding(true);
+    setBranding({ logoUrl: null, fallbackLabel });
+
+    getInstrumentBranding(ticker, name)
+      .then((result) => {
+        if (!isActive) return;
+        setBranding(result);
+      })
+      .catch((error) => {
+        console.error('Failed to load instrument branding', error);
+        if (!isActive) return;
+        setBranding({ logoUrl: null, fallbackLabel });
+      })
+      .finally(() => {
+        if (!isActive) return;
+        setIsLoadingBranding(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [ticker, name, fallbackLabel]);
+
+  const showFallback =
+    imageError || !branding.logoUrl || (!isImageLoaded && !imageError);
 
   return (
     <div
@@ -40,16 +81,29 @@ export function InstrumentIcon({ ticker, name, size = 'md', className }: Instrum
           : 'rounded-lg bg-transparent'
       )}
     >
-      {showFallback ? (
-        <span className={cn('tracking-wide', textSizeClasses[size])}>{fallbackLabel}</span>
-      ) : (
+      {branding.logoUrl && !imageError && (
         <img
-          src={logoUrl ?? undefined}
+          src={branding.logoUrl}
           alt={`${name ?? ticker} logo`}
-          className="max-h-full max-w-full object-contain"
+          className={cn(
+            'max-h-full max-w-full object-contain transition-opacity duration-200',
+            isImageLoaded ? 'opacity-100' : 'opacity-0'
+          )}
           loading="lazy"
+          onLoad={() => setIsImageLoaded(true)}
           onError={() => setImageError(true)}
         />
+      )}
+      {showFallback && (
+        <span
+          className={cn(
+            'tracking-wide transition-opacity duration-150',
+            textSizeClasses[size],
+            isLoadingBranding ? 'animate-pulse' : undefined
+          )}
+        >
+          {branding.fallbackLabel}
+        </span>
       )}
     </div>
   );

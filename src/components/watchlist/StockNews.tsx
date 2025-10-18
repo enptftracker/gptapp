@@ -60,6 +60,9 @@ export function StockNews({ ticker }: StockNewsProps) {
               ))
             : newsItems.map((news) => {
                 const sentiment = news.sentiment ?? 'neutral';
+                const summary = news.summary?.trim()
+                  ? news.summary
+                  : `Stay up to date on ${ticker} with the latest coverage.`;
 
                 return (
                   <a
@@ -79,11 +82,17 @@ export function StockNews({ ticker }: StockNewsProps) {
                           <span>•</span>
                           <span>{formatDistanceToNow(new Date(news.publishedAt), { addSuffix: true })}</span>
                         </div>
-                        <p className="mt-2 text-xs text-muted-foreground line-clamp-3">{news.summary}</p>
+                        <p className="mt-2 text-xs text-muted-foreground line-clamp-3">{summary}</p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <Badge variant="outline" className={`${getSentimentColor(sentiment)} text-xs px-1.5 py-0.5`}>
-                          {getSentimentIcon(sentiment)}
+                        <Badge
+                          variant="outline"
+                          className={`${getSentimentColor(sentiment)} text-xs px-1.5 py-0.5`}
+                        >
+                          <span className="flex items-center gap-1">
+                            {getSentimentIcon(sentiment)}
+                            <span className="capitalize">{sentiment}</span>
+                          </span>
                         </Badge>
                         <ExternalLink className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>

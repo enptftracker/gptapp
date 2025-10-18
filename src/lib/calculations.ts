@@ -1,7 +1,38 @@
 import { Transaction as DbTransaction, Symbol as DbSymbol, PriceData as DbPriceData } from './supabase';
 import { Holding, PortfolioMetrics, ConsolidatedHolding } from './types';
 
-type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
+const MS_IN_DAY = 24 * 60 * 60 * 1000;
+
+const SUPPORTED_HISTORY_TYPES = new Set(['BUY', 'SELL', 'TRANSFER']);
+
+const formatDateKey = (date: Date): string => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().split('T')[0];
+};
+
+const formatDisplayDate = (date: Date, locale: string = 'en-US'): string => {
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(date);
+};
+
+const addDays = (date: Date, amount: number): Date => {
+  return new Date(date.getTime() + (amount * MS_IN_DAY));
+};
+
+type PositionState = {
+  quantity: number;
+  cost: number;
+  lots: Array<{ quantity: number; unitCost: number }>;
+};
+
+export interface PortfolioHistoryPoint {
+  date: string;
+  isoDate: string;
+  value: number;
+  cost: number;
+}
+
+export type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
 
 export class PortfolioCalculations {
   /**
@@ -358,6 +389,286 @@ export class PortfolioCalculations {
     });
 
     return consolidatedHoldings.sort((a, b) => b.totalMarketValue - a.totalMarketValue);
+  }
+
+  static calculatePortfolioHistory(
+    transactions: DbTransaction[],
+    prices: DbPriceData[],
+    lotMethod: LotMethod = 'FIFO',
+    options: {
+      locale?: string;
+      endDate?: Date;
+    } = {}
+  ): PortfolioHistoryPoint[] {
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+      return [];
+    }
+
+    const relevantTransactions = [...transactions]
+      .filter(transaction => transaction.trade_date && SUPPORTED_HISTORY_TYPES.has(transaction.type))
+      .sort((a, b) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime());
+
+    if (relevantTransactions.length === 0) {
+      return [];
+    }
+
+    type PriceEntry = { data: DbPriceData; asofTime: number };
+    const priceMap = new Map<string, PriceEntry[]>();
+
+    prices.forEach(price => {
+      if (!price || !price.symbol_id || typeof price.price !== 'number' || Number.isNaN(price.price)) {
+        return;
+      }
+
+      const asofDate = new Date(price.asof);
+      if (Number.isNaN(asofDate.getTime())) {
+        return;
+      }
+
+      asofDate.setHours(0, 0, 0, 0);
+      const entries = priceMap.get(price.symbol_id) ?? [];
+      entries.push({ data: price, asofTime: asofDate.getTime() });
+      priceMap.set(price.symbol_id, entries);
+    });
+
+    priceMap.forEach(entries => {
+      entries.sort((a, b) => a.asofTime - b.asofTime);
+    });
+
+    const findLatestQuoteForDate = (symbolId: string, date: Date): PriceEntry | undefined => {
+      const entries = priceMap.get(symbolId);
+      if (!entries || entries.length === 0) {
+        return undefined;
+      }
+
+      const cursorDate = new Date(date);
+      cursorDate.setHours(0, 0, 0, 0);
+      const cursorTime = cursorDate.getTime();
+
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const entry = entries[index];
+        if (entry.asofTime <= cursorTime) {
+          return entry;
+        }
+      }
+
+      return undefined;
+    };
+
+    const locale = options.locale ?? 'en-US';
+    const startDate = new Date(relevantTransactions[0].trade_date);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = options.endDate ? new Date(options.endDate) : new Date();
+    endDate.setHours(0, 0, 0, 0);
+    if (endDate.getTime() < startDate.getTime()) {
+      endDate.setTime(startDate.getTime());
+    }
+
+    const positions = new Map<string, PositionState>();
+    const lastKnownPrice = new Map<string, { price: number; dateKey: string }>();
+    let cumulativeNetInvestment = 0;
+    const history: PortfolioHistoryPoint[] = [];
+
+    let transactionIndex = 0;
+    let cursor = new Date(startDate);
+
+    while (cursor.getTime() <= endDate.getTime()) {
+      const cursorKey = formatDateKey(cursor);
+
+      while (
+        transactionIndex < relevantTransactions.length &&
+        formatDateKey(new Date(relevantTransactions[transactionIndex].trade_date)) === cursorKey
+      ) {
+        const transaction = relevantTransactions[transactionIndex];
+        transactionIndex += 1;
+
+        const symbolId = transaction.symbol_id;
+        if (!symbolId) {
+          continue;
+        }
+
+        const position = positions.get(symbolId) ?? { quantity: 0, cost: 0, lots: [] };
+        const tradePrice = typeof transaction.unit_price === 'number' ? transaction.unit_price : 0;
+        const quantity = typeof transaction.quantity === 'number' ? transaction.quantity : 0;
+        const fee = typeof transaction.fee === 'number' ? transaction.fee : 0;
+        let cashImpact = 0;
+
+        const getLotIndex = (): number => {
+          if (lotMethod === 'LIFO') {
+            return position.lots.length - 1;
+          }
+
+          if (lotMethod === 'HIFO') {
+            let highestIndex = 0;
+            for (let index = 1; index < position.lots.length; index += 1) {
+              if (position.lots[index].unitCost > position.lots[highestIndex].unitCost) {
+                highestIndex = index;
+              }
+            }
+            return highestIndex;
+          }
+
+          return 0; // FIFO
+        };
+
+        switch (transaction.type) {
+          case 'BUY': {
+            const totalCost = (quantity * tradePrice) + fee;
+            if (quantity > 0) {
+              position.quantity += quantity;
+              position.cost += totalCost;
+              const unitCost = quantity > 0 ? totalCost / quantity : 0;
+              position.lots.push({ quantity, unitCost: Number.isFinite(unitCost) ? unitCost : 0 });
+              if (totalCost !== 0 && Number.isFinite(totalCost)) {
+                cashImpact += totalCost;
+              }
+            }
+            break;
+          }
+          case 'SELL': {
+            const quantityToRemove = Math.min(quantity, position.quantity);
+            if (quantityToRemove > 0 && position.quantity > 0) {
+              const grossProceeds = quantityToRemove * tradePrice;
+              const netProceeds = grossProceeds - fee;
+              if (lotMethod === 'AVERAGE') {
+                const avgCost = position.quantity > 0 ? position.cost / position.quantity : 0;
+                const costReduction = avgCost * quantityToRemove;
+                position.quantity -= quantityToRemove;
+                position.cost = Math.max(0, position.cost - costReduction);
+              } else {
+                let remainingToSell = quantityToRemove;
+                while (remainingToSell > 0 && position.lots.length > 0) {
+                  const lotIndex = getLotIndex();
+                  const lot = position.lots[lotIndex];
+                  const sellQuantity = Math.min(remainingToSell, lot.quantity);
+                  const costReduction = sellQuantity * lot.unitCost;
+
+                  lot.quantity -= sellQuantity;
+                  position.quantity -= sellQuantity;
+                  position.cost = Math.max(0, position.cost - costReduction);
+                  remainingToSell -= sellQuantity;
+
+                  if (lot.quantity === 0) {
+                    position.lots.splice(lotIndex, 1);
+                  }
+                }
+              }
+              if (Number.isFinite(netProceeds) && netProceeds !== 0) {
+                cashImpact -= netProceeds;
+              }
+            }
+            break;
+          }
+          case 'TRANSFER': {
+            if (quantity >= 0) {
+              const totalCost = quantity * tradePrice;
+              if (quantity > 0) {
+                position.quantity += quantity;
+                position.cost += totalCost;
+                const unitCost = quantity > 0 ? totalCost / quantity : 0;
+                position.lots.push({ quantity, unitCost: Number.isFinite(unitCost) ? unitCost : 0 });
+                if (Number.isFinite(totalCost) && totalCost !== 0) {
+                  cashImpact += totalCost;
+                }
+              }
+            } else {
+              const quantityToRemove = Math.min(Math.abs(quantity), position.quantity);
+              if (quantityToRemove > 0 && position.quantity > 0) {
+                if (lotMethod === 'AVERAGE') {
+                  const avgCost = position.quantity > 0 ? position.cost / position.quantity : 0;
+                  const costReduction = avgCost * quantityToRemove;
+                  position.quantity -= quantityToRemove;
+                  position.cost = Math.max(0, position.cost - costReduction);
+                } else {
+                  let remainingToRemove = quantityToRemove;
+                  while (remainingToRemove > 0 && position.lots.length > 0) {
+                    const lotIndex = getLotIndex();
+                    const lot = position.lots[lotIndex];
+                    const removeQuantity = Math.min(remainingToRemove, lot.quantity);
+                    const costReduction = removeQuantity * lot.unitCost;
+
+                    lot.quantity -= removeQuantity;
+                    position.quantity -= removeQuantity;
+                    position.cost = Math.max(0, position.cost - costReduction);
+                    remainingToRemove -= removeQuantity;
+
+                    if (lot.quantity === 0) {
+                      position.lots.splice(lotIndex, 1);
+                    }
+                  }
+                }
+              }
+              const grossValue = quantityToRemove * tradePrice;
+              if (Number.isFinite(grossValue) && grossValue !== 0) {
+                cashImpact -= grossValue;
+              }
+            }
+            break;
+          }
+          default:
+            break;
+        }
+
+        position.cost = Math.max(0, position.cost);
+        position.quantity = Math.max(0, position.quantity);
+        if (position.quantity === 0) {
+          position.cost = 0;
+          position.lots = [];
+        }
+        positions.set(symbolId, position);
+
+        if (tradePrice > 0) {
+          lastKnownPrice.set(symbolId, { price: tradePrice, dateKey: cursorKey });
+        }
+
+        if (cashImpact !== 0 && Number.isFinite(cashImpact)) {
+          cumulativeNetInvestment += cashImpact;
+        }
+      }
+
+      let totalValue = 0;
+
+      positions.forEach((position, symbolId) => {
+        if (position.quantity <= 0) {
+          positions.delete(symbolId);
+          return;
+        }
+
+        const costBasis = Math.max(0, position.cost);
+
+        const fallbackPrice = position.quantity > 0 ? costBasis / position.quantity : 0;
+        const latestQuote = findLatestQuoteForDate(symbolId, cursor);
+        const tradeInfo = lastKnownPrice.get(symbolId);
+
+        let marketPrice = fallbackPrice;
+
+        if (tradeInfo && tradeInfo.price > 0 && tradeInfo.dateKey === cursorKey) {
+          marketPrice = tradeInfo.price;
+        } else if (latestQuote && latestQuote.data.price > 0) {
+          marketPrice = latestQuote.data.price;
+        } else if (tradeInfo && tradeInfo.price > 0) {
+          marketPrice = tradeInfo.price;
+        }
+
+        if (marketPrice > 0) {
+          totalValue += position.quantity * marketPrice;
+        }
+      });
+
+      const point: PortfolioHistoryPoint = {
+        date: formatDisplayDate(cursor, locale),
+        isoDate: cursorKey,
+        cost: Number.isFinite(cumulativeNetInvestment)
+          ? Number(cumulativeNetInvestment.toFixed(2))
+          : 0,
+        value: Number.isFinite(totalValue) ? Number(totalValue.toFixed(2)) : 0
+      };
+
+      history.push(point);
+      cursor = addDays(cursor, 1);
+    }
+
+    return history;
   }
 }
 
