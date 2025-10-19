@@ -39,9 +39,6 @@ export function StockDetail({ open, onOpenChange, item }: StockDetailProps) {
         <div className="space-y-4 md:space-y-6">
           <SymbolSummary item={item} />
 
-          {/* Price Chart */}
-          <StockChart ticker={item.symbol.ticker} currency={item.symbol.quote_currency} />
-
           {/* Latest News */}
           <StockNews ticker={item.symbol.ticker} />
 

@@ -9,6 +9,7 @@ import { WatchlistItem } from '@/hooks/useWatchlist';
 import { useMarketData } from '@/hooks/useMarketData';
 import { InstrumentIcon } from '@/components/shared/InstrumentIcon';
 import { cn } from '@/lib/utils';
+import { StockChart } from './StockChart';
 
 interface SymbolSummaryProps {
   item: WatchlistItem;
@@ -127,7 +128,14 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
           </div>
         )}
       </CardHeader>
-      <CardContent className="space-y-4">
+      <div className="px-6 pb-6">
+        <StockChart
+          ticker={item.symbol.ticker}
+          currency={quoteCurrency}
+          standalone={false}
+        />
+      </div>
+      <CardContent className="space-y-4 pt-0">
         {isLoading && !summary ? (
           <Skeleton className="h-24 w-full" />
         ) : summary ? (
