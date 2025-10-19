@@ -98,7 +98,7 @@ export function PerformanceBreakdown({
   }
 
   const chart = (
-    <div className="h-80">
+    <div className="h-64 sm:h-72 lg:h-80">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 60 }}>
           <defs>
