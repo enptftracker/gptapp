@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { MarketDataService } from '@/lib/marketData';
+import { priceService } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import {
   WATCHLIST_FRESHNESS_WINDOW_MS,
@@ -28,6 +29,8 @@ export interface WatchlistItem {
 }
 
 export function useWatchlist() {
+  const { toast } = useToast();
+
   return useQuery({
     queryKey: ['watchlist'],
     queryFn: async () => {
@@ -103,6 +106,26 @@ export function useWatchlist() {
                 high_24h: fresh.high,
                 low_24h: fresh.low,
               };
+
+              try {
+                await priceService.updatePrice(item.symbol_id, fresh.price, {
+                  change: fresh.change,
+                  changePercent: fresh.changePercent,
+                  asof: fresh.lastUpdated ?? new Date(),
+                  high: fresh.high ?? null,
+                  low: fresh.low ?? null,
+                });
+              } catch (error: unknown) {
+                console.error('Failed to update price cache for symbol', item.symbol.ticker, error);
+                toast({
+                  title: 'Price cache update failed',
+                  description:
+                    error instanceof Error
+                      ? error.message
+                      : 'Unknown error occurred while updating cached price data.',
+                  variant: 'destructive',
+                });
+              }
             }
           }
 
@@ -184,10 +207,13 @@ export function useAddToWatchlist() {
         description: "Symbol has been added to your watchlist.",
       });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
       toast({
         title: "Error adding to watchlist",
-        description: error.message,
+        description:
+          error instanceof Error
+            ? error.message
+            : 'An unknown error occurred while adding the symbol.',
         variant: "destructive",
       });
     }
@@ -214,10 +240,13 @@ export function useRemoveFromWatchlist() {
         description: "Symbol has been removed from your watchlist.",
       });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
       toast({
         title: "Error removing from watchlist",
-        description: error.message,
+        description:
+          error instanceof Error
+            ? error.message
+            : 'An unknown error occurred while removing the symbol.',
         variant: "destructive",
       });
     }
