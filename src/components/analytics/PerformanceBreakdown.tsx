@@ -89,7 +89,7 @@ export function PerformanceBreakdown({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center h-64 text-muted-foreground">
+          <div className="flex h-72 items-center justify-center text-muted-foreground">
             No performance data available
           </div>
         </CardContent>
@@ -98,7 +98,7 @@ export function PerformanceBreakdown({
   }
 
   const chart = (
-    <div className="h-64 sm:h-72 lg:h-80">
+    <div className="h-72 sm:h-80 xl:h-96">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 60 }}>
           <defs>

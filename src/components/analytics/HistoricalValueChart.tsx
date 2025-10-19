@@ -192,7 +192,7 @@ export function HistoricalValueChart({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex h-64 items-center justify-center text-muted-foreground">
+          <div className="flex h-72 items-center justify-center text-muted-foreground">
             No historical data available yet
           </div>
         </CardContent>
@@ -227,7 +227,7 @@ export function HistoricalValueChart({
   );
 
   const chartBody = (
-    <div className="h-64 sm:h-72 lg:h-80">
+    <div className="h-72 sm:h-80 xl:h-96">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={processedData}
