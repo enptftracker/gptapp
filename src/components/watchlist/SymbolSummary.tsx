@@ -15,14 +15,11 @@ interface SymbolSummaryProps {
   item: WatchlistItem;
 }
 
-type QuoteSource = 'live' | 'cached';
-
 interface QuoteSummary {
   price: number;
   change: number;
   changePercent: number;
   lastUpdated?: number;
-  source: QuoteSource;
   high?: number;
   low?: number;
 }
@@ -38,26 +35,13 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
         change: liveData.change,
         changePercent: liveData.changePercent,
         lastUpdated: liveData.lastUpdated?.getTime(),
-        source: 'live',
         high: liveData.high,
         low: liveData.low,
       };
     }
 
-    if (item.price) {
-      return {
-        price: item.price.price,
-        change: item.price.change_24h,
-        changePercent: item.price.change_percent_24h,
-        lastUpdated: item.price.lastUpdated,
-        source: 'cached',
-        high: item.price.high_24h,
-        low: item.price.low_24h,
-      };
-    }
-
     return null;
-  }, [item.price, liveData]);
+  }, [liveData]);
 
   const isPositive = (summary?.change ?? 0) >= 0;
 
@@ -71,7 +55,7 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
 
   const formattedLastUpdated = summary?.lastUpdated
     ? `${format(new Date(summary.lastUpdated), 'PPpp')} (${formatDistanceToNow(new Date(summary.lastUpdated), { addSuffix: true })})`
-    : 'No recent market data';
+    : 'Live market data unavailable';
 
   const formatDelta = (value: number) => {
     const sign = value >= 0 ? '+' : '';
@@ -85,8 +69,8 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
     return 'Not available';
   };
 
-  const highValue = summary?.high ?? item.price?.high_24h;
-  const lowValue = summary?.low ?? item.price?.low_24h;
+  const highValue = summary?.high;
+  const lowValue = summary?.low;
 
   return (
     <Card className="overflow-hidden">
@@ -122,9 +106,7 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
               <span>{formatDelta(summary.change)}</span>
               <span className="text-xs text-muted-foreground">({formatDelta(summary.changePercent)}%)</span>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Source: {summary.source === 'live' ? 'Live market data' : 'Cached quote'}
-            </p>
+            <p className="mt-2 text-xs text-muted-foreground">Source: Live market data</p>
           </div>
         )}
       </CardHeader>
@@ -167,7 +149,7 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
           </div>
         ) : (
           <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-sm text-muted-foreground">
-            No price data is available for this symbol yet. Refresh your watchlist to fetch the latest quote.
+            Live price data is unavailable for this symbol right now. Please try again later.
           </div>
         )}
 

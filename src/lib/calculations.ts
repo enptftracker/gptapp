@@ -1,5 +1,11 @@
-import { Transaction as DbTransaction, Symbol as DbSymbol, PriceData as DbPriceData } from './supabase';
+import { Transaction as DbTransaction, Symbol as DbSymbol } from './supabase';
 import { Holding, PortfolioMetrics, ConsolidatedHolding } from './types';
+
+export interface QuoteSnapshot {
+  symbol_id: string;
+  price: number;
+  asof?: string | Date | null;
+}
 
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
 
@@ -190,7 +196,7 @@ export class PortfolioCalculations {
     portfolioId: string,
     transactions: DbTransaction[],
     symbols: DbSymbol[],
-    prices: DbPriceData[],
+    prices: QuoteSnapshot[],
     lotMethod: LotMethod = 'FIFO'
   ): Holding[] {
     const portfolioTransactions = transactions.filter(t => t.portfolio_id === portfolioId);
@@ -268,7 +274,7 @@ export class PortfolioCalculations {
     portfolioId: string,
     transactions: DbTransaction[],
     symbols: DbSymbol[],
-    prices: DbPriceData[],
+    prices: QuoteSnapshot[],
     lotMethod: LotMethod = 'FIFO'
   ): PortfolioMetrics {
     const holdings = this.calculateHoldings(portfolioId, transactions, symbols, prices, lotMethod);
@@ -301,7 +307,7 @@ export class PortfolioCalculations {
     portfolios: Array<{ id: string; name: string }>,
     transactions: DbTransaction[],
     symbols: DbSymbol[],
-    prices: DbPriceData[],
+    prices: QuoteSnapshot[],
     lotMethod: LotMethod = 'FIFO'
   ): ConsolidatedHolding[] {
     const symbolHoldings = new Map<string, {
@@ -393,7 +399,7 @@ export class PortfolioCalculations {
 
   static calculatePortfolioHistory(
     transactions: DbTransaction[],
-    prices: DbPriceData[],
+    prices: QuoteSnapshot[],
     lotMethod: LotMethod = 'FIFO',
     options: {
       locale?: string;
@@ -412,7 +418,7 @@ export class PortfolioCalculations {
       return [];
     }
 
-    type PriceEntry = { data: DbPriceData; asofTime: number };
+    type PriceEntry = { data: QuoteSnapshot; asofTime: number };
     const priceMap = new Map<string, PriceEntry[]>();
 
     prices.forEach(price => {
@@ -420,8 +426,18 @@ export class PortfolioCalculations {
         return;
       }
 
-      const asofDate = new Date(price.asof);
-      if (Number.isNaN(asofDate.getTime())) {
+      let asofDate: Date | null = null;
+
+      if (price.asof instanceof Date) {
+        asofDate = new Date(price.asof.getTime());
+      } else if (typeof price.asof === 'string') {
+        const parsed = new Date(price.asof);
+        if (!Number.isNaN(parsed.getTime())) {
+          asofDate = parsed;
+        }
+      }
+
+      if (!asofDate) {
         return;
       }
 

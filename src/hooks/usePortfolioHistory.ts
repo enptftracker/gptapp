@@ -1,23 +1,51 @@
 import { useQuery } from '@tanstack/react-query';
-import { priceService, transactionService, Transaction as DbTransaction, profileService } from '@/lib/supabase';
-import { PortfolioCalculations, PortfolioHistoryPoint, LotMethod } from '@/lib/calculations';
+import { transactionService, Transaction as DbTransaction, profileService } from '@/lib/supabase';
+import { PortfolioCalculations, PortfolioHistoryPoint, LotMethod, QuoteSnapshot } from '@/lib/calculations';
+import { MarketDataService } from '@/lib/marketData';
+
+async function fetchQuotesForTransactions(transactions: DbTransaction[]): Promise<QuoteSnapshot[]> {
+  const symbolTickerMap = new Map<string, string>();
+
+  for (const transaction of transactions) {
+    const symbolId = transaction.symbol_id;
+    const ticker = transaction.symbol?.ticker;
+
+    if (symbolId && ticker && !symbolTickerMap.has(symbolId)) {
+      symbolTickerMap.set(symbolId, ticker);
+    }
+  }
+
+  const entries = await Promise.all(
+    Array.from(symbolTickerMap.entries()).map(async ([symbolId, ticker]) => {
+      try {
+        const quote = await MarketDataService.getMarketData(ticker);
+        if (quote && typeof quote.price === 'number') {
+          return {
+            symbol_id: symbolId,
+            price: quote.price,
+            asof: quote.lastUpdated ?? null,
+          } satisfies QuoteSnapshot;
+        }
+      } catch (error) {
+        console.error('Failed to fetch live quote for history calculation', ticker, error);
+      }
+
+      return null;
+    })
+  );
+
+  return entries.filter((entry): entry is QuoteSnapshot => entry !== null);
+}
 
 async function buildHistoryForTransactions(transactions: DbTransaction[]) {
   if (!transactions || transactions.length === 0) {
     return [] as PortfolioHistoryPoint[];
   }
 
-  const symbolIds = [...new Set(
-    transactions
-      .filter(transaction => transaction.symbol_id)
-      .map(transaction => transaction.symbol_id!)
-  )];
-
-  const profilePromise = profileService.get();
-  const prices = symbolIds.length > 0
-    ? await priceService.getManyLatest(symbolIds)
-    : [];
-  const profile = await profilePromise;
+  const [profile, prices] = await Promise.all([
+    profileService.get(),
+    fetchQuotesForTransactions(transactions),
+  ]);
 
   const lotMethod = profile?.default_lot_method;
   const isLotMethod = (value: unknown): value is LotMethod =>
