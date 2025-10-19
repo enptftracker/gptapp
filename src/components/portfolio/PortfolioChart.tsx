@@ -124,7 +124,7 @@ export default function PortfolioChart({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex h-48 items-center justify-center text-muted-foreground">
+          <div className="flex h-60 items-center justify-center text-muted-foreground">
             No holdings data available
           </div>
         </CardContent>
@@ -136,7 +136,7 @@ export default function PortfolioChart({
     <div className="pt-4">
       <div
         ref={containerRef}
-        className="flex h-64 w-full items-center justify-center md:h-72 lg:h-80"
+        className="flex h-72 w-full items-center justify-center sm:h-80 xl:h-96"
       >
         <ResponsiveContainer width="100%" height="100%">
           <PieChart margin={{ top: chartMargin, right: chartMargin, bottom: chartMargin, left: chartMargin }}>

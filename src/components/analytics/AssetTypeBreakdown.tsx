@@ -107,7 +107,7 @@ export function AssetTypeBreakdown({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex h-64 items-center justify-center text-muted-foreground">
+          <div className="flex h-72 items-center justify-center text-muted-foreground">
             No asset data available
           </div>
         </CardContent>
@@ -116,7 +116,7 @@ export function AssetTypeBreakdown({
   }
 
   const chart = (
-    <div className="h-64 md:h-80">
+    <div className="h-72 sm:h-80 xl:h-96">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
