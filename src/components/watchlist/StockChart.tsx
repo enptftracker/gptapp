@@ -18,7 +18,7 @@ interface StockChartProps {
 type TimeRange = '1D' | '1M' | '3M' | '1Y' | '5Y' | 'MAX';
 
 const rangeDisplayFormat: Record<HistoricalRange, string> = {
-  '1D': 'HH:mm',
+  '1D': 'MMM d',
   '1M': 'MMM d',
   '3M': 'MMM d',
   '1Y': 'MMM yyyy',
@@ -27,7 +27,7 @@ const rangeDisplayFormat: Record<HistoricalRange, string> = {
 };
 
 const rangeTooltipFormat: Record<HistoricalRange, string> = {
-  '1D': 'MMM d, HH:mm',
+  '1D': 'EEE, MMM d yyyy',
   '1M': 'EEE, MMM d yyyy',
   '3M': 'EEE, MMM d yyyy',
   '1Y': 'MMM d yyyy',
