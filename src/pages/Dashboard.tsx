@@ -347,56 +347,59 @@ export default function Dashboard() {
       {/* Holdings Overview */}
       {consolidatedHoldings.length > 0 ? (
         <>
-          {/* Analytics Charts */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <HistoricalValueChart data={portfolioHistory} />
-            <PortfolioChart
-              holdings={consolidatedHoldings.map(h => ({
-                portfolioId: '',
-                symbolId: h.symbolId,
-                symbol: h.symbol,
-                quantity: h.totalQuantity,
-                avgCostBase: h.blendedAvgCost,
-                marketValueBase: h.totalMarketValue,
-                unrealizedPL: h.totalUnrealizedPL,
-                unrealizedPLPercent: h.totalUnrealizedPLPercent,
-                allocationPercent: h.allocationPercent,
-                currentPrice: h.currentPrice
-              }))}
-              title={t('dashboard.portfolioAllocation')}
-            />
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <PerformanceBreakdown
-              holdings={consolidatedHoldings.map(h => ({
-                portfolioId: '',
-                symbolId: h.symbolId,
-                symbol: h.symbol,
-                quantity: h.totalQuantity,
-                avgCostBase: h.blendedAvgCost,
-                marketValueBase: h.totalMarketValue,
-                unrealizedPL: h.totalUnrealizedPL,
-                unrealizedPLPercent: h.totalUnrealizedPLPercent,
-                allocationPercent: h.allocationPercent,
-                currentPrice: h.currentPrice
-              }))}
-            />
-            <AssetTypeBreakdown 
-              holdings={consolidatedHoldings.map(h => ({
-                portfolioId: '',
-                symbolId: h.symbolId,
-                symbol: h.symbol,
-                quantity: h.totalQuantity,
-                avgCostBase: h.blendedAvgCost,
-                marketValueBase: h.totalMarketValue,
-                unrealizedPL: h.totalUnrealizedPL,
-                unrealizedPLPercent: h.totalUnrealizedPLPercent,
-                allocationPercent: h.allocationPercent,
-                currentPrice: h.currentPrice
-              }))}
-            />
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('dashboard.analyticsOverview')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <HistoricalValueChart data={portfolioHistory} />
+                <PortfolioChart
+                  holdings={consolidatedHoldings.map(h => ({
+                    portfolioId: '',
+                    symbolId: h.symbolId,
+                    symbol: h.symbol,
+                    quantity: h.totalQuantity,
+                    avgCostBase: h.blendedAvgCost,
+                    marketValueBase: h.totalMarketValue,
+                    unrealizedPL: h.totalUnrealizedPL,
+                    unrealizedPLPercent: h.totalUnrealizedPLPercent,
+                    allocationPercent: h.allocationPercent,
+                    currentPrice: h.currentPrice
+                  }))}
+                  title={t('dashboard.portfolioAllocation')}
+                />
+                <PerformanceBreakdown
+                  holdings={consolidatedHoldings.map(h => ({
+                    portfolioId: '',
+                    symbolId: h.symbolId,
+                    symbol: h.symbol,
+                    quantity: h.totalQuantity,
+                    avgCostBase: h.blendedAvgCost,
+                    marketValueBase: h.totalMarketValue,
+                    unrealizedPL: h.totalUnrealizedPL,
+                    unrealizedPLPercent: h.totalUnrealizedPLPercent,
+                    allocationPercent: h.allocationPercent,
+                    currentPrice: h.currentPrice
+                  }))}
+                />
+                <AssetTypeBreakdown
+                  holdings={consolidatedHoldings.map(h => ({
+                    portfolioId: '',
+                    symbolId: h.symbolId,
+                    symbol: h.symbol,
+                    quantity: h.totalQuantity,
+                    avgCostBase: h.blendedAvgCost,
+                    marketValueBase: h.totalMarketValue,
+                    unrealizedPL: h.totalUnrealizedPL,
+                    unrealizedPLPercent: h.totalUnrealizedPLPercent,
+                    allocationPercent: h.allocationPercent,
+                    currentPrice: h.currentPrice
+                  }))}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
