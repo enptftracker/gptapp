@@ -45,7 +45,7 @@ const RESOLUTION_SECONDS: Record<FinnhubResolution, number> = {
 };
 
 const RANGE_CONFIG: Record<HistoricalRequest['period'], { resolution: FinnhubResolution; daysBack?: number; }> = {
-  '1D': { resolution: '5', daysBack: 2 },
+  '1D': { resolution: 'D', daysBack: 7 },
   '1M': { resolution: 'D', daysBack: 30 },
   '3M': { resolution: 'D', daysBack: 90 },
   '1Y': { resolution: 'D', daysBack: 365 },
@@ -98,7 +98,7 @@ function candlesToPoints(response: FinnhubCandleResponse): HistoricalDataPoint[]
 }
 
 const PERIOD_FILTER_WINDOWS: Partial<Record<HistoricalRequest['period'], number>> = {
-  '1D': DAY_SECONDS * 1000,
+  '1D': DAY_SECONDS * 7 * 1000,
   '1M': DAY_SECONDS * 30 * 1000,
   '3M': DAY_SECONDS * 90 * 1000,
   '1Y': DAY_SECONDS * 365 * 1000,
