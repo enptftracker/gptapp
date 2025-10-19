@@ -358,6 +358,22 @@ export default function Dashboard() {
                   variant="embedded"
                   className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
                 />
+                <PerformanceBreakdown
+                  holdings={consolidatedHoldings.map(h => ({
+                    portfolioId: '',
+                    symbolId: h.symbolId,
+                    symbol: h.symbol,
+                    quantity: h.totalQuantity,
+                    avgCostBase: h.blendedAvgCost,
+                    marketValueBase: h.totalMarketValue,
+                    unrealizedPL: h.totalUnrealizedPL,
+                    unrealizedPLPercent: h.totalUnrealizedPLPercent,
+                    allocationPercent: h.allocationPercent,
+                    currentPrice: h.currentPrice
+                  }))}
+                  variant="embedded"
+                  className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
+                />
                 <PortfolioChart
                   holdings={consolidatedHoldings.map(h => ({
                     portfolioId: '',
@@ -372,22 +388,6 @@ export default function Dashboard() {
                     currentPrice: h.currentPrice
                   }))}
                   title={t('dashboard.portfolioAllocation')}
-                  variant="embedded"
-                  className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
-                />
-                <PerformanceBreakdown
-                  holdings={consolidatedHoldings.map(h => ({
-                    portfolioId: '',
-                    symbolId: h.symbolId,
-                    symbol: h.symbol,
-                    quantity: h.totalQuantity,
-                    avgCostBase: h.blendedAvgCost,
-                    marketValueBase: h.totalMarketValue,
-                    unrealizedPL: h.totalUnrealizedPL,
-                    unrealizedPLPercent: h.totalUnrealizedPLPercent,
-                    allocationPercent: h.allocationPercent,
-                    currentPrice: h.currentPrice
-                  }))}
                   variant="embedded"
                   className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
                 />
