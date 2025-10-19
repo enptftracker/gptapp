@@ -23,6 +23,8 @@ interface QuoteSummary {
   changePercent: number;
   lastUpdated?: number;
   source: QuoteSource;
+  high?: number;
+  low?: number;
 }
 
 export function SymbolSummary({ item }: SymbolSummaryProps) {
@@ -37,6 +39,8 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
         changePercent: liveData.changePercent,
         lastUpdated: liveData.lastUpdated?.getTime(),
         source: 'live',
+        high: liveData.high,
+        low: liveData.low,
       };
     }
 
@@ -47,6 +51,8 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
         changePercent: item.price.change_percent_24h,
         lastUpdated: item.price.lastUpdated,
         source: 'cached',
+        high: item.price.high_24h,
+        low: item.price.low_24h,
       };
     }
 
@@ -71,6 +77,16 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
     const sign = value >= 0 ? '+' : '';
     return `${sign}${value.toFixed(2)}`;
   };
+
+  const formatCurrencyValue = (value?: number | null) => {
+    if (typeof value === 'number') {
+      return currencyFormatter.format(value);
+    }
+    return 'Not available';
+  };
+
+  const highValue = summary?.high ?? item.price?.high_24h;
+  const lowValue = summary?.low ?? item.price?.low_24h;
 
   return (
     <Card className="overflow-hidden">
@@ -123,7 +139,11 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
         {isLoading && !summary ? (
           <Skeleton className="h-24 w-full" />
         ) : summary ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Asset type</p>
+              <p className="text-sm font-semibold">{item.symbol.asset_type}</p>
+            </div>
             <div className="rounded-lg border bg-muted/30 p-3">
               <p className="text-xs text-muted-foreground">Quote currency</p>
               <p className="text-sm font-semibold">{quoteCurrency}</p>
@@ -135,6 +155,14 @@ export function SymbolSummary({ item }: SymbolSummaryProps) {
             <div className="rounded-lg border bg-muted/30 p-3">
               <p className="text-xs text-muted-foreground">24h change (%)</p>
               <p className="text-sm font-semibold">{formatDelta(summary.changePercent)}%</p>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">24h high</p>
+              <p className="text-sm font-semibold text-success">{formatCurrencyValue(highValue)}</p>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">24h low</p>
+              <p className="text-sm font-semibold text-destructive">{formatCurrencyValue(lowValue)}</p>
             </div>
           </div>
         ) : (
