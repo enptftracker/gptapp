@@ -356,7 +356,7 @@ export default function Dashboard() {
                 <HistoricalValueChart
                   data={portfolioHistory}
                   variant="embedded"
-                  className="embedded-analytics-panel rounded-xl border border-border/60 bg-card/40 p-3 sm:p-4 xl:p-5"
+                  className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
                 />
                 <PortfolioChart
                   holdings={consolidatedHoldings.map(h => ({
@@ -373,7 +373,7 @@ export default function Dashboard() {
                   }))}
                   title={t('dashboard.portfolioAllocation')}
                   variant="embedded"
-                  className="embedded-analytics-panel rounded-xl border border-border/60 bg-card/40 p-3 sm:p-4 xl:p-5"
+                  className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
                 />
                 <PerformanceBreakdown
                   holdings={consolidatedHoldings.map(h => ({
@@ -389,7 +389,7 @@ export default function Dashboard() {
                     currentPrice: h.currentPrice
                   }))}
                   variant="embedded"
-                  className="embedded-analytics-panel rounded-xl border border-border/60 bg-card/40 p-3 sm:p-4 xl:p-5"
+                  className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
                 />
                 <AssetTypeBreakdown
                   holdings={consolidatedHoldings.map(h => ({
@@ -405,7 +405,7 @@ export default function Dashboard() {
                     currentPrice: h.currentPrice
                   }))}
                   variant="embedded"
-                  className="embedded-analytics-panel rounded-xl border border-border/60 bg-card/40 p-3 sm:p-4 xl:p-5"
+                  className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
                 />
               </div>
             </CardContent>
