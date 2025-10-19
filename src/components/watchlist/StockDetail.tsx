@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { WatchlistItem } from '@/hooks/useWatchlist';
 import { formatCurrency } from '@/lib/calculations';
-import { StockChart } from './StockChart';
 import { StockNews } from './StockNews';
 import { SymbolSummary } from './SymbolSummary';
 import { useMarketData } from '@/hooks/useMarketData';
@@ -55,9 +54,6 @@ export function StockDetail({ open, onOpenChange, item }: StockDetailProps) {
 
         <div className="space-y-4 md:space-y-6">
           <SymbolSummary item={item} />
-
-          {/* Price Chart */}
-          <StockChart ticker={item.symbol.ticker} currency={item.symbol.quote_currency} />
 
           {/* Latest News */}
           <StockNews ticker={item.symbol.ticker} />
