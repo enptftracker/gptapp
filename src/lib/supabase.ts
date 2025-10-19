@@ -40,19 +40,6 @@ export interface Transaction {
   symbol?: Symbol;
 }
 
-export interface PriceData {
-  id: string;
-  symbol_id: string;
-  price: number;
-  price_currency: string;
-  change_24h?: number;
-  change_percent_24h?: number;
-  high_24h?: number | null;
-  low_24h?: number | null;
-  asof: string;
-  created_at: string;
-}
-
 export interface Profile {
   id: string;
   owner_id: string;
@@ -235,89 +222,6 @@ export const transactionService = {
       .delete()
       .eq('id', id);
     
-    if (error) throw error;
-  }
-};
-
-// Price operations
-type UpdatePriceOptions = {
-  currency?: string;
-  change?: number | null;
-  changePercent?: number | null;
-  asof?: Date;
-  high?: number | null;
-  low?: number | null;
-};
-
-export const priceService = {
-  async getLatest(symbolId: string): Promise<PriceData | null> {
-    const { data, error } = await supabase
-      .from('price_cache')
-      .select('*')
-      .eq('symbol_id', symbolId)
-      .order('asof', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-    return data;
-  },
-
-  async getManyLatest(symbolIds: string[]): Promise<PriceData[]> {
-    if (symbolIds.length === 0) {
-      return [];
-    }
-
-    const { data, error } = await supabase
-      .from('price_cache')
-      .select('*')
-      .in('symbol_id', symbolIds)
-      .order('symbol_id', { ascending: true })
-      .order('asof', { ascending: false });
-
-    if (error) throw error;
-
-    const seen = new Set<string>();
-    const latest: PriceData[] = [];
-
-    for (const price of data || []) {
-      if (!seen.has(price.symbol_id)) {
-        latest.push(price);
-        seen.add(price.symbol_id);
-      }
-    }
-
-    return latest;
-  },
-
-  async updatePrice(
-    symbolId: string,
-    price: number,
-    {
-      currency = 'USD',
-      change = null,
-      changePercent = null,
-      asof,
-      high = null,
-      low = null
-    }: UpdatePriceOptions = {}
-  ): Promise<void> {
-    const { error } = await supabase
-      .from('price_cache')
-      .upsert(
-        {
-          symbol_id: symbolId,
-          price,
-          price_currency: currency,
-          change_24h: change,
-          change_percent_24h: changePercent,
-          high_24h: high,
-          low_24h: low,
-          asof: (asof ?? new Date()).toISOString()
-        },
-        { onConflict: 'symbol_id' }
-      );
-
     if (error) throw error;
   }
 };

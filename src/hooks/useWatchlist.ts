@@ -1,12 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { MarketDataService } from '@/lib/marketData';
-import { priceService } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
-import {
-  WATCHLIST_FRESHNESS_WINDOW_MS,
-  isCacheEntryStale,
-} from './watchlistStaleness';
 
 export interface WatchlistItem {
   id: string;
@@ -18,19 +12,9 @@ export interface WatchlistItem {
     asset_type: string;
     quote_currency: string;
   };
-  price?: {
-    price: number;
-    change_24h: number;
-    change_percent_24h: number;
-    lastUpdated?: number;
-    high_24h?: number;
-    low_24h?: number;
-  };
 }
 
 export function useWatchlist() {
-  const { toast } = useToast();
-
   return useQuery({
     queryKey: ['watchlist'],
     queryFn: async () => {
@@ -51,92 +35,7 @@ export function useWatchlist() {
 
       if (error) throw error;
 
-      // Get price data for all symbols
-      const symbolIds = watchlistData?.map(item => item.symbol_id) || [];
-
-      if (symbolIds.length === 0) {
-        return (watchlistData || []).map(item => ({ ...item, price: undefined })) as WatchlistItem[];
-      }
-      const { data: priceData } = await supabase
-        .from('price_cache')
-        .select('symbol_id, price, change_24h, change_percent_24h, high_24h, low_24h, asof')
-        .in('symbol_id', symbolIds);
-
-      const priceMap = new Map(
-        (priceData || []).map(entry => [
-          entry.symbol_id,
-          {
-            price: Number(entry.price),
-            change_24h: Number(entry.change_24h ?? 0),
-            change_percent_24h: Number(entry.change_percent_24h ?? 0),
-            asof: entry.asof ? new Date(entry.asof).getTime() : undefined,
-            high_24h: entry.high_24h != null ? Number(entry.high_24h) : undefined,
-            low_24h: entry.low_24h != null ? Number(entry.low_24h) : undefined,
-          }
-        ])
-      );
-
-      const now = Date.now();
-      const freshnessWindow = WATCHLIST_FRESHNESS_WINDOW_MS;
-
-      const watchlistWithPrices = await Promise.all(
-        (watchlistData || []).map(async (item) => {
-          const cached = priceMap.get(item.symbol_id);
-          let resolvedPrice = cached
-            ? {
-                price: cached.price,
-                change_24h: cached.change_24h,
-                change_percent_24h: cached.change_percent_24h,
-                lastUpdated: cached.asof,
-                high_24h: cached.high_24h,
-                low_24h: cached.low_24h,
-              }
-            : undefined;
-
-          const isStale = isCacheEntryStale(cached, now, freshnessWindow);
-
-          if (isStale) {
-            const fresh = await MarketDataService.getMarketData(item.symbol.ticker);
-            if (fresh) {
-              resolvedPrice = {
-                price: fresh.price,
-                change_24h: fresh.change,
-                change_percent_24h: fresh.changePercent,
-                lastUpdated: fresh.lastUpdated?.getTime() ?? Date.now(),
-                high_24h: fresh.high,
-                low_24h: fresh.low,
-              };
-
-              try {
-                await priceService.updatePrice(item.symbol_id, fresh.price, {
-                  change: fresh.change,
-                  changePercent: fresh.changePercent,
-                  asof: fresh.lastUpdated ?? new Date(),
-                  high: fresh.high ?? null,
-                  low: fresh.low ?? null,
-                });
-              } catch (error: unknown) {
-                console.error('Failed to update price cache for symbol', item.symbol.ticker, error);
-                toast({
-                  title: 'Price cache update failed',
-                  description:
-                    error instanceof Error
-                      ? error.message
-                      : 'Unknown error occurred while updating cached price data.',
-                  variant: 'destructive',
-                });
-              }
-            }
-          }
-
-          return {
-            ...item,
-            price: resolvedPrice,
-          };
-        })
-      );
-
-      return watchlistWithPrices as WatchlistItem[];
+      return (watchlistData || []) as WatchlistItem[];
     }
   });
 }

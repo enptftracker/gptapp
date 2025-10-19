@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import MetricCard from '@/components/dashboard/MetricCard';
@@ -17,14 +17,10 @@ import { PerformanceBreakdown } from '@/components/analytics/PerformanceBreakdow
 import { AssetTypeBreakdown } from '@/components/analytics/AssetTypeBreakdown';
 import PortfolioChart from '@/components/portfolio/PortfolioChart';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { MarketDataService } from '@/lib/marketData';
-import { priceService } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import type { ConsolidatedHolding } from '@/lib/types';
 import { useProfile } from '@/hooks/useProfile';
 import { useAllPortfoliosHistory } from '@/hooks/usePortfolioHistory';
-
-type RefreshResult = { symbol: string; success: boolean; message?: string };
 
 export default function Dashboard() {
   const { t } = useLanguage();
@@ -41,125 +37,40 @@ export default function Dashboard() {
   const { data: portfolioHistory = [], isLoading: historyLoading } = useAllPortfoliosHistory();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [refreshTotal, setRefreshTotal] = useState<number | null>(null);
-  const [refreshCompleted, setRefreshCompleted] = useState(0);
-  const [lastRefreshedTicker, setLastRefreshedTicker] = useState<string | null>(null);
 
-  const getUniqueHoldings = (holdings: ConsolidatedHolding[]) =>
-    holdings.reduce<Array<{ symbolId: string; ticker: string }>>((acc, holding) => {
-      const symbolId = (holding.symbolId ?? '').trim();
-      const ticker = (holding.symbol?.ticker ?? '').trim();
-
-      if (!symbolId || !ticker) {
-        return acc;
-      }
-
-      if (!acc.some(item => item.symbolId === symbolId)) {
-        acc.push({ symbolId, ticker: ticker.toUpperCase() });
-      }
-
-      return acc;
-    }, []);
-
-  const refreshPricesMutation = useMutation<RefreshResult[], unknown, ConsolidatedHolding[]>({
-    mutationFn: async (holdings) => {
-      const uniqueHoldings = getUniqueHoldings(holdings);
-
-      setRefreshTotal(uniqueHoldings.length);
-
-      if (uniqueHoldings.length === 0) {
-        throw new Error(t('dashboard.pricesUpdateFailed'));
-      }
-
-      const results: RefreshResult[] = [];
-
-      for (const holding of uniqueHoldings) {
-        try {
-          const quote = await MarketDataService.getMarketData(holding.ticker);
-
-          if (!quote || typeof quote.price !== 'number') {
-            throw new Error('Quote data unavailable');
-          }
-
-          await priceService.updatePrice(holding.symbolId, quote.price, {
-            change: quote.change,
-            changePercent: quote.changePercent,
-            asof: quote.lastUpdated,
-            high: quote.high ?? null,
-            low: quote.low ?? null
-          });
-          results.push({ symbol: holding.ticker, success: true });
-        } catch (error) {
-          console.error(`Failed to refresh price for ${holding.ticker}:`, error);
-          results.push({
-            symbol: holding.ticker,
-            success: false,
-            message: error instanceof Error ? error.message : undefined
-          });
-        } finally {
-          setRefreshCompleted(prev => prev + 1);
-          setLastRefreshedTicker(holding.ticker);
-        }
-      }
-
-      return results;
-    },
-    onMutate: holdings => {
-      const uniqueHoldings = getUniqueHoldings(holdings);
-      setRefreshTotal(uniqueHoldings.length);
-      setRefreshCompleted(0);
-      setLastRefreshedTicker(null);
-    },
-    onSuccess: async (results) => {
-      const successes = results.filter(result => result.success).length;
-      const failures = results.length - successes;
-
-      if (successes > 0 && failures === 0) {
-        toast({
-          title: t('common.success'),
-          description: t('dashboard.pricesUpdated')
-        });
-      } else if (successes > 0) {
-        toast({
-          title: t('common.success'),
-          description: t('dashboard.pricesUpdatePartial')
-        });
-      } else {
-        toast({
-          title: t('common.error'),
-          description: t('dashboard.pricesUpdateFailed')
-        });
-      }
-
+  const refreshDataMutation = useMutation({
+    mutationFn: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['consolidated-holdings'] }),
         queryClient.invalidateQueries({ queryKey: ['holdings'] }),
-        queryClient.invalidateQueries({ queryKey: ['metrics'] })
+        queryClient.invalidateQueries({ queryKey: ['metrics'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-history'] }),
       ]);
     },
+    onSuccess: () => {
+      toast({
+        title: t('common.success'),
+        description: t('dashboard.pricesUpdated'),
+      });
+    },
     onError: (error: unknown) => {
-      console.error('Failed to refresh prices:', error);
+      console.error('Failed to refresh data:', error);
       toast({
         title: t('common.error'),
         description:
           error instanceof Error && error.message
             ? error.message
-            : t('dashboard.pricesUpdateFailed')
+            : t('dashboard.pricesUpdateFailed'),
       });
     },
-    onSettled: () => {
-      setRefreshTotal(null);
-      setRefreshCompleted(0);
-      setLastRefreshedTicker(null);
-    }
   });
 
-  const handleRefreshPrices = () => {
-    if (refreshPricesMutation.isPending || consolidatedHoldings.length === 0) {
+  const handleRefreshData = () => {
+    if (refreshDataMutation.isPending) {
       return;
     }
 
-    refreshPricesMutation.mutate(consolidatedHoldings);
+    refreshDataMutation.mutate();
   };
 
   const isLoading = portfoliosLoading || transactionsLoading || holdingsLoading || historyLoading;
@@ -310,23 +221,15 @@ export default function Dashboard() {
         {/* Action Buttons */}
         <div className="flex flex-col gap-3 md:flex-row md:items-start">
           <Button
-            onClick={handleRefreshPrices}
+            onClick={handleRefreshData}
             size="lg"
             className="w-full md:w-auto md:self-stretch"
-            disabled={refreshPricesMutation.isPending || consolidatedHoldings.length === 0}
+            disabled={refreshDataMutation.isPending || consolidatedHoldings.length === 0}
           >
-            {refreshPricesMutation.isPending ? (
+            {refreshDataMutation.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                <div className="flex flex-col items-start">
-                  <span>
-                    {t('dashboard.updating')} ({refreshCompleted}/{refreshTotal ?? 0})
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {refreshTotal ? `${Math.round((refreshCompleted / refreshTotal) * 100)}%` : '0%'}
-                    {lastRefreshedTicker ? ` • ${lastRefreshedTicker}` : ''}
-                  </span>
-                </div>
+                {t('dashboard.updating')}
               </>
             ) : (
               <>

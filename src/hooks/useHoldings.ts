@@ -1,8 +1,40 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTransactions } from './useTransactions';
 import { usePortfolios } from './usePortfolios';
-import { symbolService, priceService, profileService } from '@/lib/supabase';
-import { PortfolioCalculations } from '@/lib/calculations';
+import { symbolService, profileService } from '@/lib/supabase';
+import { PortfolioCalculations, QuoteSnapshot } from '@/lib/calculations';
+import { MarketDataService } from '@/lib/marketData';
+
+async function fetchLiveQuotes(symbols: { id: string; ticker: string }[]): Promise<QuoteSnapshot[]> {
+  if (symbols.length === 0) {
+    return [];
+  }
+
+  const results = await Promise.all(
+    symbols.map(async (symbol) => {
+      if (!symbol.ticker) {
+        return null;
+      }
+
+      try {
+        const quote = await MarketDataService.getMarketData(symbol.ticker);
+        if (quote && typeof quote.price === 'number') {
+          return {
+            symbol_id: symbol.id,
+            price: quote.price,
+            asof: quote.lastUpdated ?? null,
+          } satisfies QuoteSnapshot;
+        }
+      } catch (error) {
+        console.error('Failed to fetch live quote for', symbol.ticker, error);
+      }
+
+      return null;
+    })
+  );
+
+  return results.filter((entry): entry is QuoteSnapshot => entry !== null);
+}
 
 export function usePortfolioHoldings(portfolioId: string) {
   const { data: transactions = [] } = useTransactions();
@@ -19,11 +51,14 @@ export function usePortfolioHoldings(portfolioId: string) {
       if (symbolIds.length === 0) return [];
 
       // Fetch symbols, prices, and user profile
-      const [symbols, prices, profile] = await Promise.all([
+      const [symbols, profile] = await Promise.all([
         symbolService.getMany(symbolIds),
-        priceService.getManyLatest(symbolIds),
         profileService.get()
       ]);
+
+      const prices = await fetchLiveQuotes(
+        symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
+      );
 
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
@@ -62,11 +97,14 @@ export function usePortfolioMetrics(portfolioId: string) {
         };
       }
 
-      const [symbols, prices, profile] = await Promise.all([
+      const [symbols, profile] = await Promise.all([
         symbolService.getMany(symbolIds),
-        priceService.getManyLatest(symbolIds),
         profileService.get()
       ]);
+
+      const prices = await fetchLiveQuotes(
+        symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
+      );
 
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
@@ -97,11 +135,14 @@ export function useConsolidatedHoldings() {
       
       if (symbolIds.length === 0) return [];
 
-      const [symbols, prices, profile] = await Promise.all([
+      const [symbols, profile] = await Promise.all([
         symbolService.getMany(symbolIds),
-        priceService.getManyLatest(symbolIds),
         profileService.get()
       ]);
+
+      const prices = await fetchLiveQuotes(
+        symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
+      );
 
       const lotMethod = profile?.default_lot_method || 'FIFO';
 

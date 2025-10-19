@@ -164,53 +164,6 @@ export type Database = {
           },
         ]
       }
-      price_cache: {
-        Row: {
-          asof: string
-          change_24h: number | null
-          change_percent_24h: number | null
-          created_at: string
-          high_24h: number | null
-          id: string
-          low_24h: number | null
-          price: number
-          price_currency: string
-          symbol_id: string
-        }
-        Insert: {
-          asof?: string
-          change_24h?: number | null
-          change_percent_24h?: number | null
-          created_at?: string
-          high_24h?: number | null
-          id?: string
-          low_24h?: number | null
-          price: number
-          price_currency: string
-          symbol_id: string
-        }
-        Update: {
-          asof?: string
-          change_24h?: number | null
-          change_percent_24h?: number | null
-          created_at?: string
-          high_24h?: number | null
-          id?: string
-          low_24h?: number | null
-          price?: number
-          price_currency?: string
-          symbol_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "price_cache_symbol_id_fkey"
-            columns: ["symbol_id"]
-            isOneToOne: true
-            referencedRelation: "symbols"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       profiles: {
         Row: {
           base_currency: string
@@ -389,17 +342,6 @@ export type Database = {
           p_points: Json
         }
         Returns: number
-      }
-      upsert_price_cache_entry: {
-        Args: {
-          p_symbol_id: string
-          p_price: number
-          p_price_currency?: string
-          p_change_24h?: number | null
-          p_change_percent_24h?: number | null
-          p_asof?: string
-        }
-        Returns: null
       }
     }
     Enums: {
