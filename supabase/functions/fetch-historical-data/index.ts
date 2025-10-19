@@ -209,6 +209,103 @@ function parseCacheRow(row: { date: string; price: number }): HistoricalDataPoin
   } satisfies HistoricalDataPoint;
 }
 
+async function fetchStooqHistorical(
+  symbol: string,
+  fromMs?: number,
+  toMs?: number,
+): Promise<HistoricalDataPoint[]> {
+  const normalized = symbol.trim().toLowerCase();
+  if (!normalized) {
+    return [];
+  }
+
+  const candidates = normalized.includes('.')
+    ? [normalized]
+    : [normalized, `${normalized}.us`];
+
+  let lastError: unknown = null;
+
+  for (const candidate of candidates) {
+    try {
+      const url = new URL('https://stooq.com/q/d/l/');
+      url.searchParams.set('s', candidate);
+      url.searchParams.set('i', 'd');
+
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        lastError = new Error(`Stooq request failed with status ${response.status}`);
+        continue;
+      }
+
+      const text = (await response.text()).trim();
+      if (!text) {
+        lastError = new Error('Stooq response was empty');
+        continue;
+      }
+
+      const lines = text.split(/\r?\n/).filter((line) => line.trim().length);
+      if (lines.length <= 1) {
+        lastError = new Error('Stooq response did not include data rows');
+        continue;
+      }
+
+      const dataLines = lines.slice(1);
+      const points: HistoricalDataPoint[] = [];
+
+      for (const line of dataLines) {
+        const [dateStr, openStr, highStr, lowStr, closeStr, volumeStr] = line.split(',');
+        if (!dateStr) {
+          continue;
+        }
+
+        const timestamp = Date.parse(`${dateStr}T00:00:00Z`);
+        if (!Number.isFinite(timestamp)) {
+          continue;
+        }
+
+        const open = Number.parseFloat(openStr ?? '');
+        const high = Number.parseFloat(highStr ?? '');
+        const low = Number.parseFloat(lowStr ?? '');
+        const close = Number.parseFloat(closeStr ?? '');
+        const volume = Number.parseFloat(volumeStr ?? '');
+
+        if ([open, high, low, close].some((value) => !Number.isFinite(value))) {
+          continue;
+        }
+
+        points.push({
+          timestamp,
+          date: new Date(timestamp).toISOString(),
+          open,
+          high,
+          low,
+          close,
+          volume: Number.isFinite(volume) ? volume : 0,
+        });
+      }
+
+      const filtered = points.filter((point) => (
+        (fromMs === undefined || point.timestamp >= fromMs)
+        && (toMs === undefined || point.timestamp <= toMs)
+      ));
+
+      if (filtered.length) {
+        return dedupeAndSort(filtered);
+      }
+
+      lastError = new Error('Stooq did not return data in the requested window');
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    console.error('Stooq fallback failed', lastError);
+  }
+
+  return [];
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req.headers.get('Origin'));
 
@@ -388,6 +485,13 @@ serve(async (req) => {
 
     let points: HistoricalDataPoint[] = cachedPoints;
     const newPoints: HistoricalDataPoint[] = [];
+    const finnhubErrors: unknown[] = [];
+    let finnhubHadSuccess = false;
+
+    const recordFinnhubError = (error: unknown, context: string) => {
+      finnhubErrors.push(error instanceof Error ? error : new Error(String(error)));
+      console.warn(`Finnhub request issue for ${normalizedTicker} (${period}) - ${context}`, error);
+    };
 
     if (period === 'MAX') {
       const chunkSize = DAY_SECONDS * 365 * 5; // 5 year chunks
@@ -400,10 +504,17 @@ serve(async (req) => {
       if (!cachedPoints.length || !latestCached || now - latestCached > resolutionPadding) {
         const from = latestCached ?? Math.max(0, now - chunkSize);
         console.log(`Fetching recent MAX historical data for ${normalizedTicker}: ${new Date(from * 1000).toISOString()} - ${new Date(now * 1000).toISOString()}`);
-        const candleResponse = await fetchFinnhubCandles(normalizedTicker, rangeConfig.resolution, from, now, apiKey);
+        try {
+          const candleResponse = await fetchFinnhubCandles(normalizedTicker, rangeConfig.resolution, from, now, apiKey);
 
-        if (candleResponse.s === 'ok' && candleResponse.t.length) {
-          newPoints.push(...candlesToPoints(candleResponse));
+          if (candleResponse.s === 'ok' && candleResponse.t.length) {
+            finnhubHadSuccess = true;
+            newPoints.push(...candlesToPoints(candleResponse));
+          } else {
+            recordFinnhubError(new Error(`Finnhub returned status ${candleResponse.s}`), 'no data for recent MAX range');
+          }
+        } catch (error) {
+          recordFinnhubError(error, 'failed to fetch recent MAX range');
         }
       }
 
@@ -429,13 +540,27 @@ serve(async (req) => {
         }
 
         console.log(`Fetching historical data gap for ${normalizedTicker}: ${new Date(from * 1000).toISOString()} - ${new Date(to * 1000).toISOString()}`);
-        const candleResponse = await fetchFinnhubCandles(normalizedTicker, rangeConfig.resolution, from, to, apiKey);
+        let candleResponse: FinnhubCandleResponse | null = null;
 
-        if (candleResponse.s !== 'ok' || !candleResponse.t.length) {
+        try {
+          candleResponse = await fetchFinnhubCandles(normalizedTicker, rangeConfig.resolution, from, to, apiKey);
+        } catch (error) {
+          recordFinnhubError(error, 'failed to backfill MAX gap');
+          break;
+        }
+
+        if (!candleResponse || candleResponse.s !== 'ok' || !candleResponse.t.length) {
+          recordFinnhubError(new Error(`Finnhub returned status ${candleResponse?.s ?? 'unknown'}`), 'received empty MAX gap response');
           break;
         }
 
         const pointsChunk = candlesToPoints(candleResponse);
+        if (!pointsChunk.length) {
+          recordFinnhubError(new Error('Finnhub returned empty candle set'), 'empty MAX gap points');
+          break;
+        }
+
+        finnhubHadSuccess = true;
         newPoints.push(...pointsChunk);
 
         const chunkEarliest = candleResponse.t[0];
@@ -475,11 +600,22 @@ serve(async (req) => {
         }
 
         console.log(`Fetching historical data for ${normalizedTicker} (${period}) from ${new Date(range.from * 1000).toISOString()} to ${new Date(range.to * 1000).toISOString()}`);
-        const candleResponse = await fetchFinnhubCandles(normalizedTicker, rangeConfig.resolution, range.from, range.to, apiKey);
 
-        if (candleResponse.s === 'ok' && candleResponse.t.length) {
-          newPoints.push(...candlesToPoints(candleResponse));
+        let candleResponse: FinnhubCandleResponse | null = null;
+        try {
+          candleResponse = await fetchFinnhubCandles(normalizedTicker, rangeConfig.resolution, range.from, range.to, apiKey);
+        } catch (error) {
+          recordFinnhubError(error, `failed to fetch range ${new Date(range.from * 1000).toISOString()} - ${new Date(range.to * 1000).toISOString()}`);
+          continue;
         }
+
+        if (!candleResponse || candleResponse.s !== 'ok' || !candleResponse.t.length) {
+          recordFinnhubError(new Error(`Finnhub returned status ${candleResponse?.s ?? 'unknown'}`), 'received empty response');
+          continue;
+        }
+
+        finnhubHadSuccess = true;
+        newPoints.push(...candlesToPoints(candleResponse));
       }
     }
 
@@ -493,7 +629,23 @@ serve(async (req) => {
 
     points = dedupeAndSort(points.concat(newPoints));
 
+    const nowMs = now * 1000;
+    const desiredFromMs = desiredFrom !== undefined ? desiredFrom * 1000 : undefined;
+    let usedFallback = false;
+
     if (!points.length) {
+      const fallbackPoints = await fetchStooqHistorical(normalizedTicker, desiredFromMs, nowMs);
+      if (fallbackPoints.length) {
+        usedFallback = true;
+        points = fallbackPoints;
+        console.warn(`Using Stooq fallback data for ${normalizedTicker} (${period}) with ${fallbackPoints.length} points`);
+      }
+    }
+
+    if (!points.length) {
+      if (finnhubErrors.length) {
+        console.error(`Finnhub was unable to provide historical data for ${normalizedTicker} (${period})`, finnhubErrors[finnhubErrors.length - 1]);
+      }
       return new Response(
         JSON.stringify({ error: 'No historical data available' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -503,13 +655,20 @@ serve(async (req) => {
     const filteredPoints = filterByPeriod(points, period);
 
     if (!filteredPoints.length) {
+      if (!usedFallback && !finnhubHadSuccess && finnhubErrors.length) {
+        console.error(`Finnhub returned data outside requested window for ${normalizedTicker} (${period})`, finnhubErrors[finnhubErrors.length - 1]);
+      }
       return new Response(
         JSON.stringify({ error: 'No historical data available' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`Returning ${filteredPoints.length} data points for ${normalizedTicker} (${period})`);
+    if (usedFallback) {
+      console.log(`Returning ${filteredPoints.length} fallback data points for ${normalizedTicker} (${period})`);
+    } else {
+      console.log(`Returning ${filteredPoints.length} data points for ${normalizedTicker} (${period})`);
+    }
 
     return new Response(
       JSON.stringify({
