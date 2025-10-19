@@ -4,11 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Holding, ConsolidatedHolding } from '@/lib/types';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { useResizeObserver } from '@/hooks/useResizeObserver';
+import { cn } from '@/lib/utils';
 
 interface PortfolioChartProps {
   holdings: Holding[] | ConsolidatedHolding[];
   title?: string;
   className?: string;
+  variant?: 'card' | 'embedded';
 }
 
 // Professional color palette for financial charts
@@ -32,7 +34,12 @@ interface ChartData {
   color: string;
 }
 
-export default function PortfolioChart({ holdings, title = "Portfolio Allocation", className }: PortfolioChartProps) {
+export default function PortfolioChart({
+  holdings,
+  title = "Portfolio Allocation",
+  className,
+  variant = 'card'
+}: PortfolioChartProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const chartData: ChartData[] = holdings
     .filter(holding => {
@@ -98,17 +105,99 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
   const computedInnerRadius = computedOuterRadius ? computedOuterRadius * 0.6 : undefined;
 
   if (chartData.length === 0) {
+    if (variant === 'embedded') {
+      return (
+        <div className={cn('embedded-analytics flex flex-col gap-4', className)} data-variant="embedded">
+          <div className="embedded-analytics__header">
+            <h3 className="text-base font-semibold leading-none tracking-tight text-card-foreground">{title}</h3>
+          </div>
+          <div className="embedded-analytics__empty rounded-lg border border-dashed border-border/60 bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+            No holdings data available
+          </div>
+        </div>
+      );
+    }
+
     return (
       <Card className={className}>
         <CardHeader>
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center h-48 text-muted-foreground">
+          <div className="flex h-48 items-center justify-center text-muted-foreground">
             No holdings data available
           </div>
         </CardContent>
       </Card>
+    );
+  }
+
+  const chart = (
+    <div className="pt-4">
+      <div
+        ref={containerRef}
+        className="flex h-64 w-full items-center justify-center md:h-72 lg:h-80"
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart margin={{ top: chartMargin, right: chartMargin, bottom: chartMargin, left: chartMargin }}>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              innerRadius={computedInnerRadius ?? '45%'}
+              outerRadius={computedOuterRadius ?? '80%'}
+              paddingAngle={2}
+              dataKey="value"
+              onMouseEnter={(_, index) => setActiveIndex(index)}
+              onMouseLeave={() => setActiveIndex(null)}
+            >
+              {chartData.map((entry, index) => (
+                <Cell
+                  key={`cell-${index}`}
+                  fill={entry.color}
+                  stroke="hsl(var(--background))"
+                  strokeWidth={2}
+                  fillOpacity={activeIndex === null || activeIndex === index ? 1 : 0.45}
+                />
+              ))}
+            </Pie>
+            <Tooltip content={<CustomTooltip />} cursor={false} />
+            <Legend content={<CustomLegend />} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+
+  const topHoldings = (
+    <div className="mt-4 space-y-2">
+      <h4 className="text-sm font-medium text-muted-foreground">Top Holdings</h4>
+      {chartData.slice(0, 5).map(item => (
+        <div key={item.name} className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
+            <span className="font-medium">{item.name}</span>
+          </div>
+          <div className="text-right">
+            <div className="font-mono">{formatCurrency(item.value)}</div>
+            <div className="text-xs text-muted-foreground">{formatPercent(item.percentage)}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  if (variant === 'embedded') {
+    return (
+      <div className={cn('embedded-analytics flex flex-col gap-4', className)} data-variant="embedded">
+        <div className="embedded-analytics__header">
+          <h3 className="text-base font-semibold leading-none tracking-tight text-card-foreground">{title}</h3>
+        </div>
+        <div className="embedded-analytics__body space-y-4">
+          {chart}
+          {topHoldings}
+        </div>
+      </div>
     );
   }
 
@@ -118,62 +207,8 @@ export default function PortfolioChart({ holdings, title = "Portfolio Allocation
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="pt-4">
-          <div
-            ref={containerRef}
-            className="h-64 w-full md:h-72 lg:h-80 flex items-center justify-center"
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart margin={{ top: chartMargin, right: chartMargin, bottom: chartMargin, left: chartMargin }}>
-                <Pie
-                  data={chartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={computedInnerRadius ?? '45%'}
-                  outerRadius={computedOuterRadius ?? '80%'}
-                  paddingAngle={2}
-                  dataKey="value"
-                  onMouseEnter={(_, index) => setActiveIndex(index)}
-                  onMouseLeave={() => setActiveIndex(null)}
-                >
-                  {chartData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={entry.color}
-                      stroke="hsl(var(--background))"
-                      strokeWidth={2}
-                      fillOpacity={activeIndex === null || activeIndex === index ? 1 : 0.45}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} cursor={false} />
-                <Legend content={<CustomLegend />} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Top holdings list */}
-        <div className="mt-4 space-y-2">
-          <h4 className="text-sm font-medium text-muted-foreground">Top Holdings</h4>
-          {chartData.slice(0, 5).map((item, index) => (
-            <div key={item.name} className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2">
-                <div 
-                  className="w-2 h-2 rounded-full" 
-                  style={{ backgroundColor: item.color }}
-                />
-                <span className="font-medium">{item.name}</span>
-              </div>
-              <div className="text-right">
-                <div className="font-mono">{formatCurrency(item.value)}</div>
-                <div className="text-xs text-muted-foreground">
-                  {formatPercent(item.percentage)}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        {chart}
+        {topHoldings}
       </CardContent>
     </Card>
   );

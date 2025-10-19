@@ -52,6 +52,7 @@ interface HistoricalValueChartProps {
   data: DataPoint[];
   title?: string;
   className?: string;
+  variant?: 'card' | 'embedded';
 }
 
 type TimeframeValue = '1D' | '1M' | '3M' | '1Y' | '3Y' | 'MAX';
@@ -78,9 +79,16 @@ const parseISODate = (value?: string): Date | null => {
   return new Date(Date.UTC(year, month - 1, day));
 };
 
-export function HistoricalValueChart({ data, title = 'Portfolio Value Over Time', className }: HistoricalValueChartProps) {
+export function HistoricalValueChart({
+  data,
+  title = 'Portfolio Value Over Time',
+  className,
+  variant = 'card'
+}: HistoricalValueChartProps) {
   const [hoveredLine, setHoveredLine] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<TimeframeValue>('MAX');
+
+  const isEmbedded = variant === 'embedded';
 
   const processedData = useMemo(() => {
     if (!data || data.length === 0) {
@@ -165,6 +173,19 @@ export function HistoricalValueChart({ data, title = 'Portfolio Value Over Time'
   };
 
   if (!processedData || processedData.length === 0) {
+    if (isEmbedded) {
+      return (
+        <div className={cn('embedded-analytics flex flex-col gap-4', className)} data-variant="embedded">
+          <div className="embedded-analytics__header flex flex-col gap-2">
+            <h3 className="text-base font-semibold leading-none tracking-tight text-card-foreground">{title}</h3>
+          </div>
+          <div className="embedded-analytics__empty rounded-lg border border-dashed border-border/60 bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+            No historical data available yet
+          </div>
+        </div>
+      );
+    }
+
     return (
       <Card className={className}>
         <CardHeader>
@@ -183,95 +204,113 @@ export function HistoricalValueChart({ data, title = 'Portfolio Value Over Time'
     <span className="text-xs text-muted-foreground">{value}</span>
   );
 
+  const timeframeControls = (
+    <div className="flex items-center gap-1 rounded-xl border border-border/60 bg-card/60 p-1">
+      {TIMEFRAME_OPTIONS.map(option => (
+        <Button
+          key={option.value}
+          type="button"
+          variant="ghost"
+          size="sm"
+          className={cn(
+            'h-8 px-3 text-xs font-medium transition-colors',
+            timeframe === option.value
+              ? 'bg-primary/10 text-primary shadow-inner'
+              : 'text-muted-foreground hover:text-card-foreground'
+          )}
+          onClick={() => setTimeframe(option.value)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  );
+
+  const chartBody = (
+    <div className="h-80">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={processedData}
+          margin={{ top: 12, right: 24, left: 12, bottom: 16 }}
+          onMouseLeave={() => setHoveredLine(null)}
+        >
+          <CartesianGrid strokeDasharray="4 4" stroke="hsl(var(--border))" strokeOpacity={0.35} />
+          <XAxis
+            dataKey="date"
+            stroke="hsl(var(--muted-foreground))"
+            fontSize={12}
+            tickLine={false}
+            axisLine={{ stroke: 'hsl(var(--border))', strokeOpacity: 0.4 }}
+          />
+          <YAxis
+            stroke="hsl(var(--muted-foreground))"
+            fontSize={12}
+            tickFormatter={formatCurrencyTick}
+            tickLine={false}
+            axisLine={{ stroke: 'hsl(var(--border))', strokeOpacity: 0.4 }}
+          />
+          <Tooltip
+            content={<CustomTooltip />}
+            cursor={{ stroke: 'hsl(var(--border))', strokeDasharray: '4 4', strokeOpacity: 0.6 }}
+            position={{ x: 16, y: 16 }}
+            wrapperStyle={{ pointerEvents: 'none' }}
+            contentStyle={{ background: 'transparent', border: 'none', boxShadow: 'none', padding: 0 }}
+          />
+          <Legend
+            verticalAlign="bottom"
+            height={32}
+            iconType="plainline"
+            formatter={value => renderLegendText(value)}
+          />
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke="hsl(var(--chart-1))"
+            strokeWidth={hoveredLine === 'value' || hoveredLine === null ? 2.5 : 1.5}
+            strokeOpacity={hoveredLine === 'value' || hoveredLine === null ? 1 : 0.35}
+            name="Market Value"
+            dot={false}
+            activeDot={{ r: 3.5, strokeWidth: 0 }}
+            onMouseEnter={() => setHoveredLine('value')}
+            onMouseLeave={() => setHoveredLine(null)}
+          />
+          <Line
+            type="monotone"
+            dataKey="cost"
+            stroke="hsl(var(--chart-4))"
+            strokeWidth={hoveredLine === 'cost' || hoveredLine === null ? 2.5 : 1.5}
+            strokeOpacity={hoveredLine === 'cost' || hoveredLine === null ? 1 : 0.35}
+            strokeDasharray="5 5"
+            name="Cumulative Deposits"
+            dot={false}
+            activeDot={{ r: 3.5, strokeWidth: 0 }}
+            onMouseEnter={() => setHoveredLine('cost')}
+            onMouseLeave={() => setHoveredLine(null)}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  if (isEmbedded) {
+    return (
+      <div className={cn('embedded-analytics flex flex-col gap-4', className)} data-variant="embedded">
+        <div className="embedded-analytics__header flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-base font-semibold leading-none tracking-tight text-card-foreground">{title}</h3>
+          {timeframeControls}
+        </div>
+        <div className="embedded-analytics__body">{chartBody}</div>
+      </div>
+    );
+  }
+
   return (
     <Card className={className}>
       <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle>{title}</CardTitle>
-        <div className="flex items-center gap-1 rounded-xl border border-border/60 bg-card/60 p-1">
-          {TIMEFRAME_OPTIONS.map(option => (
-            <Button
-              key={option.value}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(
-                'h-8 px-3 text-xs font-medium transition-colors',
-                timeframe === option.value
-                  ? 'bg-primary/10 text-primary shadow-inner'
-                  : 'text-muted-foreground hover:text-card-foreground'
-              )}
-              onClick={() => setTimeframe(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
+        {timeframeControls}
       </CardHeader>
-      <CardContent>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={processedData}
-              margin={{ top: 12, right: 24, left: 12, bottom: 16 }}
-              onMouseLeave={() => setHoveredLine(null)}
-            >
-              <CartesianGrid strokeDasharray="4 4" stroke="hsl(var(--border))" strokeOpacity={0.35} />
-              <XAxis
-                dataKey="date"
-                stroke="hsl(var(--muted-foreground))"
-                fontSize={12}
-                tickLine={false}
-                axisLine={{ stroke: 'hsl(var(--border))', strokeOpacity: 0.4 }}
-              />
-              <YAxis
-                stroke="hsl(var(--muted-foreground))"
-                fontSize={12}
-                tickFormatter={formatCurrencyTick}
-                tickLine={false}
-                axisLine={{ stroke: 'hsl(var(--border))', strokeOpacity: 0.4 }}
-              />
-              <Tooltip
-                content={<CustomTooltip />}
-                cursor={{ stroke: 'hsl(var(--border))', strokeDasharray: '4 4', strokeOpacity: 0.6 }}
-                position={{ x: 16, y: 16 }}
-                wrapperStyle={{ pointerEvents: 'none' }}
-                contentStyle={{ background: 'transparent', border: 'none', boxShadow: 'none', padding: 0 }}
-              />
-              <Legend
-                verticalAlign="bottom"
-                height={32}
-                iconType="plainline"
-                formatter={value => renderLegendText(value)}
-              />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="hsl(var(--chart-1))"
-                strokeWidth={hoveredLine === 'value' || hoveredLine === null ? 2.5 : 1.5}
-                strokeOpacity={hoveredLine === 'value' || hoveredLine === null ? 1 : 0.35}
-                name="Market Value"
-                dot={false}
-                activeDot={{ r: 3.5, strokeWidth: 0 }}
-                onMouseEnter={() => setHoveredLine('value')}
-                onMouseLeave={() => setHoveredLine(null)}
-              />
-              <Line
-                type="monotone"
-                dataKey="cost"
-                stroke="hsl(var(--chart-4))"
-                strokeWidth={hoveredLine === 'cost' || hoveredLine === null ? 2.5 : 1.5}
-                strokeOpacity={hoveredLine === 'cost' || hoveredLine === null ? 1 : 0.35}
-                strokeDasharray="5 5"
-                name="Cumulative Deposits"
-                dot={false}
-                activeDot={{ r: 3.5, strokeWidth: 0 }}
-                onMouseEnter={() => setHoveredLine('cost')}
-                onMouseLeave={() => setHoveredLine(null)}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </CardContent>
+      <CardContent>{chartBody}</CardContent>
     </Card>
   );
 }

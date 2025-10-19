@@ -5,14 +5,21 @@ import type { RectangleProps } from 'recharts';
 type ActiveBarProps = RectangleProps & { payload?: { pl?: number } };
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { Holding, ConsolidatedHolding } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 interface PerformanceBreakdownProps {
   holdings: Holding[] | ConsolidatedHolding[];
   title?: string;
   className?: string;
+  variant?: 'card' | 'embedded';
 }
 
-export function PerformanceBreakdown({ holdings, title = "Performance by Position", className }: PerformanceBreakdownProps) {
+export function PerformanceBreakdown({
+  holdings,
+  title = "Performance by Position",
+  className,
+  variant = 'card'
+}: PerformanceBreakdownProps) {
   const chartData = holdings
     .map(holding => {
       const pl = 'unrealizedPL' in holding ? holding.unrealizedPL :
@@ -63,6 +70,19 @@ export function PerformanceBreakdown({ holdings, title = "Performance by Positio
   };
 
   if (chartData.length === 0) {
+    if (variant === 'embedded') {
+      return (
+        <div className={cn('embedded-analytics flex flex-col gap-4', className)} data-variant="embedded">
+          <div className="embedded-analytics__header">
+            <h3 className="text-base font-semibold leading-none tracking-tight text-card-foreground">{title}</h3>
+          </div>
+          <div className="embedded-analytics__empty rounded-lg border border-dashed border-border/60 bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+            No performance data available
+          </div>
+        </div>
+      );
+    }
+
     return (
       <Card className={className}>
         <CardHeader>
@@ -77,59 +97,72 @@ export function PerformanceBreakdown({ holdings, title = "Performance by Positio
     );
   }
 
+  const chart = (
+    <div className="h-80">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 60 }}>
+          <defs>
+            <filter id="performanceBarShadow" x="-20%" y="-20%" width="140%" height="160%" colorInterpolationFilters="sRGB">
+              <feDropShadow dx="0" dy="8" stdDeviation="6" floodColor="rgba(15, 23, 42, 0.45)" />
+            </filter>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+          <XAxis
+            dataKey="name"
+            stroke="hsl(var(--muted-foreground))"
+            fontSize={12}
+            angle={-45}
+            textAnchor="end"
+            height={80}
+          />
+          <YAxis
+            stroke="hsl(var(--muted-foreground))"
+            fontSize={12}
+            tickFormatter={formatYAxisTick}
+          />
+          <Tooltip content={<CustomTooltip />} />
+          <Bar
+            dataKey="pl"
+            radius={[4, 4, 0, 0]}
+            activeBar={(props: ActiveBarProps) => (
+              <Rectangle
+                {...props}
+                stroke="none"
+                radius={props?.payload?.pl >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4]}
+                filter="url(#performanceBarShadow)"
+              />
+            )}
+          >
+            {chartData.map((entry, index) => (
+              <Cell
+                key={`cell-${index}`}
+                fill={entry.pl >= 0 ? 'hsl(var(--chart-2))' : 'hsl(var(--chart-5))'}
+                radius={entry.pl >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4]}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  if (variant === 'embedded') {
+    return (
+      <div className={cn('embedded-analytics flex flex-col gap-4', className)} data-variant="embedded">
+        <div className="embedded-analytics__header">
+          <h3 className="text-base font-semibold leading-none tracking-tight text-card-foreground">{title}</h3>
+        </div>
+        <div className="embedded-analytics__body">{chart}</div>
+      </div>
+    );
+  }
+
   return (
     <Card className={className}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 60 }}>
-              <defs>
-                <filter id="performanceBarShadow" x="-20%" y="-20%" width="140%" height="160%" colorInterpolationFilters="sRGB">
-                  <feDropShadow dx="0" dy="8" stdDeviation="6" floodColor="rgba(15, 23, 42, 0.45)" />
-                </filter>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis 
-                dataKey="name" 
-                stroke="hsl(var(--muted-foreground))"
-                fontSize={12}
-                angle={-45}
-                textAnchor="end"
-                height={80}
-              />
-              <YAxis
-                stroke="hsl(var(--muted-foreground))"
-                fontSize={12}
-                tickFormatter={formatYAxisTick}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar
-                dataKey="pl"
-                radius={[4, 4, 0, 0]}
-                activeBar={(props: ActiveBarProps) => (
-                  <Rectangle
-                    {...props}
-                    stroke="none"
-                    radius={props?.payload?.pl >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4]}
-                    filter="url(#performanceBarShadow)"
-                  />
-                )}
-              >
-                {chartData.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={entry.pl >= 0 ? 'hsl(var(--chart-2))' : 'hsl(var(--chart-5))'}
-                    radius={entry.pl >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4]}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </CardContent>
+      <CardContent>{chart}</CardContent>
     </Card>
   );
 }
