@@ -63,6 +63,25 @@ const normalizeTradingDay = (timestamp?: number | null): string | undefined => {
   }
 };
 
+const toIsoTimestamp = (timestamp?: number | null): string | undefined => {
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+    return undefined;
+  }
+
+  try {
+    const date = new Date(timestamp * 1000);
+    const time = date.getTime();
+    if (Number.isNaN(time)) {
+      return undefined;
+    }
+
+    return date.toISOString();
+  } catch (err) {
+    console.error("Failed to convert timestamp to ISO string", err);
+    return undefined;
+  }
+};
+
 interface FinnhubQuoteResult {
   c?: number | string; // Current price
   d?: number | string; // Change
@@ -119,7 +138,9 @@ const fetchFinnhubQuote = async (ticker: string) => {
   const changePercent = toFiniteNumber(finnhubData.dp) ?? 0;
   const high = toFiniteNumber(finnhubData.h);
   const low = toFiniteNumber(finnhubData.l);
-  const tradingDay = normalizeTradingDay(finnhubData.t ?? undefined);
+  const rawTimestamp = finnhubData.t ?? undefined;
+  const tradingDay = normalizeTradingDay(rawTimestamp);
+  const lastUpdated = toIsoTimestamp(rawTimestamp);
 
   return {
     symbol: ticker,
@@ -130,6 +151,7 @@ const fetchFinnhubQuote = async (ticker: string) => {
     low: typeof low === "number" ? low : undefined,
     volume: undefined,
     tradingDay,
+    lastUpdated,
     provider: "finnhub" as const,
   };
 };

@@ -34,6 +34,7 @@ type FetchStockPriceResponse = {
   high?: number;
   low?: number;
   tradingDay?: string;
+  lastUpdated?: string;
   provider?: string;
 };
 
@@ -176,9 +177,18 @@ class MarketDataServiceImpl {
     const volume = this.toNumber(data.volume);
     const high = this.toNumber(data.high);
     const low = this.toNumber(data.low);
-    const lastUpdated = data.tradingDay
-      ? new Date(`${data.tradingDay}T00:00:00Z`)
-      : new Date();
+    let lastUpdated = new Date();
+    if (typeof data.lastUpdated === 'string') {
+      const parsed = new Date(data.lastUpdated);
+      if (!Number.isNaN(parsed.getTime())) {
+        lastUpdated = parsed;
+      }
+    } else if (data.tradingDay) {
+      const tradingDayDate = new Date(`${data.tradingDay}T00:00:00Z`);
+      if (!Number.isNaN(tradingDayDate.getTime())) {
+        lastUpdated = tradingDayDate;
+      }
+    }
 
     return {
       symbol: data.symbol ?? normalized,
