@@ -2,11 +2,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { Holding, ConsolidatedHolding } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 interface AssetTypeBreakdownProps {
   holdings: Holding[] | ConsolidatedHolding[];
   title?: string;
   className?: string;
+  variant?: 'card' | 'embedded';
 }
 
 const ASSET_COLORS: Record<string, string> = {
@@ -18,7 +20,12 @@ const ASSET_COLORS: Record<string, string> = {
   FOREX: 'hsl(var(--chart-2) / 0.7)',
 };
 
-export function AssetTypeBreakdown({ holdings, title = "Asset Allocation by Type", className }: AssetTypeBreakdownProps) {
+export function AssetTypeBreakdown({
+  holdings,
+  title = "Asset Allocation by Type",
+  className,
+  variant = 'card'
+}: AssetTypeBreakdownProps) {
   const assetTypeData = holdings.reduce((acc, holding) => {
     const assetType = holding.symbol.assetType;
     const value = 'marketValueBase' in holding ? holding.marketValueBase : holding.totalMarketValue;
@@ -81,17 +88,92 @@ export function AssetTypeBreakdown({ holdings, title = "Asset Allocation by Type
   };
 
   if (chartData.length === 0) {
+    if (variant === 'embedded') {
+      return (
+        <div className={cn('embedded-analytics flex flex-col gap-4', className)} data-variant="embedded">
+          <div className="embedded-analytics__header">
+            <h3 className="text-base font-semibold leading-none tracking-tight text-card-foreground">{title}</h3>
+          </div>
+          <div className="embedded-analytics__empty rounded-lg border border-dashed border-border/60 bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+            No asset data available
+          </div>
+        </div>
+      );
+    }
+
     return (
       <Card className={className}>
         <CardHeader>
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center h-64 text-muted-foreground">
+          <div className="flex h-64 items-center justify-center text-muted-foreground">
             No asset data available
           </div>
         </CardContent>
       </Card>
+    );
+  }
+
+  const chart = (
+    <div className="h-64 md:h-80">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={chartData}
+            cx="50%"
+            cy="50%"
+            outerRadius={80}
+            paddingAngle={3}
+            dataKey="value"
+            label={false}
+            labelLine={false}
+          >
+            {chartData.map((entry, index) => (
+              <Cell
+                key={`cell-${index}`}
+                fill={entry.color}
+                stroke="hsl(var(--background))"
+                strokeWidth={2}
+              />
+            ))}
+          </Pie>
+          <Tooltip content={<CustomTooltip />} />
+          <Legend content={<CustomLegend />} />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  const summaryList = (
+    <div className="mt-4 space-y-2">
+      {chartData.map(item => (
+        <div key={item.name} className="flex items-center justify-between border-b border-border py-2 text-sm last:border-0">
+          <div className="flex items-center gap-2">
+            <div className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+            <span className="font-medium">{item.name}</span>
+            <span className="text-muted-foreground">({item.count} positions)</span>
+          </div>
+          <div className="text-right">
+            <div className="font-mono font-medium">{formatCurrency(item.value)}</div>
+            <div className="text-xs text-muted-foreground">{formatPercent(item.percentage)}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  if (variant === 'embedded') {
+    return (
+      <div className={cn('embedded-analytics flex flex-col gap-4', className)} data-variant="embedded">
+        <div className="embedded-analytics__header">
+          <h3 className="text-base font-semibold leading-none tracking-tight text-card-foreground">{title}</h3>
+        </div>
+        <div className="embedded-analytics__body space-y-4">
+          {chart}
+          {summaryList}
+        </div>
+      </div>
     );
   }
 
@@ -101,55 +183,8 @@ export function AssetTypeBreakdown({ holdings, title = "Asset Allocation by Type
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-64 md:h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                outerRadius={80}
-                paddingAngle={3}
-                dataKey="value"
-                label={false}
-                labelLine={false}
-              >
-                {chartData.map((entry, index) => (
-                  <Cell 
-                    key={`cell-${index}`} 
-                    fill={entry.color}
-                    stroke="hsl(var(--background))"
-                    strokeWidth={2}
-                  />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-              <Legend content={<CustomLegend />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        
-        {/* Summary list */}
-        <div className="mt-4 space-y-2">
-          {chartData.map((item) => (
-            <div key={item.name} className="flex items-center justify-between text-sm py-2 border-b border-border last:border-0">
-              <div className="flex items-center gap-2">
-                <div 
-                  className="w-3 h-3 rounded-full" 
-                  style={{ backgroundColor: item.color }}
-                />
-                <span className="font-medium">{item.name}</span>
-                <span className="text-muted-foreground">({item.count} positions)</span>
-              </div>
-              <div className="text-right">
-                <div className="font-mono font-medium">{formatCurrency(item.value)}</div>
-                <div className="text-xs text-muted-foreground">
-                  {formatPercent(item.percentage)}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        {chart}
+        {summaryList}
       </CardContent>
     </Card>
   );

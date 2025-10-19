@@ -351,9 +351,13 @@ export default function Dashboard() {
             <CardHeader>
               <CardTitle>{t('dashboard.analyticsOverview')}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <HistoricalValueChart data={portfolioHistory} />
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <HistoricalValueChart
+                  data={portfolioHistory}
+                  variant="embedded"
+                  className="embedded-analytics-panel rounded-xl border border-border/60 bg-card/40 p-4"
+                />
                 <PortfolioChart
                   holdings={consolidatedHoldings.map(h => ({
                     portfolioId: '',
@@ -368,6 +372,8 @@ export default function Dashboard() {
                     currentPrice: h.currentPrice
                   }))}
                   title={t('dashboard.portfolioAllocation')}
+                  variant="embedded"
+                  className="embedded-analytics-panel rounded-xl border border-border/60 bg-card/40 p-4"
                 />
                 <PerformanceBreakdown
                   holdings={consolidatedHoldings.map(h => ({
@@ -382,6 +388,8 @@ export default function Dashboard() {
                     allocationPercent: h.allocationPercent,
                     currentPrice: h.currentPrice
                   }))}
+                  variant="embedded"
+                  className="embedded-analytics-panel rounded-xl border border-border/60 bg-card/40 p-4"
                 />
                 <AssetTypeBreakdown
                   holdings={consolidatedHoldings.map(h => ({
@@ -396,6 +404,8 @@ export default function Dashboard() {
                     allocationPercent: h.allocationPercent,
                     currentPrice: h.currentPrice
                   }))}
+                  variant="embedded"
+                  className="embedded-analytics-panel rounded-xl border border-border/60 bg-card/40 p-4"
                 />
               </div>
             </CardContent>
