@@ -13,6 +13,7 @@ import type { HistoricalRange } from '@/lib/marketData';
 interface StockChartProps {
   ticker: string;
   currency: string;
+  standalone?: boolean;
 }
 
 type TimeRange = '1D' | '1M' | '3M' | '1Y' | '5Y' | 'MAX';
@@ -44,7 +45,7 @@ const rangeMap: Record<TimeRange, HistoricalRange> = {
   'MAX': 'MAX',
 };
 
-export function StockChart({ ticker, currency }: StockChartProps) {
+export function StockChart({ ticker, currency, standalone = true }: StockChartProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>('1Y');
   const [hoveredSeries, setHoveredSeries] = useState<string | null>(null);
 
@@ -120,82 +121,95 @@ export function StockChart({ ticker, currency }: StockChartProps) {
     }
   };
 
+  const headerSection = (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <CardTitle className="text-base md:text-lg">Price History</CardTitle>
+      <div className="flex gap-1 overflow-x-auto pb-1">
+        {(['1D', '1M', '3M', '1Y', '5Y', 'MAX'] as TimeRange[]).map((range) => (
+          <Button
+            key={range}
+            variant={timeRange === range ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTimeRange(range)}
+            className="flex-shrink-0 px-2 text-xs md:px-3"
+          >
+            {range}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const chartSection = (
+    <div className="h-48 md:h-64">
+      {isLoading ? (
+        <div className="flex h-full items-center justify-center">
+          <Skeleton className="h-full w-full" />
+        </div>
+      ) : isError && error ? (
+        <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-muted-foreground">
+          <p>Unable to load historical data.</p>
+          <p className="text-[11px] text-destructive">{error instanceof Error ? error.message : 'An unexpected error occurred.'}</p>
+          <Button size="sm" variant="outline" onClick={() => refetch()}>
+            Retry
+          </Button>
+        </div>
+      ) : chartData.length ? (
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={chartData}
+            margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
+            onMouseLeave={() => setHoveredSeries(null)}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <XAxis
+              dataKey="timestamp"
+              type="number"
+              domain={['dataMin', 'dataMax']}
+              tick={{ fontSize: 10 }}
+              stroke="hsl(var(--muted-foreground))"
+              tickFormatter={xTickFormatter}
+              minTickGap={20}
+            />
+            <YAxis
+              domain={[minPrice * 0.98, maxPrice * 1.02]}
+              tick={{ fontSize: 10 }}
+              stroke="hsl(var(--muted-foreground))"
+              tickFormatter={(value) => `${value.toFixed(showTwoDecimals ? 2 : 0)}`}
+            />
+            <Tooltip content={<CustomTooltip />} cursor={false} />
+            <Line
+              type="monotone"
+              dataKey="price"
+              stroke="hsl(var(--chart-1))"
+              strokeWidth={hoveredSeries === 'price' || hoveredSeries === null ? 2.5 : 1.5}
+              strokeOpacity={hoveredSeries === 'price' || hoveredSeries === null ? 1 : 0.4}
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      ) : showNoData ? (
+        <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+          No historical data available
+        </div>
+      ) : null}
+    </div>
+  );
+
+  if (standalone) {
+    return (
+      <Card>
+        <CardHeader>{headerSection}</CardHeader>
+        <CardContent>{chartSection}</CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <CardTitle className="text-base md:text-lg">Price History</CardTitle>
-          <div className="flex gap-1 overflow-x-auto pb-1">
-            {(['1D', '1M', '3M', '1Y', '5Y', 'MAX'] as TimeRange[]).map((range) => (
-              <Button
-                key={range}
-                variant={timeRange === range ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setTimeRange(range)}
-                className="text-xs px-2 md:px-3 flex-shrink-0"
-              >
-                {range}
-              </Button>
-            ))}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="h-48 md:h-64">
-          {isLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <Skeleton className="h-full w-full" />
-            </div>
-          ) : isError && error ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-muted-foreground">
-              <p>Unable to load historical data.</p>
-              <p className="text-[11px] text-destructive">{error instanceof Error ? error.message : 'An unexpected error occurred.'}</p>
-              <Button size="sm" variant="outline" onClick={() => refetch()}>
-                Retry
-              </Button>
-            </div>
-          ) : chartData.length ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={chartData}
-                margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
-                onMouseLeave={() => setHoveredSeries(null)}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis
-                  dataKey="timestamp"
-                  type="number"
-                  domain={['dataMin', 'dataMax']}
-                  tick={{ fontSize: 10 }}
-                  stroke="hsl(var(--muted-foreground))"
-                  tickFormatter={xTickFormatter}
-                  minTickGap={20}
-                />
-                <YAxis
-                  domain={[minPrice * 0.98, maxPrice * 1.02]}
-                  tick={{ fontSize: 10 }}
-                  stroke="hsl(var(--muted-foreground))"
-                  tickFormatter={(value) => `${value.toFixed(showTwoDecimals ? 2 : 0)}`}
-                />
-                <Tooltip content={<CustomTooltip />} cursor={false} />
-                <Line
-                  type="monotone"
-                  dataKey="price"
-                  stroke="hsl(var(--chart-1))"
-                  strokeWidth={hoveredSeries === 'price' || hoveredSeries === null ? 2.5 : 1.5}
-                  strokeOpacity={hoveredSeries === 'price' || hoveredSeries === null ? 1 : 0.4}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : showNoData ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              No historical data available
-            </div>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      {headerSection}
+      {chartSection}
+    </div>
   );
 }
