@@ -3,12 +3,7 @@ import { AlertTriangle, RefreshCcw, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import {
-  BrokerageOAuthLaunchButton,
-  ConnectionStatusBadge,
-  LastSyncDetails,
-  Trading212TokenDialog
-} from '@/components/brokerage';
+import { ConnectionStatusBadge, LastSyncDetails, Trading212TokenDialog } from '@/components/brokerage';
 import { useBrokerageConnections } from '@/hooks/useBrokerageConnections';
 import {
   AlertDialog,
@@ -36,12 +31,9 @@ export default function BrokerageConnections() {
           </p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <BrokerageOAuthLaunchButton size="sm" className="w-full sm:w-auto" />
-          <Trading212TokenDialog
-            size="sm"
-            variant="outline"
-            className="w-full sm:w-auto"
-          />
+          <Trading212TokenDialog size="sm" className="w-full sm:w-auto">
+            Link Trading 212 via API token
+          </Trading212TokenDialog>
         </div>
       </div>
 
@@ -54,9 +46,6 @@ export default function BrokerageConnections() {
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <BrokerageOAuthLaunchButton variant="outline" size="sm" className="w-full sm:w-auto">
-              Add another brokerage
-            </BrokerageOAuthLaunchButton>
             <Trading212TokenDialog
               variant="outline"
               size="sm"
@@ -74,10 +63,9 @@ export default function BrokerageConnections() {
               <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
               <h2 className="text-lg font-semibold">No brokerages linked yet</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Connect your brokerage to keep holdings up to date automatically.
+                Trading 212 connections are currently supported via API token. Link your account to keep holdings up to date automatically.
               </p>
               <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-center">
-                <BrokerageOAuthLaunchButton className="sm:w-auto">Connect a brokerage</BrokerageOAuthLaunchButton>
                 <Trading212TokenDialog className="sm:w-auto">
                   Link Trading 212 via API token
                 </Trading212TokenDialog>

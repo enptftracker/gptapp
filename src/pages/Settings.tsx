@@ -18,7 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { MarketDataService } from "@/lib/marketData";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useBrokerageConnections } from "@/hooks/useBrokerageConnections";
-import { BrokerageOAuthLaunchButton, ConnectionStatusBadge, LastSyncDetails } from "@/components/brokerage";
+import { ConnectionStatusBadge, LastSyncDetails, Trading212TokenDialog } from "@/components/brokerage";
 
 const settingsSchema = z.object({
   base_currency: z.string().min(1, "Please select a base currency"),
@@ -523,11 +523,13 @@ export default function Settings() {
           <div>
             <CardTitle>Brokerage connections</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Link a brokerage to sync live holdings and balances into your portfolios.
+              Link Trading 212 via API token to sync live holdings and balances into your portfolios.
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <BrokerageOAuthLaunchButton size="sm" className="w-full sm:w-auto" />
+            <Trading212TokenDialog size="sm" className="w-full sm:w-auto">
+              Link Trading 212 via API token
+            </Trading212TokenDialog>
             <Button variant="outline" size="sm" className="w-full sm:w-auto" asChild>
               <Link to="/brokerage">Manage connections</Link>
             </Button>
