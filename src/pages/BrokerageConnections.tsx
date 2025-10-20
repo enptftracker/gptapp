@@ -6,7 +6,8 @@ import { Separator } from '@/components/ui/separator';
 import {
   BrokerageOAuthLaunchButton,
   ConnectionStatusBadge,
-  LastSyncDetails
+  LastSyncDetails,
+  Trading212TokenDialog
 } from '@/components/brokerage';
 import { useBrokerageConnections } from '@/hooks/useBrokerageConnections';
 import {
@@ -34,7 +35,14 @@ export default function BrokerageConnections() {
             Link a supported brokerage to sync accounts, positions, and balances into your portfolios.
           </p>
         </div>
-        <BrokerageOAuthLaunchButton size="sm" className="w-full sm:w-auto" />
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <BrokerageOAuthLaunchButton size="sm" className="w-full sm:w-auto" />
+          <Trading212TokenDialog
+            size="sm"
+            variant="outline"
+            className="w-full sm:w-auto"
+          />
+        </div>
       </div>
 
       <Card>
@@ -45,9 +53,18 @@ export default function BrokerageConnections() {
               Review connection health, trigger a manual sync, or disconnect access.
             </p>
           </div>
-          <BrokerageOAuthLaunchButton variant="outline" size="sm" className="w-full sm:w-auto">
-            Add another brokerage
-          </BrokerageOAuthLaunchButton>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <BrokerageOAuthLaunchButton variant="outline" size="sm" className="w-full sm:w-auto">
+              Add another brokerage
+            </BrokerageOAuthLaunchButton>
+            <Trading212TokenDialog
+              variant="outline"
+              size="sm"
+              className="w-full sm:w-auto"
+            >
+              Link Trading 212 via API token
+            </Trading212TokenDialog>
+          </div>
         </CardHeader>
         <CardContent className="space-y-6">
           {isLoading ? (
@@ -59,7 +76,12 @@ export default function BrokerageConnections() {
               <p className="mt-2 text-sm text-muted-foreground">
                 Connect your brokerage to keep holdings up to date automatically.
               </p>
-              <BrokerageOAuthLaunchButton className="mt-4">Connect a brokerage</BrokerageOAuthLaunchButton>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-center">
+                <BrokerageOAuthLaunchButton className="sm:w-auto">Connect a brokerage</BrokerageOAuthLaunchButton>
+                <Trading212TokenDialog className="sm:w-auto">
+                  Link Trading 212 via API token
+                </Trading212TokenDialog>
+              </div>
             </div>
           ) : (
             <div className="space-y-6">
