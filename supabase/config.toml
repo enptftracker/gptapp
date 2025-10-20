@@ -1,7 +1,2 @@
 [functions."brokerage-refresh"]
 verify_jwt = false
-
-[[cron.jobs]]
-name = "brokerage-refresh"
-schedule = "0 * * * *"
-command = "curl --fail-with-body -X POST 'https://{{ .Project.Ref }}.functions.supabase.co/brokerage-refresh' -H 'Authorization: Bearer {{ .Env.BROKERAGE_CRON_SECRET }}' -H 'Content-Type: application/json'"

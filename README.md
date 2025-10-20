@@ -57,8 +57,25 @@ Brokerage connections are refreshed automatically by the `brokerage-refresh` edg
    - `BROKERAGE_CRON_SECRET` – shared secret verified by the cron job request.
    - `BROKER_OAUTH_TOKEN_URL`, `BROKER_CLIENT_ID`, `BROKER_CLIENT_SECRET` – OAuth credentials used when rotating access tokens.
    - Optional tuning knobs: `BROKERAGE_REFRESH_BATCH_SIZE` (connections processed per run), `BROKERAGE_REFRESH_DELAY_MS` (delay between sync calls), and `BROKERAGE_REFRESH_EXPIRY_BUFFER_SECONDS` (early refresh buffer).
-2. Deploy `supabase/functions/brokerage-refresh` along with the updated `supabase/config.toml` so Supabase Cron can provision the hourly job defined in the repository.
-3. In the Supabase dashboard (or CLI), add the `BROKERAGE_CRON_SECRET` to the function's environment variables and confirm the cron schedule appears under **Edge Functions → Cron** once deployed.
+2. Deploy `supabase/functions/brokerage-refresh` and ensure the function's environment variables include `BROKERAGE_CRON_SECRET`.
+3. Create the Cron job manually in Supabase:
+   - **Dashboard:** Navigate to **Edge Functions → Cron**, add a job that targets `https://<project-ref>.functions.supabase.co/brokerage-refresh`, set the schedule to `0 * * * *`, and supply an `Authorization: Bearer ${BROKERAGE_CRON_SECRET}` header.
+   - **HTTP API:** Use the [Supabase Management API](https://supabase.com/docs/guides/api/management-api#operation/createCronJob) to send a `POST` request with the same schedule, URL, and bearer token header.
+
+During local development you can trigger the function manually without a Cron job:
+
+```sh
+supabase functions serve brokerage-refresh --env-file supabase/.env
+```
+
+With the function serving locally (usually on `http://127.0.0.1:54321/functions/v1/brokerage-refresh`), send a request that includes the bearer secret:
+
+```sh
+curl -X POST \
+  -H "Authorization: Bearer ${BROKERAGE_CRON_SECRET}" \
+  -H "Content-Type: application/json" \
+  http://127.0.0.1:54321/functions/v1/brokerage-refresh
+```
 
 ### External market data providers
 
