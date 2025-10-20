@@ -16,6 +16,11 @@ interface ConnectBrokerageInput extends Pick<CreateBrokerageConnectionInput, 'pr
   scope?: string;
 }
 
+interface ProvideTokenInput {
+  provider: CreateBrokerageConnectionInput['provider'];
+  token: string;
+}
+
 interface OAuthInitiateResponse {
   authorizationUrl?: string;
   state?: string;
@@ -189,6 +194,55 @@ export function useBrokerageConnections(options: UseBrokerageConnectionsOptions 
     }
   });
 
+  const provideTokenMutation = useMutation({
+    mutationFn: async ({ provider, token }: ProvideTokenInput) => {
+      const normalizedToken = token.trim();
+      if (!normalizedToken) {
+        throw new Error('API token is required.');
+      }
+
+      const connection = await brokerageConnectionService.create({
+        provider,
+        status: 'pending'
+      });
+
+      try {
+        await invokeBrokerageFunction('/token/submit', {
+          connectionId: connection.id,
+          token: normalizedToken
+        });
+
+        const updatedConnection = await brokerageConnectionService.update(connection.id, {
+          status: 'active'
+        });
+
+        return updatedConnection;
+      } catch (error) {
+        try {
+          await brokerageConnectionService.delete(connection.id);
+        } catch (cleanupError) {
+          console.error('Failed to clean up brokerage connection after token submission error', cleanupError);
+        }
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      toast({
+        title: 'Trading 212 linked',
+        description: 'Your API token was stored securely. You can sync whenever you are ready.'
+      });
+    },
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Failed to submit API token.';
+      toast({
+        title: 'Unable to link Trading 212',
+        description: message,
+        variant: 'destructive'
+      });
+    }
+  });
+
   const connections = useMemo(() => listQuery.data ?? [], [listQuery.data]);
 
   return {
@@ -198,8 +252,9 @@ export function useBrokerageConnections(options: UseBrokerageConnectionsOptions 
     refetch: listQuery.refetch,
     connect: connectMutation,
     disconnect: disconnectMutation,
-    sync: syncMutation
+    sync: syncMutation,
+    provideToken: provideTokenMutation
   } as const;
 }
 
-export type { ConnectBrokerageInput };
+export type { ConnectBrokerageInput, ProvideTokenInput };
