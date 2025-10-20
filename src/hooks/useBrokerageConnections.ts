@@ -74,6 +74,8 @@ async function invokeBrokerageFunction<T>(path: string, body: Record<string, unk
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      // Authenticated Supabase session tokens are forwarded so the edge function can
+      // validate the caller without exposing the service role secret in the browser.
       Authorization: `Bearer ${accessToken}`
     },
     body: JSON.stringify(body)

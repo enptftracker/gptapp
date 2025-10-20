@@ -80,19 +80,20 @@ curl -X POST \
 ### Trading212 token bootstrap
 
 Trading212 accounts do not support the OAuth flow used by other brokerages. After creating a `brokerage_connections` row for a
-Trading212 account, seed its API token with the dedicated submission endpoint exposed by the `brokerage-sync` function:
+Trading212 account, seed its API token with the dedicated submission endpoint exposed by the `brokerage-sync` function. The
+endpoint accepts an authenticated Supabase session token, so no service-role secret needs to be shipped to the browser:
 
 ```sh
 curl -X POST \
-  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+  -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
   -H "Content-Type: application/json" \
   https://<project-ref>.functions.supabase.co/brokerage-sync/token/submit \
-  -d '{"connectionId":"<connection-id>","apiToken":"<trading212-token>"}'
+  -d '{"connectionId":"<connection-id>","token":"<trading212-token>"}'
 ```
 
-The request must include the Supabase service role key as a bearer token and supply a JSON body containing the connection's ID
-and API token. The edge function base64-encodes the supplied value before storing it, marks the connection `active`, and future
-refresh cycles will reuse the persisted token without attempting an OAuth exchange.
+The caller must be signed in as the owner of the connection. The edge function validates the JWT, confirms the connection
+belongs to the user, base64-encodes the supplied value before storing it, marks the connection `active`, and future refresh
+cycles will reuse the persisted token without attempting an OAuth exchange.
 
 ### External market data providers
 

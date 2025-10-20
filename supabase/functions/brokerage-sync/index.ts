@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.42.0";
+import {
+  createClient,
+  type SupabaseClient,
+  type User,
+} from "https://esm.sh/@supabase/supabase-js@2.42.0";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
 type JsonRecord = Record<string, unknown>;
@@ -100,14 +104,38 @@ const getSupabaseClient = (): SupabaseClient => {
   }
 };
 
-const verifyServiceRoleCaller = (req: Request) => {
-  const expectedKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+const requireAuthenticatedUser = async (
+  req: Request,
+  supabase: SupabaseClient,
+): Promise<User> => {
   const header = req.headers.get("Authorization") ?? "";
   const token = header.startsWith("Bearer ")
     ? header.slice("Bearer ".length).trim()
     : undefined;
 
-  if (token !== expectedKey) {
+  if (!token) {
+    throw new HttpError("Unauthorized", 401);
+  }
+
+  try {
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error) {
+      console.error("Failed to verify authenticated user", error);
+      throw new HttpError("Unauthorized", 401);
+    }
+
+    const user = data?.user;
+    if (!user) {
+      throw new HttpError("Unauthorized", 401);
+    }
+
+    return user;
+  } catch (error) {
+    if (error instanceof HttpError) {
+      throw error;
+    }
+
+    console.error("Unexpected error verifying authenticated user", error);
     throw new HttpError("Unauthorized", 401);
   }
 };
@@ -945,21 +973,34 @@ const handleExchangeTokens = async (req: Request, supabase: SupabaseClient): Pro
 };
 
 const handleSubmitToken = async (req: Request, supabase: SupabaseClient): Promise<Response> => {
-  verifyServiceRoleCaller(req);
+  const user = await requireAuthenticatedUser(req, supabase);
   const corsHeaders = getCorsHeaders(req.headers.get("Origin"));
-  const body = await readJson<{ connectionId?: string; apiToken?: string }>(req);
+  const body = await readJson<{
+    connectionId?: string;
+    apiToken?: string;
+    token?: string;
+  }>(req);
 
   const connectionId = body.connectionId?.trim();
   if (!connectionId) {
     throw new HttpError("connectionId is required", 400);
   }
 
-  const apiToken = body.apiToken?.trim();
+  const suppliedToken =
+    typeof body.apiToken === "string"
+      ? body.apiToken
+      : typeof body.token === "string"
+      ? body.token
+      : undefined;
+  const apiToken = suppliedToken?.trim();
   if (!apiToken) {
     throw new HttpError("apiToken is required", 400);
   }
 
   const connection = await fetchConnection(supabase, connectionId);
+  if (connection.user_id !== user.id) {
+    throw new HttpError("You do not have access to this connection", 403);
+  }
   if (connection.provider !== "trading212") {
     throw new HttpError("Token submissions are only supported for Trading212 connections", 400);
   }
