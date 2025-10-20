@@ -1,21 +1,14 @@
 import React from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { 
-  BarChart3, 
-  Briefcase, 
-  TrendingUp, 
-  Star, 
-  Settings,
-  DollarSign,
-  LogOut
-} from 'lucide-react';
+import { BarChart3, Briefcase, Star, Settings, DollarSign, LogOut, Link2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 
 const navItems = [
   { path: '/', icon: BarChart3, label: 'Dashboard' },
   { path: '/portfolios', icon: Briefcase, label: 'Portfolios' },
+  { path: '/brokerage', icon: Link2, label: 'Brokerage' },
   { path: '/watchlist', icon: Star, label: 'Watchlist' },
   { path: '/settings', icon: Settings, label: 'Settings' }
 ];

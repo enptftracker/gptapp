@@ -13,6 +13,7 @@ import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import Watchlist from "./pages/Watchlist";
 import Settings from "./pages/Settings";
+import BrokerageConnections from "./pages/BrokerageConnections";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ const App = () => (
               <Route index element={<Dashboard />} />
               <Route path="portfolios" element={<Portfolios />} />
               <Route path="portfolios/:id" element={<PortfolioDetail />} />
+              <Route path="brokerage" element={<BrokerageConnections />} />
               <Route path="watchlist" element={<Watchlist />} />
               <Route path="settings" element={<Settings />} />
             </Route>

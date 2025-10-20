@@ -51,7 +51,12 @@ export interface Profile {
   updated_at: string;
 }
 
-export type BrokerageConnectionStatus = 'pending' | 'active' | 'errored' | 'revoked';
+export type BrokerageConnectionStatus =
+  | 'pending'
+  | 'active'
+  | 'errored'
+  | 'revoked'
+  | 'requires_auth';
 
 export interface BrokerageConnection {
   id: string;

@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useTheme } from "next-themes";
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -16,6 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { MarketDataService } from "@/lib/marketData";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useBrokerageConnections } from "@/hooks/useBrokerageConnections";
+import { BrokerageOAuthLaunchButton, ConnectionStatusBadge, LastSyncDetails } from "@/components/brokerage";
 
 const settingsSchema = z.object({
   base_currency: z.string().min(1, "Please select a base currency"),
@@ -113,6 +116,7 @@ export default function Settings() {
   const updateProfile = useUpdateProfile();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
+  const { connections: brokerageConnections, isLoading: isLoadingBrokerage } = useBrokerageConnections();
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
   const [isLoadingMfa, setIsLoadingMfa] = useState(true);
@@ -513,6 +517,56 @@ export default function Settings() {
         <h1 className="text-3xl font-bold">{t('settings.title')}</h1>
         <p className="text-muted-foreground">{t('settings.subtitle')}</p>
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle>Brokerage connections</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Link a brokerage to sync live holdings and balances into your portfolios.
+            </p>
+          </div>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <BrokerageOAuthLaunchButton size="sm" className="w-full sm:w-auto" />
+            <Button variant="outline" size="sm" className="w-full sm:w-auto" asChild>
+              <Link to="/brokerage">Manage connections</Link>
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isLoadingBrokerage ? (
+            <p className="text-sm text-muted-foreground">Checking your linked brokerages…</p>
+          ) : brokerageConnections.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              You haven't linked any brokerages yet. Start a connection to import your real-world accounts automatically.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {brokerageConnections.slice(0, 2).map((connection) => (
+                <div
+                  key={connection.id}
+                  className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-medium capitalize">{connection.provider}</p>
+                    <LastSyncDetails
+                      lastSyncedAt={connection.last_synced_at}
+                      accessTokenExpiresAt={connection.access_token_expires_at}
+                      className="mt-1"
+                    />
+                  </div>
+                  <ConnectionStatusBadge status={connection.status} className="self-start sm:self-auto" />
+                </div>
+              ))}
+              {brokerageConnections.length > 2 ? (
+                <p className="text-xs text-muted-foreground">
+                  View all {brokerageConnections.length} connections from the brokerage management page.
+                </p>
+              ) : null}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

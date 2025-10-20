@@ -25,6 +25,23 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { BrokerageOAuthLaunchButton } from '@/components/brokerage';
+
+const BrokerageOnboardingCallout = () => (
+  <Alert className="bg-muted/60">
+    <AlertTitle>Link your brokerage</AlertTitle>
+    <AlertDescription>
+      Connect a supported brokerage to import real positions automatically. You can complete setup now or manage connections later from the brokerage screen.
+    </AlertDescription>
+    <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+      <BrokerageOAuthLaunchButton size="sm" className="w-full sm:w-auto" />
+      <Button variant="outline" size="sm" className="w-full sm:w-auto" asChild>
+        <Link to="/brokerage">Manage connections</Link>
+      </Button>
+    </div>
+  </Alert>
+);
 
 const PortfolioCard = ({ portfolio, portfolios }: { portfolio: any; portfolios: any[] }) => {
   const { data: metrics } = usePortfolioMetrics(portfolio.id);
@@ -254,36 +271,39 @@ export default function Portfolios() {
                 <DialogHeader>
                   <DialogTitle>Create New Portfolio</DialogTitle>
                 </DialogHeader>
-                <form onSubmit={handleCreatePortfolio} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Portfolio Name</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                      placeholder="e.g., Long-term Growth"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description (Optional)</Label>
-                    <Textarea
-                      id="description"
-                      value={formData.description}
-                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                      placeholder="Brief description of your investment strategy..."
-                      rows={3}
-                    />
-                  </div>
-                  <div className="flex justify-end gap-3">
-                    <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={createPortfolio.isPending}>
-                      {createPortfolio.isPending ? 'Creating...' : 'Create Portfolio'}
-                    </Button>
-                  </div>
-                </form>
+                <div className="space-y-4">
+                  <BrokerageOnboardingCallout />
+                  <form onSubmit={handleCreatePortfolio} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Portfolio Name</Label>
+                      <Input
+                        id="name"
+                        value={formData.name}
+                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="e.g., Long-term Growth"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="description">Description (Optional)</Label>
+                      <Textarea
+                        id="description"
+                        value={formData.description}
+                        onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                        placeholder="Brief description of your investment strategy..."
+                        rows={3}
+                      />
+                    </div>
+                    <div className="flex justify-end gap-3">
+                      <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={createPortfolio.isPending}>
+                        {createPortfolio.isPending ? 'Creating...' : 'Create Portfolio'}
+                      </Button>
+                    </div>
+                  </form>
+                </div>
               </DialogContent>
             </Dialog>
           </CardContent>
@@ -312,36 +332,39 @@ export default function Portfolios() {
             <DialogHeader>
               <DialogTitle>Create New Portfolio</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleCreatePortfolio} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Portfolio Name</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="e.g., Long-term Growth"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description (Optional)</Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Brief description of your investment strategy..."
-                  rows={3}
-                />
-              </div>
-              <div className="flex justify-end gap-3">
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={createPortfolio.isPending}>
-                  {createPortfolio.isPending ? 'Creating...' : 'Create Portfolio'}
-                </Button>
-              </div>
-            </form>
+            <div className="space-y-4">
+              <BrokerageOnboardingCallout />
+              <form onSubmit={handleCreatePortfolio} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Portfolio Name</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g., Long-term Growth"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description (Optional)</Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Brief description of your investment strategy..."
+                    rows={3}
+                  />
+                </div>
+                <div className="flex justify-end gap-3">
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={createPortfolio.isPending}>
+                    {createPortfolio.isPending ? 'Creating...' : 'Create Portfolio'}
+                  </Button>
+                </div>
+              </form>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
