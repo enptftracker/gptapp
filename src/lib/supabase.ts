@@ -51,6 +51,86 @@ export interface Profile {
   updated_at: string;
 }
 
+export type BrokerageConnectionStatus = 'pending' | 'active' | 'errored' | 'revoked';
+
+export interface BrokerageConnection {
+  id: string;
+  user_id: string;
+  provider: string;
+  status: BrokerageConnectionStatus;
+  access_token_encrypted?: string | null;
+  refresh_token_encrypted?: string | null;
+  access_token_expires_at: string | null;
+  metadata: Record<string, unknown>;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BrokerageAccount {
+  id: string;
+  connection_id: string;
+  external_id: string | null;
+  name: string | null;
+  account_type: string | null;
+  currency: string | null;
+  metadata: Record<string, unknown>;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BrokeragePosition {
+  id: string;
+  account_id: string;
+  symbol: string;
+  quantity: number;
+  cost_basis: number | null;
+  metadata: Record<string, unknown>;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateBrokerageConnectionInput {
+  provider: string;
+  status?: BrokerageConnectionStatus;
+  metadata?: Record<string, unknown> | null;
+  access_token_expires_at?: string | null;
+  last_synced_at?: string | null;
+}
+
+export type UpdateBrokerageConnectionInput = Partial<
+  Pick<BrokerageConnection, 'status' | 'metadata' | 'last_synced_at' | 'access_token_expires_at'>
+>;
+
+export interface CreateBrokerageAccountInput {
+  connection_id: string;
+  external_id?: string | null;
+  name?: string | null;
+  account_type?: string | null;
+  currency?: string | null;
+  metadata?: Record<string, unknown> | null;
+  last_synced_at?: string | null;
+}
+
+export type UpdateBrokerageAccountInput = Partial<
+  Omit<BrokerageAccount, 'id' | 'connection_id' | 'created_at' | 'updated_at'>
+>;
+
+export interface CreateBrokeragePositionInput {
+  account_id: string;
+  symbol: string;
+  quantity: number;
+  cost_basis?: number | null;
+  metadata?: Record<string, unknown> | null;
+  last_synced_at?: string | null;
+}
+
+export type UpdateBrokeragePositionInput = Partial<
+  Omit<BrokeragePosition, 'id' | 'account_id' | 'created_at' | 'updated_at'>
+>;
+
 // Portfolio operations
 export const portfolioService = {
   async getAll(): Promise<Portfolio[]> {
@@ -247,5 +327,308 @@ export const profileService = {
     
     if (error) throw error;
     return data;
+  }
+};
+
+const BROKERAGE_CONNECTION_COLUMNS = `
+  id,
+  user_id,
+  provider,
+  status,
+  access_token_expires_at,
+  metadata,
+  last_synced_at,
+  created_at,
+  updated_at
+`;
+
+const BROKERAGE_ACCOUNT_COLUMNS = `
+  id,
+  connection_id,
+  external_id,
+  name,
+  account_type,
+  currency,
+  metadata,
+  last_synced_at,
+  created_at,
+  updated_at
+`;
+
+const BROKERAGE_POSITION_COLUMNS = `
+  id,
+  account_id,
+  symbol,
+  quantity,
+  cost_basis,
+  metadata,
+  last_synced_at,
+  created_at,
+  updated_at
+`;
+
+export const brokerageConnectionService = {
+  async list(): Promise<BrokerageConnection[]> {
+    const { data, error } = await supabase
+      .from('brokerage_connections')
+      .select(BROKERAGE_CONNECTION_COLUMNS)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async get(id: string): Promise<BrokerageConnection | null> {
+    const { data, error } = await supabase
+      .from('brokerage_connections')
+      .select(BROKERAGE_CONNECTION_COLUMNS)
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async create(connection: CreateBrokerageConnectionInput): Promise<BrokerageConnection> {
+    const userResponse = await supabase.auth.getUser();
+    const userId = userResponse.data.user?.id;
+
+    if (!userId) {
+      throw new Error('User must be authenticated to create a brokerage connection.');
+    }
+
+    const { data, error } = await supabase
+      .from('brokerage_connections')
+      .insert({
+        user_id: userId,
+        provider: connection.provider,
+        status: connection.status ?? 'pending',
+        metadata: connection.metadata ?? {},
+        access_token_expires_at: connection.access_token_expires_at ?? null,
+        last_synced_at: connection.last_synced_at ?? null
+      })
+      .select(BROKERAGE_CONNECTION_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async update(id: string, updates: UpdateBrokerageConnectionInput): Promise<BrokerageConnection> {
+    const payload: Record<string, unknown> = {};
+
+    if (typeof updates.status !== 'undefined') {
+      payload.status = updates.status;
+    }
+
+    if (typeof updates.metadata !== 'undefined') {
+      payload.metadata = updates.metadata ?? {};
+    }
+
+    if (typeof updates.access_token_expires_at !== 'undefined') {
+      payload.access_token_expires_at = updates.access_token_expires_at;
+    }
+
+    if (typeof updates.last_synced_at !== 'undefined') {
+      payload.last_synced_at = updates.last_synced_at;
+    }
+
+    const { data, error } = await supabase
+      .from('brokerage_connections')
+      .update(payload)
+      .eq('id', id)
+      .select(BROKERAGE_CONNECTION_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('brokerage_connections')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  }
+};
+
+export const brokerageAccountService = {
+  async list(): Promise<BrokerageAccount[]> {
+    const { data, error } = await supabase
+      .from('brokerage_accounts')
+      .select(BROKERAGE_ACCOUNT_COLUMNS)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async listByConnection(connectionId: string): Promise<BrokerageAccount[]> {
+    const { data, error } = await supabase
+      .from('brokerage_accounts')
+      .select(BROKERAGE_ACCOUNT_COLUMNS)
+      .eq('connection_id', connectionId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async create(account: CreateBrokerageAccountInput): Promise<BrokerageAccount> {
+    const { data, error } = await supabase
+      .from('brokerage_accounts')
+      .insert({
+        connection_id: account.connection_id,
+        external_id: account.external_id ?? null,
+        name: account.name ?? null,
+        account_type: account.account_type ?? null,
+        currency: account.currency ?? null,
+        metadata: account.metadata ?? {},
+        last_synced_at: account.last_synced_at ?? null
+      })
+      .select(BROKERAGE_ACCOUNT_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async update(id: string, updates: UpdateBrokerageAccountInput): Promise<BrokerageAccount> {
+    const payload: Record<string, unknown> = {};
+
+    if (typeof updates.external_id !== 'undefined') {
+      payload.external_id = updates.external_id;
+    }
+
+    if (typeof updates.name !== 'undefined') {
+      payload.name = updates.name;
+    }
+
+    if (typeof updates.account_type !== 'undefined') {
+      payload.account_type = updates.account_type;
+    }
+
+    if (typeof updates.currency !== 'undefined') {
+      payload.currency = updates.currency;
+    }
+
+    if (typeof updates.metadata !== 'undefined') {
+      payload.metadata = updates.metadata ?? {};
+    }
+
+    if (typeof updates.last_synced_at !== 'undefined') {
+      payload.last_synced_at = updates.last_synced_at;
+    }
+
+    const { data, error } = await supabase
+      .from('brokerage_accounts')
+      .update(payload)
+      .eq('id', id)
+      .select(BROKERAGE_ACCOUNT_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('brokerage_accounts')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  }
+};
+
+export const brokeragePositionService = {
+  async listByAccount(accountId: string): Promise<BrokeragePosition[]> {
+    const { data, error } = await supabase
+      .from('brokerage_positions')
+      .select(BROKERAGE_POSITION_COLUMNS)
+      .eq('account_id', accountId)
+      .order('symbol');
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async listByAccounts(accountIds: string[]): Promise<BrokeragePosition[]> {
+    if (accountIds.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('brokerage_positions')
+      .select(BROKERAGE_POSITION_COLUMNS)
+      .in('account_id', accountIds)
+      .order('account_id')
+      .order('symbol');
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async create(position: CreateBrokeragePositionInput): Promise<BrokeragePosition> {
+    const { data, error } = await supabase
+      .from('brokerage_positions')
+      .insert({
+        account_id: position.account_id,
+        symbol: position.symbol,
+        quantity: position.quantity,
+        cost_basis: position.cost_basis ?? null,
+        metadata: position.metadata ?? {},
+        last_synced_at: position.last_synced_at ?? null
+      })
+      .select(BROKERAGE_POSITION_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async update(id: string, updates: UpdateBrokeragePositionInput): Promise<BrokeragePosition> {
+    const payload: Record<string, unknown> = {};
+
+    if (typeof updates.symbol !== 'undefined') {
+      payload.symbol = updates.symbol;
+    }
+
+    if (typeof updates.quantity !== 'undefined') {
+      payload.quantity = updates.quantity;
+    }
+
+    if (typeof updates.cost_basis !== 'undefined') {
+      payload.cost_basis = updates.cost_basis;
+    }
+
+    if (typeof updates.metadata !== 'undefined') {
+      payload.metadata = updates.metadata ?? {};
+    }
+
+    if (typeof updates.last_synced_at !== 'undefined') {
+      payload.last_synced_at = updates.last_synced_at;
+    }
+
+    const { data, error } = await supabase
+      .from('brokerage_positions')
+      .update(payload)
+      .eq('id', id)
+      .select(BROKERAGE_POSITION_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('brokerage_positions')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
   }
 };
