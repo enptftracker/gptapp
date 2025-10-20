@@ -77,6 +77,23 @@ curl -X POST \
   http://127.0.0.1:54321/functions/v1/brokerage-refresh
 ```
 
+### Trading212 token bootstrap
+
+Trading212 accounts do not support the OAuth flow used by other brokerages. After creating a `brokerage_connections` row for a
+Trading212 account, seed its API token with the dedicated submission endpoint exposed by the `brokerage-sync` function:
+
+```sh
+curl -X POST \
+  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+  -H "Content-Type: application/json" \
+  https://<project-ref>.functions.supabase.co/brokerage-sync/token/submit \
+  -d '{"connectionId":"<connection-id>","apiToken":"<trading212-token>"}'
+```
+
+The request must include the Supabase service role key as a bearer token and supply a JSON body containing the connection's ID
+and API token. The edge function base64-encodes the supplied value before storing it, marks the connection `active`, and future
+refresh cycles will reuse the persisted token without attempting an OAuth exchange.
+
 ### External market data providers
 
 The `fetch-stock-price` edge function now queries the Finnhub quote API (`https://finnhub.io/api/v1/quote`) for live prices. Configure a `FINNHUB_API_KEY` environment variable in the Supabase function so the edge runtime can authenticate each request. Finnhub responses include the latest price (`c`), daily change (`d`), percent change (`dp`), and trading day timestamp (`t`), all of which the function normalizes before returning to the frontend.
