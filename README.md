@@ -49,6 +49,17 @@ supabase functions deploy <function-name>
 ```
 When invoking from the frontend, use the helper exported by `src/integrations/supabase/env.ts` to resolve the correct function URL.
 
+### Scheduled brokerage refresh
+
+Brokerage connections are refreshed automatically by the `brokerage-refresh` edge function. A Supabase Cron job triggers the function hourly, refreshes expiring OAuth tokens, and invokes the existing `brokerage-sync` routine to pull the latest holdings.
+
+1. Define the following environment variables for the Supabase project:
+   - `BROKERAGE_CRON_SECRET` – shared secret verified by the cron job request.
+   - `BROKER_OAUTH_TOKEN_URL`, `BROKER_CLIENT_ID`, `BROKER_CLIENT_SECRET` – OAuth credentials used when rotating access tokens.
+   - Optional tuning knobs: `BROKERAGE_REFRESH_BATCH_SIZE` (connections processed per run), `BROKERAGE_REFRESH_DELAY_MS` (delay between sync calls), and `BROKERAGE_REFRESH_EXPIRY_BUFFER_SECONDS` (early refresh buffer).
+2. Deploy `supabase/functions/brokerage-refresh` along with the updated `supabase/config.toml` so Supabase Cron can provision the hourly job defined in the repository.
+3. In the Supabase dashboard (or CLI), add the `BROKERAGE_CRON_SECRET` to the function's environment variables and confirm the cron schedule appears under **Edge Functions → Cron** once deployed.
+
 ### External market data providers
 
 The `fetch-stock-price` edge function now queries the Finnhub quote API (`https://finnhub.io/api/v1/quote`) for live prices. Configure a `FINNHUB_API_KEY` environment variable in the Supabase function so the edge runtime can authenticate each request. Finnhub responses include the latest price (`c`), daily change (`d`), percent change (`dp`), and trading day timestamp (`t`), all of which the function normalizes before returning to the frontend.
