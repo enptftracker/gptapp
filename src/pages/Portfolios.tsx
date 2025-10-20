@@ -26,16 +26,18 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { BrokerageOAuthLaunchButton } from '@/components/brokerage';
+import { Trading212TokenDialog } from '@/components/brokerage';
 
 const BrokerageOnboardingCallout = () => (
   <Alert className="bg-muted/60">
     <AlertTitle>Link your brokerage</AlertTitle>
     <AlertDescription>
-      Connect a supported brokerage to import real positions automatically. You can complete setup now or manage connections later from the brokerage screen.
+      Connect Trading 212 to import real positions automatically. You can complete setup now or manage connections later from the brokerage screen.
     </AlertDescription>
     <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-      <BrokerageOAuthLaunchButton size="sm" className="w-full sm:w-auto" />
+      <Trading212TokenDialog size="sm" className="w-full sm:w-auto">
+        Link Trading 212 via API token
+      </Trading212TokenDialog>
       <Button variant="outline" size="sm" className="w-full sm:w-auto" asChild>
         <Link to="/brokerage">Manage connections</Link>
       </Button>
