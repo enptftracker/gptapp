@@ -492,7 +492,240 @@ const upsertPositions = async (
   }
 };
 
-const fetchBrokerAccounts = async (accessToken: string): Promise<BrokerAccountResponse[]> => {
+type Trading212MoneyLike = {
+  value?: number | string | null;
+  currencyCode?: string | null;
+  converted?: Trading212MoneyLike | null;
+  valueInUSD?: number | string | null;
+  usdValue?: number | string | null;
+  valueUsd?: number | string | null;
+  usd?: number | string | null;
+  fxRateToUsd?: number | string | null;
+  rateToUsd?: number | string | null;
+  [key: string]: unknown;
+};
+
+type Trading212Account = {
+  accountId?: string;
+  accountType?: string | null;
+  accountAlias?: string | null;
+  baseCurrency?: string | null;
+  cash?: JsonRecord;
+  [key: string]: unknown;
+};
+
+type Trading212Position = {
+  ticker?: string | null;
+  quantity?: number | string | null;
+  averagePrice?: Trading212MoneyLike | null;
+  totalValue?: Trading212MoneyLike | null;
+  instrumentType?: string | null;
+  currencyCode?: string | null;
+  currency?: string | null;
+  [key: string]: unknown;
+};
+
+const parseNumeric = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+export const extractTrading212UsdAmount = (money?: Trading212MoneyLike | null): number | null => {
+  if (!money || typeof money !== "object") {
+    return null;
+  }
+
+  const value = parseNumeric(money.value);
+  const currency = typeof money.currencyCode === "string" ? money.currencyCode.toUpperCase() : undefined;
+  if (value !== null && currency === "USD") {
+    return value;
+  }
+
+  const directUsdCandidates = [money.valueInUSD, money.usdValue, money.valueUsd, money.usd];
+  for (const candidate of directUsdCandidates) {
+    const parsed = parseNumeric(candidate);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  const converted = money.converted as Trading212MoneyLike | null | undefined;
+  if (converted) {
+    const convertedUsd = extractTrading212UsdAmount(converted);
+    if (convertedUsd !== null) {
+      return convertedUsd;
+    }
+  }
+
+  const fxRate = parseNumeric(money.fxRateToUsd ?? money.rateToUsd);
+  if (value !== null && fxRate !== null) {
+    return value * fxRate;
+  }
+
+  return null;
+};
+
+export const mapTrading212Account = (account: Trading212Account): BrokerAccountResponse | null => {
+  const id = typeof account.accountId === "string" ? account.accountId : undefined;
+  if (!id) {
+    console.warn("Skipping Trading212 account without accountId", account);
+    return null;
+  }
+
+  const name = typeof account.accountAlias === "string" && account.accountAlias.trim()
+    ? account.accountAlias.trim()
+    : typeof account.accountType === "string"
+    ? account.accountType
+    : id;
+
+  const type = typeof account.accountType === "string" ? account.accountType : null;
+  const currency = typeof account.baseCurrency === "string" ? account.baseCurrency : null;
+
+  return {
+    id,
+    name,
+    type,
+    currency,
+    provider: "trading212",
+    baseCurrency: currency,
+    accountAlias: typeof account.accountAlias === "string" ? account.accountAlias : null,
+    instrumentType: type,
+    cash: account.cash ?? null,
+  };
+};
+
+export const mapTrading212Position = (
+  position: Trading212Position,
+  accountId: string,
+): BrokerPositionResponse | null => {
+  const ticker = typeof position.ticker === "string" ? position.ticker : position.ticker === null ? "" : undefined;
+  const normalizedTicker = normalizeTicker(ticker);
+  if (!normalizedTicker) {
+    console.warn("Skipping Trading212 position without ticker", position);
+    return null;
+  }
+
+  const quantity = parseNumeric(position.quantity);
+  if (quantity === null) {
+    console.warn("Skipping Trading212 position with invalid quantity", position);
+    return null;
+  }
+
+  const averagePriceUsd = extractTrading212UsdAmount(position.averagePrice ?? undefined);
+  const averagePriceRaw = parseNumeric(position.averagePrice?.value);
+  const costBasis = averagePriceUsd ?? averagePriceRaw;
+
+  const totalValueUsd = extractTrading212UsdAmount(position.totalValue ?? undefined);
+
+  return {
+    id: `${accountId}:${normalizedTicker}`,
+    symbol: normalizedTicker,
+    quantity,
+    cost_basis: costBasis ?? null,
+    instrumentType: typeof position.instrumentType === "string" ? position.instrumentType : null,
+    currency: typeof position.currencyCode === "string"
+      ? position.currencyCode
+      : typeof position.currency === "string"
+      ? position.currency
+      : null,
+    averagePrice: position.averagePrice ?? null,
+    averagePriceUsd,
+    totalValue: position.totalValue ?? null,
+    totalValueUsd,
+    provider: "trading212",
+    accountId,
+  };
+};
+
+const fetchTrading212Accounts = async (accessToken: string): Promise<BrokerAccountResponse[]> => {
+  const apiBaseUrl = brokerConfig.apiBaseUrl();
+  const url = new URL("/api/v0/accounts", apiBaseUrl);
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const upstreamStatus = response.status;
+    console.error("Trading212 accounts request failed", upstreamStatus);
+    throw new HttpError(
+      `Trading212 accounts request failed with status ${upstreamStatus}`,
+      upstreamStatus >= 400 && upstreamStatus < 500 ? upstreamStatus : 502,
+    );
+  }
+
+  const payload = await response.json();
+  const accountsRaw = Array.isArray(payload) ? payload : payload?.accounts ?? payload?.data;
+
+  if (!Array.isArray(accountsRaw)) {
+    console.error("Trading212 accounts response is invalid", payload);
+    throw new HttpError("Trading212 accounts response is invalid", 502, payload);
+  }
+
+  const mapped = accountsRaw
+    .map((account) => mapTrading212Account(account as Trading212Account))
+    .filter((account): account is BrokerAccountResponse => Boolean(account));
+
+  return mapped;
+};
+
+const fetchTrading212Positions = async (
+  accessToken: string,
+  accountId: string,
+): Promise<BrokerPositionResponse[]> => {
+  const apiBaseUrl = brokerConfig.apiBaseUrl();
+  const url = new URL("/api/v0/equity/portfolio", apiBaseUrl);
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const upstreamStatus = response.status;
+    console.error("Trading212 positions request failed", upstreamStatus);
+    throw new HttpError(
+      `Trading212 positions request failed with status ${upstreamStatus}`,
+      upstreamStatus >= 400 && upstreamStatus < 500 ? upstreamStatus : 502,
+    );
+  }
+
+  const payload = await response.json();
+  const positionsRaw = Array.isArray(payload) ? payload : payload?.positions ?? payload?.data;
+
+  if (!Array.isArray(positionsRaw)) {
+    console.error("Trading212 positions response is invalid", payload);
+    throw new HttpError("Trading212 positions response is invalid", 502, payload);
+  }
+
+  const mapped = positionsRaw
+    .map((position) => mapTrading212Position(position as Trading212Position, accountId))
+    .filter((position): position is BrokerPositionResponse => Boolean(position));
+
+  return mapped;
+};
+
+const fetchBrokerAccounts = async (
+  accessToken: string,
+  provider: string,
+): Promise<BrokerAccountResponse[]> => {
+  if (provider === "trading212") {
+    return await fetchTrading212Accounts(accessToken);
+  }
+
   const apiBaseUrl = brokerConfig.apiBaseUrl();
   const url = new URL("/accounts", apiBaseUrl);
   const response = await fetch(url.toString(), {
@@ -526,7 +759,12 @@ const fetchBrokerAccounts = async (accessToken: string): Promise<BrokerAccountRe
 const fetchBrokerPositions = async (
   accessToken: string,
   accountId: string,
+  provider: string,
 ): Promise<BrokerPositionResponse[]> => {
+  if (provider === "trading212") {
+    return await fetchTrading212Positions(accessToken, accountId);
+  }
+
   const apiBaseUrl = brokerConfig.apiBaseUrl();
   const url = new URL(`/accounts/${accountId}/positions`, apiBaseUrl);
   const response = await fetch(url.toString(), {
@@ -765,7 +1003,7 @@ const handleSync = async (req: Request, supabase: SupabaseClient): Promise<Respo
   }
 
   console.log(`Syncing brokerage accounts for connection ${connectionId}`);
-  const accounts = await fetchBrokerAccounts(accessToken);
+  const accounts = await fetchBrokerAccounts(accessToken, connection.provider);
 
   const accountMap = await ensureAccounts(supabase, connectionId, accounts);
 
@@ -784,7 +1022,7 @@ const handleSync = async (req: Request, supabase: SupabaseClient): Promise<Respo
       continue;
     }
 
-    const positions = await fetchBrokerPositions(accessToken, externalId);
+    const positions = await fetchBrokerPositions(accessToken, externalId, connection.provider);
     accountPositions.push({ account: dbAccount, positions });
 
     for (const position of positions) {
