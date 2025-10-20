@@ -40,8 +40,8 @@ const getEnv = (
 };
 
 const brokerConfig = {
-  tokenUrl: () => getEnv("BROKER_OAUTH_TOKEN_URL"),
-  clientId: () => getEnv("BROKER_CLIENT_ID"),
+  tokenUrl: () => getEnv("BROKER_OAUTH_TOKEN_URL", { required: false }),
+  clientId: () => getEnv("BROKER_CLIENT_ID", { required: false }),
   clientSecret: () => getEnv("BROKER_CLIENT_SECRET", { required: false }) ?? "",
 };
 
@@ -185,20 +185,22 @@ const refreshAccessToken = async (
   supabase: SupabaseClient,
   connection: BrokerageConnectionRow,
 ): Promise<{ refreshed: boolean; accessToken: string | null; expiresAt: string | null }> => {
+  const existingAccessToken = decodeToken(connection.access_token_encrypted);
   const refreshToken = decodeToken(connection.refresh_token_encrypted);
-  if (!refreshToken) {
-    console.warn(`Connection ${connection.id} does not have a refresh token`);
-    return {
-      refreshed: false,
-      accessToken: decodeToken(connection.access_token_encrypted),
-      expiresAt: connection.access_token_expires_at,
-    };
-  }
-
   const tokenUrl = brokerConfig.tokenUrl();
   const clientId = brokerConfig.clientId();
-  if (!tokenUrl || !clientId) {
-    throw new HttpError("Broker OAuth configuration is incomplete", 500);
+  if (!refreshToken || !tokenUrl || !clientId) {
+    if (!refreshToken) {
+      console.warn(`Connection ${connection.id} does not have a refresh token`);
+    }
+    if (!tokenUrl || !clientId) {
+      console.warn("Broker OAuth configuration is incomplete; reusing existing access token");
+    }
+    return {
+      refreshed: false,
+      accessToken: existingAccessToken,
+      expiresAt: connection.access_token_expires_at,
+    };
   }
 
   const params = new URLSearchParams();

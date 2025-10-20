@@ -70,10 +70,10 @@ const getEnv = (key: string, { required = true }: { required?: boolean } = {}): 
 };
 
 const brokerConfig = {
-  authorizeUrl: () => getEnv("BROKER_OAUTH_AUTHORIZE_URL"),
-  tokenUrl: () => getEnv("BROKER_OAUTH_TOKEN_URL"),
+  authorizeUrl: () => getEnv("BROKER_OAUTH_AUTHORIZE_URL", { required: false }),
+  tokenUrl: () => getEnv("BROKER_OAUTH_TOKEN_URL", { required: false }),
   apiBaseUrl: () => getEnv("BROKER_API_BASE_URL"),
-  clientId: () => getEnv("BROKER_CLIENT_ID"),
+  clientId: () => getEnv("BROKER_CLIENT_ID", { required: false }),
   clientSecret: () => getEnv("BROKER_CLIENT_SECRET", { required: false }) ?? "",
   defaultScope: () => getEnv("BROKER_DEFAULT_SCOPE", { required: false }) ?? "accounts positions",
   defaultRedirectUri: () => getEnv("BROKER_REDIRECT_URI", { required: false }),
@@ -97,6 +97,18 @@ const getSupabaseClient = (): SupabaseClient => {
   } catch (error) {
     console.error("Failed to initialize Supabase client", error);
     throw new HttpError("Supabase client initialization failed", 500);
+  }
+};
+
+const verifyServiceRoleCaller = (req: Request) => {
+  const expectedKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const header = req.headers.get("Authorization") ?? "";
+  const token = header.startsWith("Bearer ")
+    ? header.slice("Bearer ".length).trim()
+    : undefined;
+
+  if (token !== expectedKey) {
+    throw new HttpError("Unauthorized", 401);
   }
 };
 
@@ -562,16 +574,25 @@ const handleInitiateOAuth = async (req: Request, supabase: SupabaseClient): Prom
   const scope = body.scope?.trim() || brokerConfig.defaultScope();
 
   const connection = await fetchConnection(supabase, connectionId);
+  if (connection.provider === "trading212") {
+    throw new HttpError("Trading212 connections require direct token submission", 501);
+  }
+
+  const authorizeUrlValue = brokerConfig.authorizeUrl();
+  const clientId = brokerConfig.clientId();
+  if (!authorizeUrlValue || !clientId) {
+    throw new HttpError("Broker OAuth configuration is incomplete", 500);
+  }
   const state = crypto.randomUUID();
 
-  const authorizeUrl = new URL(brokerConfig.authorizeUrl()!);
+  const authorizeUrl = new URL(authorizeUrlValue);
   authorizeUrl.searchParams.set("response_type", "code");
-  authorizeUrl.searchParams.set("client_id", brokerConfig.clientId()!);
+  authorizeUrl.searchParams.set("client_id", clientId);
   authorizeUrl.searchParams.set("redirect_uri", redirectUri);
   authorizeUrl.searchParams.set("scope", scope);
   authorizeUrl.searchParams.set("state", state);
 
-  const metadata = { ...connection.metadata, oauth_state: state, oauth_redirect_uri: redirectUri };
+  const metadata = { ...(connection.metadata ?? {}), oauth_state: state, oauth_redirect_uri: redirectUri };
   await updateConnection(supabase, connectionId, { metadata });
 
   const responseBody = {
@@ -605,6 +626,9 @@ const handleExchangeTokens = async (req: Request, supabase: SupabaseClient): Pro
   }
 
   const connection = await fetchConnection(supabase, connectionId);
+  if (connection.provider === "trading212") {
+    throw new HttpError("Trading212 connections require direct token submission", 501);
+  }
   const expectedState = typeof connection.metadata?.oauth_state === "string"
     ? connection.metadata.oauth_state
     : undefined;
@@ -613,12 +637,16 @@ const handleExchangeTokens = async (req: Request, supabase: SupabaseClient): Pro
     throw new HttpError("OAuth state mismatch", 400);
   }
 
-  const tokenUrl = brokerConfig.tokenUrl()!;
+  const tokenUrl = brokerConfig.tokenUrl();
+  const clientId = brokerConfig.clientId();
+  if (!tokenUrl || !clientId) {
+    throw new HttpError("Broker OAuth configuration is incomplete", 500);
+  }
   const params = new URLSearchParams();
   params.set("grant_type", "authorization_code");
   params.set("code", code);
   params.set("redirect_uri", redirectUri);
-  params.set("client_id", brokerConfig.clientId()!);
+  params.set("client_id", clientId);
   if (brokerConfig.clientSecret()) {
     params.set("client_secret", brokerConfig.clientSecret());
   }
@@ -657,7 +685,7 @@ const handleExchangeTokens = async (req: Request, supabase: SupabaseClient): Pro
     : undefined;
   const accessTokenExpiresAt = toIsoTimestamp(Number.isFinite(expiresInRaw ?? Number.NaN) ? expiresInRaw : undefined);
 
-  const metadata = { ...connection.metadata };
+  const metadata = { ...(connection.metadata ?? {}) };
   delete metadata.oauth_state;
   delete metadata.oauth_redirect_uri;
 
@@ -673,6 +701,49 @@ const handleExchangeTokens = async (req: Request, supabase: SupabaseClient): Pro
     status: "active",
     accessTokenExpiresAt,
   }), {
+    status: 200,
+    headers: { "Content-Type": "application/json", ...corsHeaders },
+  });
+};
+
+const handleSubmitToken = async (req: Request, supabase: SupabaseClient): Promise<Response> => {
+  verifyServiceRoleCaller(req);
+  const corsHeaders = getCorsHeaders(req.headers.get("Origin"));
+  const body = await readJson<{ connectionId?: string; apiToken?: string }>(req);
+
+  const connectionId = body.connectionId?.trim();
+  if (!connectionId) {
+    throw new HttpError("connectionId is required", 400);
+  }
+
+  const apiToken = body.apiToken?.trim();
+  if (!apiToken) {
+    throw new HttpError("apiToken is required", 400);
+  }
+
+  const connection = await fetchConnection(supabase, connectionId);
+  if (connection.provider !== "trading212") {
+    throw new HttpError("Token submissions are only supported for Trading212 connections", 400);
+  }
+
+  const encodedToken = encodeToken(btoa(apiToken));
+  if (!encodedToken) {
+    throw new HttpError("apiToken is invalid", 400);
+  }
+
+  const metadata = { ...(connection.metadata ?? {}) };
+  delete metadata.oauth_state;
+  delete metadata.oauth_redirect_uri;
+
+  await updateConnection(supabase, connectionId, {
+    status: "active",
+    access_token_encrypted: encodedToken,
+    refresh_token_encrypted: null,
+    access_token_expires_at: null,
+    metadata,
+  });
+
+  return new Response(JSON.stringify({ status: "active" }), {
     status: 200,
     headers: { "Content-Type": "application/json", ...corsHeaders },
   });
@@ -762,6 +833,10 @@ const router = async (req: Request): Promise<Response> => {
 
     if (req.method === "POST" && path === "/oauth/token") {
       return await handleExchangeTokens(req, supabase);
+    }
+
+    if (req.method === "POST" && path === "/token/submit") {
+      return await handleSubmitToken(req, supabase);
     }
 
     if (req.method === "POST" && path === "/sync") {
