@@ -675,7 +675,7 @@ export const mapTrading212Position = (
 
 const fetchTrading212Accounts = async (accessToken: string): Promise<BrokerAccountResponse[]> => {
   const apiBaseUrl = brokerConfig.apiBaseUrl();
-  const url = new URL("/api/v0/accounts", apiBaseUrl);
+  const url = new URL("/api/v0/equity/accounts", apiBaseUrl);
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: {
@@ -694,7 +694,14 @@ const fetchTrading212Accounts = async (accessToken: string): Promise<BrokerAccou
   }
 
   const payload = await response.json();
-  const accountsRaw = Array.isArray(payload) ? payload : payload?.accounts ?? payload?.data;
+  const accountsRaw = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.payload)
+    ? payload.payload
+    : payload?.payload?.accounts
+    ?? payload?.payload?.data
+    ?? payload?.accounts
+    ?? payload?.data;
 
   if (!Array.isArray(accountsRaw)) {
     console.error("Trading212 accounts response is invalid", payload);
