@@ -696,14 +696,21 @@ export const mapTrading212Position = (
   };
 };
 
-const fetchTrading212Accounts = async (accessToken: string): Promise<BrokerAccountResponse[]> => {
+export const getBrokerAuthorizationHeader = (provider: string, accessToken: string): string => {
+  return provider === "trading212" ? accessToken : `Bearer ${accessToken}`;
+};
+
+const fetchTrading212Accounts = async (
+  accessToken: string,
+  provider: string,
+): Promise<BrokerAccountResponse[]> => {
   const apiBaseUrl = brokerConfig.apiBaseUrl();
   const url = new URL("/api/v0/equity/account/info", apiBaseUrl);
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: {
       Accept: "application/json",
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: getBrokerAuthorizationHeader(provider, accessToken),
     },
   });
 
@@ -755,6 +762,7 @@ const fetchTrading212Accounts = async (accessToken: string): Promise<BrokerAccou
 const fetchTrading212Positions = async (
   accessToken: string,
   accountId: string,
+  provider: string,
 ): Promise<BrokerPositionResponse[]> => {
   const apiBaseUrl = brokerConfig.apiBaseUrl();
   const url = new URL("/api/v0/equity/portfolio", apiBaseUrl);
@@ -762,7 +770,7 @@ const fetchTrading212Positions = async (
     method: "GET",
     headers: {
       Accept: "application/json",
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: getBrokerAuthorizationHeader(provider, accessToken),
     },
   });
 
@@ -795,7 +803,7 @@ const fetchBrokerAccounts = async (
   provider: string,
 ): Promise<BrokerAccountResponse[]> => {
   if (provider === "trading212") {
-    return await fetchTrading212Accounts(accessToken);
+    return await fetchTrading212Accounts(accessToken, provider);
   }
 
   const apiBaseUrl = brokerConfig.apiBaseUrl();
@@ -834,7 +842,7 @@ const fetchBrokerPositions = async (
   provider: string,
 ): Promise<BrokerPositionResponse[]> => {
   if (provider === "trading212") {
-    return await fetchTrading212Positions(accessToken, accountId);
+    return await fetchTrading212Positions(accessToken, accountId, provider);
   }
 
   const apiBaseUrl = brokerConfig.apiBaseUrl();
