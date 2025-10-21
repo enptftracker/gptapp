@@ -2,6 +2,7 @@ import {
   decodeToken,
   encodeToken,
   extractTrading212UsdAmount,
+  getBrokerAuthorizationHeader,
   mapTrading212Account,
   mapTrading212Position,
 } from "./index.ts";
@@ -128,4 +129,14 @@ Deno.test("encode/decode preserves Trading212 submission tokens", () => {
 
   const decoded = decodeToken(storedValue);
   assertStrictEquals(decoded, sampleToken);
+});
+
+Deno.test("getBrokerAuthorizationHeader uses raw token for Trading212", () => {
+  const header = getBrokerAuthorizationHeader("trading212", "token-123");
+  assertStrictEquals(header, "token-123");
+});
+
+Deno.test("getBrokerAuthorizationHeader prefixes Bearer for OAuth brokers", () => {
+  const header = getBrokerAuthorizationHeader("other-broker", "token-abc");
+  assertStrictEquals(header, "Bearer token-abc");
 });
