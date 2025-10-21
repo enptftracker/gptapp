@@ -173,7 +173,7 @@ const toIsoTimestamp = (expiresInSeconds?: number): string | null => {
   return expiryDate.toISOString();
 };
 
-const encodeToken = (token: string | undefined | null): Uint8Array | null => {
+export const encodeToken = (token: string | undefined | null): Uint8Array | null => {
   if (!token) {
     return null;
   }
@@ -181,7 +181,7 @@ const encodeToken = (token: string | undefined | null): Uint8Array | null => {
   return textEncoder.encode(token);
 };
 
-const decodeToken = (value: string | Uint8Array | null | undefined): string | null => {
+export const decodeToken = (value: string | Uint8Array | null | undefined): string | null => {
   if (!value) {
     return null;
   }
@@ -1005,7 +1005,7 @@ const handleSubmitToken = async (req: Request, supabase: SupabaseClient): Promis
     throw new HttpError("Token submissions are only supported for Trading212 connections", 400);
   }
 
-  const encodedToken = encodeToken(btoa(apiToken));
+  const encodedToken = encodeToken(apiToken);
   if (!encodedToken) {
     throw new HttpError("apiToken is invalid", 400);
   }

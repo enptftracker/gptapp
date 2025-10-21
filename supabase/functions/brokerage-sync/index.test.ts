@@ -1,4 +1,6 @@
 import {
+  decodeToken,
+  encodeToken,
   extractTrading212UsdAmount,
   mapTrading212Account,
   mapTrading212Position,
@@ -114,4 +116,16 @@ Deno.test("mapTrading212Position uses converted USD values when available", () =
   assertStrictEquals(mapped.currency, "GBP");
   assertStrictEquals(mapped.accountId, "INVEST456");
   assertNotEquals(mapped.cost_basis, position.averagePrice?.value);
+});
+
+Deno.test("encode/decode preserves Trading212 submission tokens", () => {
+  const sampleToken = "trading212_token_with_specials+/=";
+
+  const storedValue = encodeToken(sampleToken);
+  if (!storedValue) {
+    throw new Error("Expected encoded token");
+  }
+
+  const decoded = decodeToken(storedValue);
+  assertStrictEquals(decoded, sampleToken);
 });
