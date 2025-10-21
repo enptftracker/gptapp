@@ -535,9 +535,13 @@ type Trading212MoneyLike = {
 
 type Trading212Account = {
   accountId?: string;
+  accountID?: string;
   accountType?: string | null;
   accountAlias?: string | null;
+  alias?: string | null;
   baseCurrency?: string | null;
+  currencyCode?: string | null;
+  currency?: string | null;
   cash?: JsonRecord;
   [key: string]: unknown;
 };
@@ -602,20 +606,39 @@ export const extractTrading212UsdAmount = (money?: Trading212MoneyLike | null): 
 };
 
 export const mapTrading212Account = (account: Trading212Account): BrokerAccountResponse | null => {
-  const id = typeof account.accountId === "string" ? account.accountId : undefined;
+  const rawId =
+    typeof account.accountId === "string"
+      ? account.accountId
+      : typeof account.accountID === "string"
+      ? account.accountID
+      : undefined;
+  const id = rawId?.trim();
   if (!id) {
     console.warn("Skipping Trading212 account without accountId", account);
     return null;
   }
 
-  const name = typeof account.accountAlias === "string" && account.accountAlias.trim()
-    ? account.accountAlias.trim()
-    : typeof account.accountType === "string"
+  const alias =
+    typeof account.accountAlias === "string" && account.accountAlias.trim()
+      ? account.accountAlias.trim()
+      : typeof account.alias === "string" && account.alias.trim()
+      ? account.alias.trim()
+      : null;
+
+  const name = alias
+    ? alias
+    : typeof account.accountType === "string" && account.accountType
     ? account.accountType
     : id;
 
   const type = typeof account.accountType === "string" ? account.accountType : null;
-  const currency = typeof account.baseCurrency === "string" ? account.baseCurrency : null;
+  const currency = typeof account.baseCurrency === "string"
+    ? account.baseCurrency
+    : typeof account.currencyCode === "string"
+    ? account.currencyCode
+    : typeof account.currency === "string"
+    ? account.currency
+    : null;
 
   return {
     id,
@@ -624,7 +647,7 @@ export const mapTrading212Account = (account: Trading212Account): BrokerAccountR
     currency,
     provider: "trading212",
     baseCurrency: currency,
-    accountAlias: typeof account.accountAlias === "string" ? account.accountAlias : null,
+    accountAlias: alias,
     instrumentType: type,
     cash: account.cash ?? null,
   };
@@ -675,7 +698,7 @@ export const mapTrading212Position = (
 
 const fetchTrading212Accounts = async (accessToken: string): Promise<BrokerAccountResponse[]> => {
   const apiBaseUrl = brokerConfig.apiBaseUrl();
-  const url = new URL("/api/v0/equity/accounts", apiBaseUrl);
+  const url = new URL("/api/v0/equity/account/info", apiBaseUrl);
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: {
@@ -694,16 +717,30 @@ const fetchTrading212Accounts = async (accessToken: string): Promise<BrokerAccou
   }
 
   const payload = await response.json();
-  const accountsRaw = Array.isArray(payload)
-    ? payload
-    : Array.isArray(payload?.payload)
-    ? payload.payload
-    : payload?.payload?.accounts
-    ?? payload?.payload?.data
-    ?? payload?.accounts
-    ?? payload?.data;
 
-  if (!Array.isArray(accountsRaw)) {
+  const extractAccountsArray = (value: unknown): unknown[] | null => {
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (value && typeof value === "object") {
+      const candidate = value as Record<string, unknown>;
+      if ("accountId" in candidate || "accountID" in candidate) {
+        return [candidate];
+      }
+    }
+
+    return null;
+  };
+
+  const accountsRaw = extractAccountsArray(payload)
+    ?? extractAccountsArray((payload as { payload?: unknown })?.payload)
+    ?? extractAccountsArray((payload as { payload?: { data?: unknown } })?.payload?.data)
+    ?? extractAccountsArray((payload as { payload?: { accounts?: unknown } })?.payload?.accounts)
+    ?? extractAccountsArray((payload as { accounts?: unknown })?.accounts)
+    ?? extractAccountsArray((payload as { data?: unknown })?.data);
+
+  if (!accountsRaw) {
     console.error("Trading212 accounts response is invalid", payload);
     throw new HttpError("Trading212 accounts response is invalid", 502, payload);
   }
