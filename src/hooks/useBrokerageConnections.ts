@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { resolveSupabaseFunctionUrl } from '@/integrations/supabase/env';
+import { resolveSupabaseFunctionUrl, SUPABASE_ANON_KEY } from '@/integrations/supabase/env';
 import { useToast } from '@/hooks/use-toast';
 import { brokerageConnectionService, type CreateBrokerageConnectionInput } from '@/lib/supabase';
 
@@ -76,7 +76,8 @@ async function invokeBrokerageFunction<T>(path: string, body: Record<string, unk
       'Content-Type': 'application/json',
       // Authenticated Supabase session tokens are forwarded so the edge function can
       // validate the caller without exposing the service role secret in the browser.
-      Authorization: `Bearer ${accessToken}`
+      Authorization: `Bearer ${accessToken}`,
+      apikey: SUPABASE_ANON_KEY
     },
     body: JSON.stringify(body)
   });
