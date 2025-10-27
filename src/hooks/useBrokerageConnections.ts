@@ -77,7 +77,7 @@ async function invokeBrokerageFunction<T>(path: string, body: Record<string, unk
       // Supabase edge functions require the anon key for invocation. The authenticated
       // session token is forwarded via a dedicated header so the function can validate
       // the caller without exposing the service role secret in the browser.
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${accessToken}`,
       apikey: SUPABASE_ANON_KEY,
       'sb-access-token': accessToken,
       'x-supabase-auth': accessToken

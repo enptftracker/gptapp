@@ -123,6 +123,12 @@ const extractBearerToken = (headerValue: string | null): string | undefined => {
 };
 
 const getRequestAccessToken = (req: Request): string | undefined => {
+  const authorizationHeader = req.headers.get("Authorization");
+  const bearerToken = extractBearerToken(authorizationHeader);
+  if (bearerToken) {
+    return bearerToken;
+  }
+
   const fallbackHeaders = [
     req.headers.get("sb-access-token"),
     req.headers.get("x-supabase-auth"),
@@ -130,13 +136,18 @@ const getRequestAccessToken = (req: Request): string | undefined => {
   ];
 
   for (const header of fallbackHeaders) {
+    const fallbackBearer = extractBearerToken(header);
+    if (fallbackBearer) {
+      return fallbackBearer;
+    }
+
     const normalized = header?.trim();
     if (normalized) {
       return normalized;
     }
   }
 
-  return extractBearerToken(req.headers.get("Authorization"));
+  return undefined;
 };
 
 const requireAuthenticatedUser = async (
