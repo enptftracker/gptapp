@@ -3,12 +3,15 @@ import {
   encodeToken,
   extractTrading212UsdAmount,
   getBrokerAuthorizationHeader,
+  ensureConnectionOwnership,
+  HttpError,
   mapTrading212Account,
   mapTrading212Position,
 } from "./index.ts";
 import {
   assertStrictEquals,
   assertNotEquals,
+  assertThrows,
 } from "https://deno.land/std@0.190.0/testing/asserts.ts";
 
 Deno.test("mapTrading212Account normalizes base fields and metadata", () => {
@@ -139,4 +142,42 @@ Deno.test("getBrokerAuthorizationHeader uses raw token for Trading212", () => {
 Deno.test("getBrokerAuthorizationHeader prefixes Bearer for OAuth brokers", () => {
   const header = getBrokerAuthorizationHeader("other-broker", "token-abc");
   assertStrictEquals(header, "Bearer token-abc");
+});
+
+Deno.test("ensureConnectionOwnership allows matching users", () => {
+  const connection = {
+    id: "connection-1",
+    user_id: "user-123",
+    provider: "trading212",
+    status: "active",
+    access_token_encrypted: null,
+    refresh_token_encrypted: null,
+    access_token_expires_at: null,
+    metadata: {},
+    last_synced_at: null,
+  };
+
+  ensureConnectionOwnership(connection, "user-123");
+});
+
+Deno.test("ensureConnectionOwnership throws 403 for mismatched users", () => {
+  const connection = {
+    id: "connection-1",
+    user_id: "user-abc",
+    provider: "trading212",
+    status: "active",
+    access_token_encrypted: null,
+    refresh_token_encrypted: null,
+    access_token_expires_at: null,
+    metadata: {},
+    last_synced_at: null,
+  };
+
+  const error = assertThrows(
+    () => ensureConnectionOwnership(connection, "user-123"),
+    HttpError,
+    "You do not have access to this connection",
+  );
+
+  assertStrictEquals(error.status, 403);
 });
