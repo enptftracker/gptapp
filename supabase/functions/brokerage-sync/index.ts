@@ -143,7 +143,14 @@ const getRequestAccessToken = (req: Request): string | undefined => {
 
     const normalized = header?.trim();
     if (normalized) {
-      return normalized;
+      if (normalized.toLowerCase().startsWith("bearer ")) {
+        const token = normalized.slice("Bearer ".length).trim();
+        if (token) {
+          return token;
+        }
+      } else {
+        return normalized;
+      }
     }
   }
 
