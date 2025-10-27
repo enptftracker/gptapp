@@ -79,6 +79,7 @@ async function invokeBrokerageFunction<T>(path: string, body: Record<string, unk
       // the caller without exposing the service role secret in the browser.
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       apikey: SUPABASE_ANON_KEY,
+      'sb-access-token': accessToken,
       'x-supabase-auth': accessToken
     },
     body: JSON.stringify(body)

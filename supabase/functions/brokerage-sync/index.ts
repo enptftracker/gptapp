@@ -124,9 +124,9 @@ const extractBearerToken = (headerValue: string | null): string | undefined => {
 
 const getRequestAccessToken = (req: Request): string | undefined => {
   const fallbackHeaders = [
+    req.headers.get("sb-access-token"),
     req.headers.get("x-supabase-auth"),
     req.headers.get("x-supabase-authorization"),
-    req.headers.get("sb-access-token"),
   ];
 
   for (const header of fallbackHeaders) {
