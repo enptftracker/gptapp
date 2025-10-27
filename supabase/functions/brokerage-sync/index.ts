@@ -50,7 +50,7 @@ type BrokerageAccountRow = {
   metadata: JsonRecord;
 };
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -295,6 +295,15 @@ const fetchConnection = async (supabase: SupabaseClient, connectionId: string): 
   }
 
   return data as BrokerageConnectionRow;
+};
+
+export const ensureConnectionOwnership = (
+  connection: BrokerageConnectionRow,
+  userId: string,
+): void => {
+  if (connection.user_id !== userId) {
+    throw new HttpError("You do not have access to this connection", 403);
+  }
 };
 
 const updateConnection = async (
@@ -1100,9 +1109,7 @@ const handleSubmitToken = async (req: Request, supabase: SupabaseClient): Promis
   }
 
   const connection = await fetchConnection(supabase, connectionId);
-  if (connection.user_id !== user.id) {
-    throw new HttpError("You do not have access to this connection", 403);
-  }
+  ensureConnectionOwnership(connection, user.id);
   if (connection.provider !== "trading212") {
     throw new HttpError("Token submissions are only supported for Trading212 connections", 400);
   }
@@ -1131,6 +1138,7 @@ const handleSubmitToken = async (req: Request, supabase: SupabaseClient): Promis
 };
 
 const handleSync = async (req: Request, supabase: SupabaseClient): Promise<Response> => {
+  const user = await requireAuthenticatedUser(req, supabase);
   const corsHeaders = getCorsHeaders(req.headers.get("Origin"));
   const body = await readJson<{ connectionId?: string }>(req);
 
@@ -1140,6 +1148,7 @@ const handleSync = async (req: Request, supabase: SupabaseClient): Promise<Respo
   }
 
   const connection = await fetchConnection(supabase, connectionId);
+  ensureConnectionOwnership(connection, user.id);
   const accessToken = decodeToken(connection.access_token_encrypted);
   if (!accessToken) {
     throw new HttpError("Connection does not have an access token", 400);
