@@ -29,7 +29,7 @@ export function getCorsHeaders(origin: string | null) {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type, prefer",
+      "authorization, sb-access-token, x-supabase-auth, x-client-info, apikey, content-type, prefer",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   } as const;

@@ -104,14 +104,46 @@ const getSupabaseClient = (): SupabaseClient => {
   }
 };
 
+const extractBearerToken = (headerValue: string | null): string | undefined => {
+  if (!headerValue) {
+    return undefined;
+  }
+
+  const trimmed = headerValue.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (!trimmed.toLowerCase().startsWith("bearer ")) {
+    return undefined;
+  }
+
+  const token = trimmed.slice("Bearer ".length).trim();
+  return token || undefined;
+};
+
+const getRequestAccessToken = (req: Request): string | undefined => {
+  const fallbackHeaders = [
+    req.headers.get("sb-access-token"),
+    req.headers.get("x-supabase-auth"),
+    req.headers.get("x-supabase-authorization"),
+  ];
+
+  for (const header of fallbackHeaders) {
+    const normalized = header?.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return extractBearerToken(req.headers.get("Authorization"));
+};
+
 const requireAuthenticatedUser = async (
   req: Request,
   supabase: SupabaseClient,
 ): Promise<User> => {
-  const header = req.headers.get("Authorization") ?? "";
-  const token = header.startsWith("Bearer ")
-    ? header.slice("Bearer ".length).trim()
-    : undefined;
+  const token = getRequestAccessToken(req);
 
   if (!token) {
     throw new HttpError("Unauthorized", 401);
