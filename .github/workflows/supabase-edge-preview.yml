@@ -1,0 +1,52 @@
+# This workflow deploys Supabase Edge Functions for pull requests.
+# It requires the SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF secrets to be
+# configured in the repository for the Supabase CLI commands to succeed.
+name: Supabase Edge Preview
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-edge-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-preview:
+    name: Deploy Supabase Edge Functions
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+
+      - name: Deploy Edge Functions
+        run: |
+          if [ -z "${SUPABASE_ACCESS_TOKEN}" ] || [ -z "${SUPABASE_PROJECT_REF}" ]; then
+            echo "Both SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF secrets must be configured for this workflow to run."
+            exit 1
+          fi
+
+          set -euo pipefail
+
+          mapfile -t functions < <(find supabase/functions -mindepth 1 -maxdepth 1 -type d ! -name '_shared')
+
+          if [ ${#functions[@]} -eq 0 ]; then
+            echo "No functions found to deploy."
+            exit 0
+          fi
+
+          for fn in "${functions[@]}"; do
+            name="$(basename "${fn}")"
+            echo "Deploying Supabase Edge Function: ${name}"
+            supabase functions deploy "${name}" --project-ref "${SUPABASE_PROJECT_REF}"
+          done
+
+      - name: Push database schema (optional)
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' }}
+        run: supabase db push --project-ref "${SUPABASE_PROJECT_REF}"
