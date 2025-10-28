@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { formatCurrency, formatPercent } from '@/lib/calculations';
 import { Holding } from '@/lib/types';
 import { InstrumentIcon } from '@/components/shared/InstrumentIcon';
+import { useCurrencyFormatter } from '@/hooks/useCurrencyFormatter';
 
 export type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
 
@@ -18,6 +19,7 @@ export interface HoldingsTableProps {
 
 export default function HoldingsTable({ holdings, className, lotMethod }: HoldingsTableProps) {
   const [expandedHoldings, setExpandedHoldings] = useState<Record<string, boolean>>({});
+  const { baseCurrency } = useCurrencyFormatter();
 
   if (holdings.length === 0) {
     return (
@@ -32,7 +34,6 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
   return (
     <div className={cn('space-y-4', className)}>
       {holdings.map((holding) => {
-        const isProfit = holding.unrealizedPL >= 0;
         const ticker = holding.symbol.ticker || '—';
         const name = holding.symbol.name || '—';
         const metadataParts = [holding.symbol.assetType, holding.symbol.exchange]
@@ -47,6 +48,10 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
             ...prev,
             [holdingKey]: !isExpanded,
           }));
+
+        const totalIsProfit = holding.unrealizedPL >= 0;
+        const priceIsProfit = holding.priceUnrealizedPL >= 0;
+        const fxIsProfit = holding.fxUnrealizedPL >= 0;
 
         return (
           <Card
@@ -84,22 +89,22 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 sm:items-end sm:text-right">
-                    <div className="flex flex-col items-start gap-1 text-left sm:items-end sm:text-right">
-                      <span className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">
-                        Market Value
-                      </span>
-                      <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
-                        {formatCurrency(holding.marketValueBase)}
-                      </span>
-                      <span
-                        className={cn(
-                          'text-xs font-medium sm:text-sm',
-                          isProfit ? 'text-profit' : 'text-loss'
-                        )}
-                      >
-                        {formatPercent(holding.unrealizedPLPercent)}
-                      </span>
+                    <div className="flex items-center gap-3 sm:items-end sm:text-right">
+                      <div className="flex flex-col items-start gap-1 text-left sm:items-end sm:text-right">
+                        <span className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">
+                          Market Value
+                        </span>
+                        <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
+                        {formatCurrency(holding.marketValueBase, holding.baseCurrency || baseCurrency)}
+                        </span>
+                        <span
+                          className={cn(
+                            'text-xs font-medium sm:text-sm',
+                          totalIsProfit ? 'text-profit' : 'text-loss'
+                          )}
+                        >
+                          {formatPercent(holding.unrealizedPLPercent)}
+                        </span>
                     </div>
                     <ChevronDown
                       aria-hidden="true"
@@ -124,19 +129,19 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
                     <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{buyPriceLabel}</span>
                     <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
-                      {formatCurrency(holding.avgCostBase)}
+                      {formatCurrency(holding.avgCostBase, holding.baseCurrency || baseCurrency)}
                     </span>
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
                     <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current Price</span>
                     <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
-                      {formatCurrency(holding.currentPrice)}
+                      {formatCurrency(holding.currentPrice, holding.tradeCurrency || holding.symbol.quoteCurrency || 'USD')}
                     </span>
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
                     <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Market Value</span>
                     <span className="font-mono text-sm font-semibold text-foreground sm:text-base">
-                      {formatCurrency(holding.marketValueBase)}
+                      {formatCurrency(holding.marketValueBase, holding.baseCurrency || baseCurrency)}
                     </span>
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
@@ -145,18 +150,60 @@ export default function HoldingsTable({ holdings, className, lotMethod }: Holdin
                       <span
                         className={cn(
                           'inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold sm:text-sm',
-                          isProfit ? 'bg-profit/15 text-profit' : 'bg-loss/15 text-loss'
+                          totalIsProfit ? 'bg-profit/15 text-profit' : 'bg-loss/15 text-loss'
                         )}
                       >
-                        {formatCurrency(holding.unrealizedPL)}
+                        {formatCurrency(holding.unrealizedPL, holding.baseCurrency || baseCurrency)}
                       </span>
                       <span
                         className={cn(
                           'font-mono text-xs font-medium sm:text-sm',
-                          isProfit ? 'text-profit' : 'text-loss'
+                          totalIsProfit ? 'text-profit' : 'text-loss'
                         )}
                       >
                         {formatPercent(holding.unrealizedPLPercent)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Price Impact</span>
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold sm:text-sm',
+                          priceIsProfit ? 'bg-profit/15 text-profit' : 'bg-loss/15 text-loss'
+                        )}
+                      >
+                        {formatCurrency(holding.priceUnrealizedPL, holding.baseCurrency || baseCurrency)}
+                      </span>
+                      <span
+                        className={cn(
+                          'font-mono text-xs font-medium sm:text-sm',
+                          priceIsProfit ? 'text-profit' : 'text-loss'
+                        )}
+                      >
+                        {formatPercent(holding.priceUnrealizedPLPercent)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4 sm:px-5 sm:py-4">
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">FX Impact</span>
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold sm:text-sm',
+                          fxIsProfit ? 'bg-profit/15 text-profit' : 'bg-loss/15 text-loss'
+                        )}
+                      >
+                        {formatCurrency(holding.fxUnrealizedPL, holding.baseCurrency || baseCurrency)}
+                      </span>
+                      <span
+                        className={cn(
+                          'font-mono text-xs font-medium sm:text-sm',
+                          fxIsProfit ? 'text-profit' : 'text-loss'
+                        )}
+                      >
+                        {formatPercent(holding.fxUnrealizedPLPercent)}
                       </span>
                     </div>
                   </div>

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTransactions } from './useTransactions';
 import { usePortfolios } from './usePortfolios';
-import { symbolService, profileService } from '@/lib/supabase';
+import { symbolService, profileService, fxRateService } from '@/lib/supabase';
 import { PortfolioCalculations, QuoteSnapshot } from '@/lib/calculations';
 import { MarketDataService } from '@/lib/marketData';
 
@@ -47,7 +47,7 @@ export function usePortfolioHoldings(portfolioId: string) {
       const symbolIds = [...new Set(transactions
         .filter(t => t.symbol_id)
         .map(t => t.symbol_id!))];
-      
+
       if (symbolIds.length === 0) return [];
 
       // Fetch symbols, prices, and user profile
@@ -56,9 +56,20 @@ export function usePortfolioHoldings(portfolioId: string) {
         profileService.get()
       ]);
 
-      const prices = await fetchLiveQuotes(
-        symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
-      );
+      const baseCurrency = profile?.base_currency ?? 'USD';
+      const portfolioTransactions = transactions.filter(t => t.portfolio_id === portfolioId && t.symbol_id);
+      const tradeCurrencies = Array.from(new Set(
+        portfolioTransactions
+          .map(t => t.trade_currency)
+          .filter((currency): currency is string => Boolean(currency) && currency.toUpperCase() !== baseCurrency.toUpperCase())
+      ));
+
+      const [prices, fxRates] = await Promise.all([
+        fetchLiveQuotes(
+          symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
+        ),
+        fxRateService.getRelevantRates(baseCurrency, tradeCurrencies)
+      ]);
 
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
@@ -67,7 +78,9 @@ export function usePortfolioHoldings(portfolioId: string) {
         transactions,
         symbols,
         prices,
-        lotMethod
+        lotMethod,
+        baseCurrency,
+        fxRates
       );
     },
     enabled: !!portfolioId,
@@ -102,9 +115,20 @@ export function usePortfolioMetrics(portfolioId: string) {
         profileService.get()
       ]);
 
-      const prices = await fetchLiveQuotes(
-        symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
-      );
+      const baseCurrency = profile?.base_currency ?? 'USD';
+      const portfolioTransactions = transactions.filter(t => t.portfolio_id === portfolioId && t.symbol_id);
+      const tradeCurrencies = Array.from(new Set(
+        portfolioTransactions
+          .map(t => t.trade_currency)
+          .filter((currency): currency is string => Boolean(currency) && currency.toUpperCase() !== baseCurrency.toUpperCase())
+      ));
+
+      const [prices, fxRates] = await Promise.all([
+        fetchLiveQuotes(
+          symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
+        ),
+        fxRateService.getRelevantRates(baseCurrency, tradeCurrencies)
+      ]);
 
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
@@ -113,7 +137,9 @@ export function usePortfolioMetrics(portfolioId: string) {
         transactions,
         symbols,
         prices,
-        lotMethod
+        lotMethod,
+        baseCurrency,
+        fxRates
       );
     },
     enabled: !!portfolioId,
@@ -140,9 +166,20 @@ export function useConsolidatedHoldings() {
         profileService.get()
       ]);
 
-      const prices = await fetchLiveQuotes(
-        symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
-      );
+      const baseCurrency = profile?.base_currency ?? 'USD';
+      const tradeCurrencies = Array.from(new Set(
+        transactions
+          .filter(t => t.symbol_id)
+          .map(t => t.trade_currency)
+          .filter((currency): currency is string => Boolean(currency) && currency.toUpperCase() !== baseCurrency.toUpperCase())
+      ));
+
+      const [prices, fxRates] = await Promise.all([
+        fetchLiveQuotes(
+          symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
+        ),
+        fxRateService.getRelevantRates(baseCurrency, tradeCurrencies)
+      ]);
 
       const lotMethod = profile?.default_lot_method || 'FIFO';
 
@@ -151,7 +188,9 @@ export function useConsolidatedHoldings() {
         transactions,
         symbols,
         prices,
-        lotMethod
+        lotMethod,
+        baseCurrency,
+        fxRates
       );
     },
     enabled: !portfoliosLoading && !transactionsLoading,

@@ -18,7 +18,7 @@ import { AssetTypeBreakdown } from '@/components/analytics/AssetTypeBreakdown';
 import PortfolioChart from '@/components/portfolio/PortfolioChart';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
-import type { ConsolidatedHolding } from '@/lib/types';
+import type { ConsolidatedHolding, Holding } from '@/lib/types';
 import { useProfile } from '@/hooks/useProfile';
 import { useAllPortfoliosHistory } from '@/hooks/usePortfolioHistory';
 
@@ -110,6 +110,38 @@ export default function Dashboard() {
       return { height: 30 + (normalized * 70) };
     });
   }, [portfolioHistory]);
+
+  const consolidatedHoldingsAsHoldings = useMemo(
+    () => consolidatedHoldings.map((holding): Holding => {
+      const fxRate = holding.currentFxRate && holding.currentFxRate > 0 ? holding.currentFxRate : 1;
+      const marketValueTrade = holding.totalMarketValueTrade && holding.totalMarketValueTrade > 0
+        ? holding.totalMarketValueTrade
+        : holding.totalMarketValue / fxRate;
+
+      return {
+        portfolioId: '',
+        symbolId: holding.symbolId,
+        symbol: holding.symbol,
+        quantity: holding.totalQuantity,
+        tradeCurrency: holding.tradeCurrency || holding.symbol.quoteCurrency,
+        baseCurrency: holding.baseCurrency || (profile?.base_currency ?? 'USD'),
+        avgCostTrade: holding.blendedAvgCostTrade ?? holding.blendedAvgCost,
+        avgCostBase: holding.blendedAvgCost,
+        marketValueTrade,
+        marketValueBase: holding.totalMarketValue,
+        unrealizedPL: holding.totalUnrealizedPL,
+        unrealizedPLPercent: holding.totalUnrealizedPLPercent,
+        priceUnrealizedPL: holding.priceUnrealizedPL ?? holding.totalUnrealizedPL,
+        priceUnrealizedPLPercent: holding.priceUnrealizedPLPercent ?? holding.totalUnrealizedPLPercent,
+        fxUnrealizedPL: holding.fxUnrealizedPL ?? 0,
+        fxUnrealizedPLPercent: holding.fxUnrealizedPLPercent ?? 0,
+        allocationPercent: holding.allocationPercent,
+        currentPrice: holding.currentPrice,
+        currentFxRate: fxRate,
+      };
+    }),
+    [consolidatedHoldings, profile?.base_currency]
+  );
 
   if (isLoading) {
     return (
@@ -262,51 +294,18 @@ export default function Dashboard() {
                   className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
                 />
                 <PerformanceBreakdown
-                  holdings={consolidatedHoldings.map(h => ({
-                    portfolioId: '',
-                    symbolId: h.symbolId,
-                    symbol: h.symbol,
-                    quantity: h.totalQuantity,
-                    avgCostBase: h.blendedAvgCost,
-                    marketValueBase: h.totalMarketValue,
-                    unrealizedPL: h.totalUnrealizedPL,
-                    unrealizedPLPercent: h.totalUnrealizedPLPercent,
-                    allocationPercent: h.allocationPercent,
-                    currentPrice: h.currentPrice
-                  }))}
+                  holdings={consolidatedHoldingsAsHoldings}
                   variant="embedded"
                   className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
                 />
                 <PortfolioChart
-                  holdings={consolidatedHoldings.map(h => ({
-                    portfolioId: '',
-                    symbolId: h.symbolId,
-                    symbol: h.symbol,
-                    quantity: h.totalQuantity,
-                    avgCostBase: h.blendedAvgCost,
-                    marketValueBase: h.totalMarketValue,
-                    unrealizedPL: h.totalUnrealizedPL,
-                    unrealizedPLPercent: h.totalUnrealizedPLPercent,
-                    allocationPercent: h.allocationPercent,
-                    currentPrice: h.currentPrice
-                  }))}
+                  holdings={consolidatedHoldingsAsHoldings}
                   title={t('dashboard.portfolioAllocation')}
                   variant="embedded"
                   className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
                 />
                 <AssetTypeBreakdown
-                  holdings={consolidatedHoldings.map(h => ({
-                    portfolioId: '',
-                    symbolId: h.symbolId,
-                    symbol: h.symbol,
-                    quantity: h.totalQuantity,
-                    avgCostBase: h.blendedAvgCost,
-                    marketValueBase: h.totalMarketValue,
-                    unrealizedPL: h.totalUnrealizedPL,
-                    unrealizedPLPercent: h.totalUnrealizedPLPercent,
-                    allocationPercent: h.allocationPercent,
-                    currentPrice: h.currentPrice
-                  }))}
+                  holdings={consolidatedHoldingsAsHoldings}
                   variant="embedded"
                   className="embedded-analytics-panel rounded-xl p-3 sm:p-4 xl:p-5"
                 />
@@ -323,18 +322,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <HoldingsTableContainer
-                holdings={consolidatedHoldings.map(h => ({
-                  portfolioId: '',
-                  symbolId: h.symbolId,
-                  symbol: h.symbol,
-                  quantity: h.totalQuantity,
-                  avgCostBase: h.blendedAvgCost,
-                  marketValueBase: h.totalMarketValue,
-                  unrealizedPL: h.totalUnrealizedPL,
-                  unrealizedPLPercent: h.totalUnrealizedPLPercent,
-                  allocationPercent: h.allocationPercent,
-                  currentPrice: h.currentPrice
-                }))}
+                holdings={consolidatedHoldingsAsHoldings}
                 lotMethod={profile?.default_lot_method}
               />
             </CardContent>
