@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { ReactNode, useMemo, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { useDeleteTransaction } from '@/hooks/useTransactions';
 import TransactionForm from './TransactionForm';
 import TransactionImportDialog from './TransactionImportDialog';
 import { InstrumentIcon } from '@/components/shared/InstrumentIcon';
+import { transactionTypeStyles } from './transactionStyles';
 
 export interface TransactionHistoryProps {
   transactions: Transaction[];
@@ -19,55 +20,8 @@ export interface TransactionHistoryProps {
   className?: string;
   portfolios?: Array<{ id: string; name: string }>;
   defaultPortfolioId?: string;
+  filters?: ReactNode;
 }
-
-const transactionTypeStyles: Record<
-  Transaction['type'] | 'DEFAULT',
-  { badge: string; row: string; stickyCell: string; hover: string }
-> = {
-  BUY: {
-    badge: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200',
-    row: 'bg-emerald-50/80 dark:bg-emerald-950/40',
-    stickyCell: 'bg-emerald-50/80 dark:bg-emerald-950/40',
-    hover: 'hover:bg-emerald-100/80 dark:hover:bg-emerald-900/50'
-  },
-  DIVIDEND: {
-    badge: 'bg-lime-100 text-lime-900 dark:bg-lime-900/60 dark:text-lime-200',
-    row: 'bg-lime-50/80 dark:bg-lime-950/40',
-    stickyCell: 'bg-lime-50/80 dark:bg-lime-950/40',
-    hover: 'hover:bg-lime-100/80 dark:hover:bg-lime-900/50'
-  },
-  SELL: {
-    badge: 'bg-red-100 text-red-900 dark:bg-red-900/60 dark:text-red-200',
-    row: 'bg-red-50/80 dark:bg-red-950/40',
-    stickyCell: 'bg-red-50/80 dark:bg-red-950/40',
-    hover: 'hover:bg-red-100/80 dark:hover:bg-red-900/50'
-  },
-  DEPOSIT: {
-    badge: 'bg-sky-100 text-sky-900 dark:bg-sky-900/60 dark:text-sky-200',
-    row: 'bg-muted/40 dark:bg-muted/20',
-    stickyCell: 'bg-muted/40 dark:bg-muted/20',
-    hover: 'hover:bg-muted/60 dark:hover:bg-muted/30'
-  },
-  WITHDRAW: {
-    badge: 'bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200',
-    row: 'bg-muted/40 dark:bg-muted/20',
-    stickyCell: 'bg-muted/40 dark:bg-muted/20',
-    hover: 'hover:bg-muted/60 dark:hover:bg-muted/30'
-  },
-  FEE: {
-    badge: 'bg-zinc-100 text-zinc-900 dark:bg-zinc-900/60 dark:text-zinc-200',
-    row: 'bg-muted/40 dark:bg-muted/20',
-    stickyCell: 'bg-muted/40 dark:bg-muted/20',
-    hover: 'hover:bg-muted/60 dark:hover:bg-muted/30'
-  },
-  DEFAULT: {
-    badge: 'bg-zinc-100 text-zinc-900 dark:bg-zinc-900/60 dark:text-zinc-200',
-    row: 'bg-muted/40 dark:bg-muted/20',
-    stickyCell: 'bg-muted/40 dark:bg-muted/20',
-    hover: 'hover:bg-muted/60 dark:hover:bg-muted/30'
-  }
-};
 
 export default function TransactionHistory({
   transactions,
@@ -97,8 +51,9 @@ export default function TransactionHistory({
   if (transactions.length === 0) {
     return (
       <Card className={className}>
-        <CardHeader>
+        <CardHeader className="space-y-4">
           <CardTitle className="text-lg md:text-xl">{title}</CardTitle>
+          {filters && <div className="w-full">{filters}</div>}
         </CardHeader>
         <CardContent>
           <div className="rounded-lg border border-dashed p-8 text-center">
@@ -120,8 +75,8 @@ export default function TransactionHistory({
   return (
     <>
       <Card className={className}>
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <CardHeader className="space-y-4">
+          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
             <CardTitle className="text-lg md:text-xl">{title}</CardTitle>
             {importPortfolio && (
               <TransactionImportDialog
@@ -130,6 +85,7 @@ export default function TransactionHistory({
               />
             )}
           </div>
+          {filters && <div className="w-full">{filters}</div>}
         </CardHeader>
         <CardContent>
           <div className="rounded-lg border overflow-x-auto">
