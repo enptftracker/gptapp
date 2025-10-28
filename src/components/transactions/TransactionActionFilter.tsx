@@ -1,7 +1,6 @@
 import { useId } from 'react';
 import { cn } from '@/lib/utils';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { getTransactionTypeStyles } from './transactionStyles';
 
@@ -31,34 +30,22 @@ export default function TransactionActionFilter({
   className,
   label = 'Filter transactions by action type'
 }: TransactionActionFilterProps) {
-  const selectId = useId();
+  const labelId = useId();
 
   return (
     <div className={cn('flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end', className)}>
-      <Label htmlFor={selectId} className="text-sm font-medium text-muted-foreground sm:hidden">
+      <Label id={labelId} className="text-sm font-medium text-muted-foreground sm:hidden">
         {label}
       </Label>
 
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger id={selectId} className="sm:hidden">
-          <SelectValue placeholder={label} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map(option => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <div className="hidden sm:flex sm:w-full sm:justify-end">
+      <div className="w-full overflow-x-auto sm:w-auto">
         <ToggleGroup
           type="single"
           value={value}
           onValueChange={handleToggleChange(onValueChange)}
-          className="flex w-full flex-wrap justify-end gap-2"
+          className="flex min-w-max items-center gap-2 sm:min-w-0 sm:w-full sm:flex-wrap sm:justify-end"
           aria-label={label}
+          aria-labelledby={labelId}
         >
           {options.map(option => {
             const styles = getTransactionTypeStyles(option.value);
