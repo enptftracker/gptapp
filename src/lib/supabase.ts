@@ -51,6 +51,15 @@ export interface Profile {
   updated_at: string;
 }
 
+export interface FxRate {
+  id: string;
+  base_currency: string;
+  quote_currency: string;
+  rate: number;
+  asof: string;
+  created_at: string;
+}
+
 export type BrokerageConnectionStatus =
   | 'pending'
   | 'active'
@@ -243,6 +252,43 @@ export const symbolService = {
       asset_type: assetType,
       quote_currency: quoteCurrency
     });
+  }
+};
+
+export const fxRateService = {
+  async getRelevantRates(baseCurrency: string, quoteCurrencies: string[]): Promise<FxRate[]> {
+    const normalizedBase = (baseCurrency ?? 'USD').toUpperCase();
+    const normalizedQuotes = Array.from(new Set(
+      quoteCurrencies
+        .map(currency => currency?.toUpperCase())
+        .filter((currency): currency is string => Boolean(currency) && currency !== normalizedBase)
+    ));
+
+    if (normalizedQuotes.length === 0) {
+      return [];
+    }
+
+    const currenciesToQuery = Array.from(new Set([normalizedBase, ...normalizedQuotes]));
+
+    const { data, error } = await supabase
+      .from('fx_rates')
+      .select('*')
+      .in('base_currency', currenciesToQuery)
+      .in('quote_currency', currenciesToQuery)
+      .order('asof', { ascending: false });
+
+    if (error) throw error;
+
+    const latestByPair = new Map<string, FxRate>();
+
+    (data ?? []).forEach(rate => {
+      const key = `${rate.base_currency.toUpperCase()}-${rate.quote_currency.toUpperCase()}`;
+      if (!latestByPair.has(key)) {
+        latestByPair.set(key, rate);
+      }
+    });
+
+    return Array.from(latestByPair.values());
   }
 };
 

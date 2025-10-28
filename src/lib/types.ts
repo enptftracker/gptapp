@@ -43,12 +43,21 @@ export interface Holding {
   symbolId: string;
   symbol: Symbol;
   quantity: number;
+  tradeCurrency: string;
+  baseCurrency: string;
+  avgCostTrade: number;
   avgCostBase: number;
+  marketValueTrade: number;
   marketValueBase: number;
   unrealizedPL: number;
   unrealizedPLPercent: number;
+  priceUnrealizedPL: number;
+  priceUnrealizedPLPercent: number;
+  fxUnrealizedPL: number;
+  fxUnrealizedPLPercent: number;
   allocationPercent: number;
   currentPrice: number;
+  currentFxRate: number;
 }
 
 export interface PortfolioMetrics {
@@ -66,12 +75,21 @@ export interface ConsolidatedHolding {
   symbolId: string;
   symbol: Symbol;
   totalQuantity: number;
+  tradeCurrency: string;
+  baseCurrency: string;
   blendedAvgCost: number;
+  blendedAvgCostTrade: number;
   totalMarketValue: number;
+  totalMarketValueTrade: number;
   totalUnrealizedPL: number;
   totalUnrealizedPLPercent: number;
+  priceUnrealizedPL: number;
+  priceUnrealizedPLPercent: number;
+  fxUnrealizedPL: number;
+  fxUnrealizedPLPercent: number;
   allocationPercent: number;
   currentPrice: number;
+  currentFxRate: number;
   portfolios: {
     portfolioId: string;
     portfolioName: string;

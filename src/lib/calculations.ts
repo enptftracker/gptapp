@@ -7,6 +7,13 @@ export interface QuoteSnapshot {
   asof?: string | Date | null;
 }
 
+export interface FxRateSnapshot {
+  base_currency: string;
+  quote_currency: string;
+  rate: number;
+  asof?: string | Date | null;
+}
+
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
 
 const SUPPORTED_HISTORY_TYPES = new Set(['BUY', 'SELL', 'TRANSFER']);
@@ -41,6 +48,175 @@ export interface PortfolioHistoryPoint {
 export type LotMethod = 'FIFO' | 'LIFO' | 'HIFO' | 'AVERAGE';
 
 export class PortfolioCalculations {
+  private static normalizeCurrency(code?: string | null): string {
+    return (code ?? '').toUpperCase();
+  }
+
+  private static getConversionRate(
+    tradeCurrency: string,
+    baseCurrency: string,
+    fxQuotes: FxRateSnapshot[],
+    fallbackRate?: number
+  ): number {
+    const trade = this.normalizeCurrency(tradeCurrency);
+    const base = this.normalizeCurrency(baseCurrency);
+
+    if (!trade || !base || trade === base) {
+      return 1;
+    }
+
+    const direct = fxQuotes.find(quote =>
+      this.normalizeCurrency(quote.base_currency) === trade &&
+      this.normalizeCurrency(quote.quote_currency) === base &&
+      quote.rate > 0
+    );
+
+    if (direct) {
+      return direct.rate;
+    }
+
+    const inverse = fxQuotes.find(quote =>
+      this.normalizeCurrency(quote.base_currency) === base &&
+      this.normalizeCurrency(quote.quote_currency) === trade &&
+      quote.rate > 0
+    );
+
+    if (inverse) {
+      return 1 / inverse.rate;
+    }
+
+    if (fallbackRate && fallbackRate > 0) {
+      return fallbackRate;
+    }
+
+    return 1;
+  }
+
+  private static resolveTransactionFxRate(
+    transaction: DbTransaction,
+    baseCurrency: string,
+    fxQuotes: FxRateSnapshot[]
+  ): number {
+    const storedRate = transaction.fx_rate && transaction.fx_rate > 0 ? transaction.fx_rate : undefined;
+    const tradeCurrency = transaction.trade_currency || transaction.symbol?.quote_currency || baseCurrency;
+    return this.getConversionRate(tradeCurrency, baseCurrency, fxQuotes, storedRate);
+  }
+
+  private static buildRemainingLots(
+    transactions: DbTransaction[],
+    lotMethod: LotMethod,
+    baseCurrency: string,
+    fxQuotes: FxRateSnapshot[]
+  ): Array<{ quantity: number; unitPrice: number; fxRate: number; tradeCurrency: string }> {
+    const relevantTransactions = [...transactions]
+      .filter(t => SUPPORTED_HISTORY_TYPES.has(t.type))
+      .sort((a, b) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime());
+
+    if (relevantTransactions.length === 0) {
+      return [];
+    }
+
+    const tradeCurrency = relevantTransactions[0]?.trade_currency || relevantTransactions[0]?.symbol?.quote_currency || baseCurrency;
+
+    if (lotMethod === 'AVERAGE') {
+      let totalQuantity = 0;
+      let totalCostTrade = 0;
+      let totalCostBase = 0;
+
+      for (const transaction of relevantTransactions) {
+        const fxRate = this.resolveTransactionFxRate(transaction, baseCurrency, fxQuotes);
+
+        if (transaction.type === 'BUY') {
+          totalQuantity += transaction.quantity;
+          totalCostTrade += transaction.quantity * transaction.unit_price;
+          totalCostBase += transaction.quantity * transaction.unit_price * fxRate;
+        } else if (transaction.type === 'SELL' && totalQuantity > 0) {
+          const quantityToRemove = Math.min(transaction.quantity, totalQuantity);
+
+          if (quantityToRemove > 0) {
+            const avgTrade = totalQuantity > 0 ? totalCostTrade / totalQuantity : 0;
+            const avgBase = totalQuantity > 0 ? totalCostBase / totalQuantity : 0;
+
+            totalQuantity -= quantityToRemove;
+            totalCostTrade -= avgTrade * quantityToRemove;
+            totalCostBase -= avgBase * quantityToRemove;
+          }
+        }
+      }
+
+      if (totalQuantity <= 0) {
+        return [];
+      }
+
+      const avgTrade = totalQuantity > 0 ? totalCostTrade / totalQuantity : 0;
+      const avgRate = totalCostTrade !== 0 ? totalCostBase / totalCostTrade : 1;
+
+      return [{
+        quantity: totalQuantity,
+        unitPrice: avgTrade,
+        fxRate: avgRate > 0 ? avgRate : 1,
+        tradeCurrency
+      }];
+    }
+
+    const lots: Array<{ quantity: number; unitPrice: number; fxRate: number; tradeCurrency: string }> = [];
+
+    const getLotIndex = (): number => {
+      if (lotMethod === 'LIFO') {
+        return lots.length - 1;
+      }
+
+      if (lotMethod === 'HIFO') {
+        let highestIndex = 0;
+        for (let index = 1; index < lots.length; index += 1) {
+          if (lots[index].unitPrice > lots[highestIndex].unitPrice) {
+            highestIndex = index;
+          }
+        }
+        return highestIndex;
+      }
+
+      return 0; // FIFO
+    };
+
+    for (const transaction of relevantTransactions) {
+      const fxRate = this.resolveTransactionFxRate(transaction, baseCurrency, fxQuotes);
+
+      if (transaction.type === 'BUY') {
+        lots.push({
+          quantity: transaction.quantity,
+          unitPrice: transaction.unit_price,
+          fxRate: fxRate > 0 ? fxRate : 1,
+          tradeCurrency: transaction.trade_currency || tradeCurrency
+        });
+        continue;
+      }
+
+      if (transaction.type !== 'SELL') {
+        continue;
+      }
+
+      let remainingToSell = transaction.quantity;
+
+      while (remainingToSell > 0 && lots.length > 0) {
+        const lotIndex = getLotIndex();
+        const lot = lots[lotIndex];
+        const quantityToSell = Math.min(remainingToSell, lot.quantity);
+
+        lot.quantity -= quantityToSell;
+        remainingToSell -= quantityToSell;
+
+        if (lot.quantity === 0) {
+          lots.splice(lotIndex, 1);
+        }
+      }
+    }
+
+    return lots
+      .filter(lot => lot.quantity > 0)
+      .map(lot => ({ ...lot, tradeCurrency }));
+  }
+
   /**
    * Calculate average cost basis for a position based on lot method
    */
@@ -197,7 +373,9 @@ export class PortfolioCalculations {
     transactions: DbTransaction[],
     symbols: DbSymbol[],
     prices: QuoteSnapshot[],
-    lotMethod: LotMethod = 'FIFO'
+    lotMethod: LotMethod = 'FIFO',
+    baseCurrency: string = 'USD',
+    fxQuotes: FxRateSnapshot[] = []
   ): Holding[] {
     const portfolioTransactions = transactions.filter(t => t.portfolio_id === portfolioId);
     const symbolGroups = new Map<string, DbTransaction[]>();
@@ -219,22 +397,43 @@ export class PortfolioCalculations {
     symbolGroups.forEach((symbolTransactions, symbolId) => {
       const symbol = symbols.find(s => s.id === symbolId);
       const priceData = prices.find(p => p.symbol_id === symbolId);
-      
+
       if (!symbol) {
         console.warn(`Symbol not found for ID: ${symbolId}`);
         return;
       }
 
-      const quantity = this.calculateCurrentQuantity(symbolTransactions);
+      const remainingLots = this.buildRemainingLots(symbolTransactions, lotMethod, baseCurrency, fxQuotes);
+      const quantity = remainingLots.reduce((sum, lot) => sum + lot.quantity, 0);
+
       if (quantity <= 0) return; // Skip if no position
 
-      const avgCostBase = this.calculateAverageCost(symbolTransactions, lotMethod);
-      
-      // Use price data if available, otherwise use avg cost as fallback for market value
-      const currentPrice = priceData?.price || avgCostBase;
-      const marketValueBase = quantity * currentPrice;
-      const unrealizedPL = this.calculateUnrealizedPL(quantity, avgCostBase, currentPrice);
-      const unrealizedPLPercent = avgCostBase > 0 ? (unrealizedPL / (quantity * avgCostBase)) * 100 : 0;
+      const tradeCurrency = this.normalizeCurrency(
+        symbol.quote_currency || remainingLots[0]?.tradeCurrency || baseCurrency
+      );
+
+      const totalCostTrade = remainingLots.reduce((sum, lot) => sum + (lot.quantity * lot.unitPrice), 0);
+      const totalCostBase = remainingLots.reduce((sum, lot) => sum + (lot.quantity * lot.unitPrice * lot.fxRate), 0);
+
+      const avgCostTrade = quantity > 0 ? totalCostTrade / quantity : 0;
+      const avgCostBase = quantity > 0 ? totalCostBase / quantity : 0;
+
+      const storedFxFallback = totalCostTrade > 0 ? totalCostBase / totalCostTrade : undefined;
+
+      const currentPrice = priceData?.price ?? avgCostTrade;
+      const currentFxRate = this.getConversionRate(tradeCurrency, baseCurrency, fxQuotes, storedFxFallback);
+
+      const marketValueTrade = quantity * currentPrice;
+      const marketValueBase = marketValueTrade * currentFxRate;
+      const positionCostBase = quantity * avgCostBase;
+
+      const priceUnrealizedPL = (marketValueTrade - (avgCostTrade * quantity)) * currentFxRate;
+      const unrealizedPL = marketValueBase - positionCostBase;
+      const fxUnrealizedPL = unrealizedPL - priceUnrealizedPL;
+
+      const unrealizedPLPercent = positionCostBase > 0 ? (unrealizedPL / positionCostBase) * 100 : 0;
+      const priceUnrealizedPLPercent = positionCostBase > 0 ? (priceUnrealizedPL / positionCostBase) * 100 : 0;
+      const fxUnrealizedPLPercent = positionCostBase > 0 ? (fxUnrealizedPL / positionCostBase) * 100 : 0;
 
       holdings.push({
         portfolioId,
@@ -248,12 +447,21 @@ export class PortfolioCalculations {
           quoteCurrency: symbol.quote_currency
         },
         quantity,
+        tradeCurrency,
+        baseCurrency: this.normalizeCurrency(baseCurrency) || 'USD',
+        avgCostTrade,
         avgCostBase,
+        marketValueTrade,
         marketValueBase,
         unrealizedPL,
         unrealizedPLPercent,
+        priceUnrealizedPL,
+        priceUnrealizedPLPercent,
+        fxUnrealizedPL,
+        fxUnrealizedPLPercent,
         allocationPercent: 0, // Will be calculated after we know total
-        currentPrice
+        currentPrice,
+        currentFxRate
       });
 
       totalMarketValue += marketValueBase;
@@ -275,10 +483,12 @@ export class PortfolioCalculations {
     transactions: DbTransaction[],
     symbols: DbSymbol[],
     prices: QuoteSnapshot[],
-    lotMethod: LotMethod = 'FIFO'
+    lotMethod: LotMethod = 'FIFO',
+    baseCurrency: string = 'USD',
+    fxQuotes: FxRateSnapshot[] = []
   ): PortfolioMetrics {
-    const holdings = this.calculateHoldings(portfolioId, transactions, symbols, prices, lotMethod);
-    
+    const holdings = this.calculateHoldings(portfolioId, transactions, symbols, prices, lotMethod, baseCurrency, fxQuotes);
+
     const totalEquity = holdings.reduce((sum, h) => sum + h.marketValueBase, 0);
     const totalCost = holdings.reduce((sum, h) => sum + (h.quantity * h.avgCostBase), 0);
     const totalPL = holdings.reduce((sum, h) => sum + h.unrealizedPL, 0);
@@ -308,7 +518,9 @@ export class PortfolioCalculations {
     transactions: DbTransaction[],
     symbols: DbSymbol[],
     prices: QuoteSnapshot[],
-    lotMethod: LotMethod = 'FIFO'
+    lotMethod: LotMethod = 'FIFO',
+    baseCurrency: string = 'USD',
+    fxQuotes: FxRateSnapshot[] = []
   ): ConsolidatedHolding[] {
     const symbolHoldings = new Map<string, {
       symbol: DbSymbol;
@@ -321,13 +533,20 @@ export class PortfolioCalculations {
       }>;
       totalQuantity: number;
       totalCostBasis: number;
+      totalCostBasisTrade: number;
       totalMarketValue: number;
+      totalMarketValueTrade: number;
+      totalPriceUnrealizedPL: number;
+      totalFxUnrealizedPL: number;
+      tradeCurrency: string;
+      baseCurrency: string;
+      weightedFxRateNumerator: number;
     }>();
 
     // Process each portfolio's holdings
     portfolios.forEach(portfolio => {
-      const holdings = this.calculateHoldings(portfolio.id, transactions, symbols, prices, lotMethod);
-      
+      const holdings = this.calculateHoldings(portfolio.id, transactions, symbols, prices, lotMethod, baseCurrency, fxQuotes);
+
       holdings.forEach(holding => {
         if (!symbolHoldings.has(holding.symbolId)) {
           const dbSymbol = symbols.find(s => s.id === holding.symbolId)!;
@@ -336,12 +555,19 @@ export class PortfolioCalculations {
             portfolios: [],
             totalQuantity: 0,
             totalCostBasis: 0,
-            totalMarketValue: 0
+            totalCostBasisTrade: 0,
+            totalMarketValue: 0,
+            totalMarketValueTrade: 0,
+            totalPriceUnrealizedPL: 0,
+            totalFxUnrealizedPL: 0,
+            tradeCurrency: holding.tradeCurrency,
+            baseCurrency: holding.baseCurrency,
+            weightedFxRateNumerator: 0
           });
         }
 
         const consolidated = symbolHoldings.get(holding.symbolId)!;
-        
+
         consolidated.portfolios.push({
           portfolioId: portfolio.id,
           portfolioName: portfolio.name,
@@ -352,7 +578,14 @@ export class PortfolioCalculations {
 
         consolidated.totalQuantity += holding.quantity;
         consolidated.totalCostBasis += holding.quantity * holding.avgCostBase;
+        consolidated.totalCostBasisTrade += holding.quantity * holding.avgCostTrade;
         consolidated.totalMarketValue += holding.marketValueBase;
+        consolidated.totalMarketValueTrade += holding.marketValueTrade;
+        consolidated.totalPriceUnrealizedPL += holding.priceUnrealizedPL;
+        consolidated.totalFxUnrealizedPL += holding.fxUnrealizedPL;
+        consolidated.tradeCurrency = holding.tradeCurrency;
+        consolidated.baseCurrency = holding.baseCurrency;
+        consolidated.weightedFxRateNumerator += holding.marketValueTrade * holding.currentFxRate;
       });
     });
 
@@ -360,11 +593,16 @@ export class PortfolioCalculations {
     const consolidatedHoldings: ConsolidatedHolding[] = [];
     let grandTotalMarketValue = 0;
 
-    symbolHoldings.forEach(({ symbol, portfolios, totalQuantity, totalCostBasis, totalMarketValue }) => {
+    symbolHoldings.forEach(({ symbol, portfolios, totalQuantity, totalCostBasis, totalCostBasisTrade, totalMarketValue, totalMarketValueTrade, totalPriceUnrealizedPL, totalFxUnrealizedPL, tradeCurrency, baseCurrency, weightedFxRateNumerator }) => {
       const blendedAvgCost = totalQuantity > 0 ? totalCostBasis / totalQuantity : 0;
+      const blendedAvgCostTrade = totalQuantity > 0 ? totalCostBasisTrade / totalQuantity : 0;
       const totalUnrealizedPL = totalMarketValue - totalCostBasis;
       const totalUnrealizedPLPercent = totalCostBasis > 0 ? (totalUnrealizedPL / totalCostBasis) * 100 : 0;
       const currentPrice = totalQuantity > 0 ? totalMarketValue / totalQuantity : 0;
+      const aggregatedMarketValueTrade = totalMarketValueTrade ?? 0;
+      const currentFxRate = aggregatedMarketValueTrade > 0 ? weightedFxRateNumerator / aggregatedMarketValueTrade : 1;
+      const priceUnrealizedPLPercent = totalCostBasis > 0 ? (totalPriceUnrealizedPL / totalCostBasis) * 100 : 0;
+      const fxUnrealizedPLPercent = totalCostBasis > 0 ? (totalFxUnrealizedPL / totalCostBasis) * 100 : 0;
 
       consolidatedHoldings.push({
         symbolId: symbol.id,
@@ -377,12 +615,21 @@ export class PortfolioCalculations {
           quoteCurrency: symbol.quote_currency
         },
         totalQuantity,
+        tradeCurrency,
+        baseCurrency,
         blendedAvgCost,
+        blendedAvgCostTrade,
         totalMarketValue,
+        totalMarketValueTrade: aggregatedMarketValueTrade,
         totalUnrealizedPL,
         totalUnrealizedPLPercent,
+        priceUnrealizedPL: totalPriceUnrealizedPL,
+        priceUnrealizedPLPercent,
+        fxUnrealizedPL: totalFxUnrealizedPL,
+        fxUnrealizedPLPercent,
         allocationPercent: 0, // Will be calculated after
         currentPrice,
+        currentFxRate,
         portfolios
       });
 
