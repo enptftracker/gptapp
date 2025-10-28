@@ -5,7 +5,8 @@ import { Transaction } from '@/lib/supabase';
 import InstrumentTypeFilter, { InstrumentTypeOption } from '@/components/shared/InstrumentTypeFilter';
 import { cn } from '@/lib/utils';
 
-interface TransactionHistoryContainerProps extends Omit<TransactionHistoryProps, 'transactions'> {
+interface TransactionHistoryContainerProps
+  extends Omit<TransactionHistoryProps, 'transactions' | 'filters'> {
   transactions: Transaction[];
   wrapperClassName?: string;
 }
@@ -145,21 +146,32 @@ export default function TransactionHistoryContainer({
     [transactions, activeInstrumentFilter, activeActionFilter]
   );
 
-  return (
-    <div className={cn('space-y-4', wrapperClassName)}>
+  const filters = (
+    <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <InstrumentTypeFilter
         options={instrumentOptions}
         value={activeInstrumentFilter}
         onValueChange={setActiveInstrumentFilter}
         label="Filter transactions by instrument type"
+        className="w-full lg:flex-1"
       />
       <TransactionActionFilter
         options={actionOptions}
         value={activeActionFilter}
         onValueChange={setActiveActionFilter}
         label="Filter transactions by action type"
+        className="w-full lg:flex-1"
       />
-      <TransactionHistory transactions={filteredTransactions} {...transactionHistoryProps} />
+    </div>
+  );
+
+  return (
+    <div className={cn(wrapperClassName)}>
+      <TransactionHistory
+        transactions={filteredTransactions}
+        filters={filters}
+        {...transactionHistoryProps}
+      />
     </div>
   );
 }
