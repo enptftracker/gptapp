@@ -1,8 +1,8 @@
 import { useId } from 'react';
 import { cn } from '@/lib/utils';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { getInstrumentTypeStyles } from './instrumentTypeStyles';
 
 export interface InstrumentTypeOption {
   value: string;
@@ -11,17 +11,11 @@ export interface InstrumentTypeOption {
 
 interface InstrumentTypeFilterProps {
   options: InstrumentTypeOption[];
-  value: string;
-  onValueChange: (value: string) => void;
+  value: string[];
+  onValueChange: (value: string[]) => void;
   className?: string;
   label?: string;
 }
-
-const handleToggleChange = (callback: (value: string) => void) => (nextValue: string) => {
-  if (nextValue) {
-    callback(nextValue);
-  }
-};
 
 export default function InstrumentTypeFilter({
   options,
@@ -30,44 +24,75 @@ export default function InstrumentTypeFilter({
   className,
   label = 'Filter by instrument type'
 }: InstrumentTypeFilterProps) {
-  const selectId = useId();
+  const labelId = useId();
+  const defaultValue = options[0]?.value;
+  const normalizedValue = (() => {
+    if (!defaultValue) {
+      return value;
+    }
+
+    if (value.includes(defaultValue) && value.length > 1) {
+      return value.filter(optionValue => optionValue !== defaultValue);
+    }
+
+    if (value.length === 0) {
+      return [defaultValue];
+    }
+
+    return value;
+  })();
+
+  const handleToggleChange = (nextValue: string[]) => {
+    if (!defaultValue) {
+      onValueChange(nextValue);
+      return;
+    }
+
+    if (nextValue.length === 0) {
+      onValueChange([defaultValue]);
+      return;
+    }
+
+    if (nextValue.includes(defaultValue) && nextValue.length > 1) {
+      onValueChange(nextValue.filter(optionValue => optionValue !== defaultValue));
+      return;
+    }
+
+    onValueChange(nextValue);
+  };
 
   return (
-    <div className={cn('flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between', className)}>
-      <Label htmlFor={selectId} className="text-sm font-medium text-muted-foreground sm:hidden">
+    <div className={cn('flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between', className)}>
+      <Label id={labelId} className="text-sm font-medium text-muted-foreground sm:hidden">
         {label}
       </Label>
-
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger id={selectId} className="sm:hidden">
-          <SelectValue placeholder={label} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map(option => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <div className="hidden sm:flex sm:w-full sm:justify-end">
+      <div className="w-full overflow-x-auto">
         <ToggleGroup
-          type="single"
-          value={value}
-          onValueChange={handleToggleChange(onValueChange)}
-          className="flex flex-wrap gap-2"
+          type="multiple"
+          value={normalizedValue}
+          onValueChange={handleToggleChange}
+          className="flex min-w-max items-center gap-2 sm:min-w-0 sm:flex-wrap sm:justify-end"
           aria-label={label}
+          aria-labelledby={labelId}
         >
-          {options.map(option => (
-            <ToggleGroupItem
-              key={option.value}
-              value={option.value}
-              className="text-xs sm:text-sm"
-            >
-              {option.label}
-            </ToggleGroupItem>
-          ))}
+          {options.map(option => {
+            const styles = getInstrumentTypeStyles(option.value);
+
+            return (
+              <ToggleGroupItem
+                key={option.value}
+                value={option.value}
+                className={cn(
+                  'relative h-auto whitespace-nowrap rounded-full border border-transparent px-4 py-2 text-xs font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:text-sm',
+                  'data-[state=off]:bg-transparent data-[state=off]:hover:bg-muted/50 data-[state=off]:dark:hover:bg-muted/30',
+                  styles.button,
+                  styles.buttonHover
+                )}
+              >
+                {option.label}
+              </ToggleGroupItem>
+            );
+          })}
         </ToggleGroup>
       </div>
     </div>

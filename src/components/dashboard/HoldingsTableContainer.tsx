@@ -49,23 +49,50 @@ const buildOptions = (holdings: Holding[]): InstrumentTypeOption[] => {
   return [{ value: DEFAULT_FILTER, label: 'All Instruments' }, ...options];
 };
 
-const filterHoldingsByType = (holdings: Holding[], type: string) => {
-  if (type === DEFAULT_FILTER) {
+const filterHoldingsByType = (holdings: Holding[], selectedTypes: string[]) => {
+  if (selectedTypes.length === 0 || selectedTypes.includes(DEFAULT_FILTER)) {
     return holdings;
   }
 
-  return holdings.filter(holding => (holding.symbol.assetType || 'OTHER') === type);
+  const typeSet = new Set(selectedTypes);
+  return holdings.filter(holding => typeSet.has(holding.symbol.assetType || 'OTHER'));
+};
+
+const sanitizeSelection = (selected: string[], options: InstrumentTypeOption[], defaultValue: string) => {
+  if (options.length === 0) {
+    return selected;
+  }
+
+  const validValues = new Set(options.map(option => option.value));
+  const filtered = selected.filter(value => value === defaultValue || validValues.has(value));
+
+  if (filtered.includes(defaultValue) && filtered.length > 1) {
+    const withoutDefault = filtered.filter(value => value !== defaultValue);
+    return withoutDefault.length > 0 ? withoutDefault : [defaultValue];
+  }
+
+  if (filtered.length === 0) {
+    return [defaultValue];
+  }
+
+  return filtered;
 };
 
 export default function HoldingsTableContainer({ holdings, wrapperClassName, ...tableProps }: HoldingsTableContainerProps) {
   const options = useMemo(() => buildOptions(holdings), [holdings]);
-  const [activeFilter, setActiveFilter] = useState<string>(DEFAULT_FILTER);
+  const [activeFilter, setActiveFilter] = useState<string[]>([DEFAULT_FILTER]);
 
   useEffect(() => {
-    if (!options.some(option => option.value === activeFilter)) {
-      setActiveFilter(DEFAULT_FILTER);
-    }
-  }, [options, activeFilter]);
+    setActiveFilter(previous => {
+      const sanitized = sanitizeSelection(previous, options, DEFAULT_FILTER);
+      const hasChanged =
+        sanitized.length !== previous.length ||
+        sanitized.some(value => !previous.includes(value)) ||
+        previous.some(value => !sanitized.includes(value));
+
+      return hasChanged ? sanitized : previous;
+    });
+  }, [options]);
 
   const filteredHoldings = useMemo(
     () => filterHoldingsByType(holdings, activeFilter),
