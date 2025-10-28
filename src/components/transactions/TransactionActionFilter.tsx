@@ -11,17 +11,11 @@ export interface TransactionActionOption {
 
 interface TransactionActionFilterProps {
   options: TransactionActionOption[];
-  value: string;
-  onValueChange: (value: string) => void;
+  value: string[];
+  onValueChange: (value: string[]) => void;
   className?: string;
   label?: string;
 }
-
-const handleToggleChange = (callback: (value: string) => void) => (nextValue: string) => {
-  if (nextValue) {
-    callback(nextValue);
-  }
-};
 
 export default function TransactionActionFilter({
   options,
@@ -31,6 +25,41 @@ export default function TransactionActionFilter({
   label = 'Filter transactions by action type'
 }: TransactionActionFilterProps) {
   const labelId = useId();
+  const defaultValue = options[0]?.value;
+  const normalizedValue = (() => {
+    if (!defaultValue) {
+      return value;
+    }
+
+    if (value.includes(defaultValue) && value.length > 1) {
+      return value.filter(optionValue => optionValue !== defaultValue);
+    }
+
+    if (value.length === 0) {
+      return [defaultValue];
+    }
+
+    return value;
+  })();
+
+  const handleToggleChange = (nextValue: string[]) => {
+    if (!defaultValue) {
+      onValueChange(nextValue);
+      return;
+    }
+
+    if (nextValue.length === 0) {
+      onValueChange([defaultValue]);
+      return;
+    }
+
+    if (nextValue.includes(defaultValue) && nextValue.length > 1) {
+      onValueChange(nextValue.filter(optionValue => optionValue !== defaultValue));
+      return;
+    }
+
+    onValueChange(nextValue);
+  };
 
   return (
     <div className={cn('flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end', className)}>
@@ -40,9 +69,9 @@ export default function TransactionActionFilter({
 
       <div className="w-full overflow-x-auto sm:w-auto">
         <ToggleGroup
-          type="single"
-          value={value}
-          onValueChange={handleToggleChange(onValueChange)}
+          type="multiple"
+          value={normalizedValue}
+          onValueChange={handleToggleChange}
           className="flex min-w-max items-center gap-2 sm:min-w-0 sm:w-full sm:flex-wrap sm:justify-end"
           aria-label={label}
           aria-labelledby={labelId}
@@ -55,8 +84,8 @@ export default function TransactionActionFilter({
                 key={option.value}
                 value={option.value}
                 className={cn(
-                  'rounded-full border border-transparent px-4 py-2 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:text-sm',
-                  'data-[state=off]:bg-muted/40 data-[state=off]:text-muted-foreground data-[state=off]:hover:bg-muted/60 data-[state=off]:dark:bg-muted/20 data-[state=off]:dark:hover:bg-muted/30',
+                  'relative h-auto whitespace-nowrap rounded-full border border-transparent px-4 py-2 text-xs font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:text-sm',
+                  'data-[state=off]:bg-transparent data-[state=off]:hover:bg-muted/50 data-[state=off]:dark:hover:bg-muted/30',
                   styles.button,
                   styles.buttonHover
                 )}

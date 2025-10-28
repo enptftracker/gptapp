@@ -65,12 +65,13 @@ const buildInstrumentOptions = (transactions: Transaction[]): InstrumentTypeOpti
   return [{ value: DEFAULT_INSTRUMENT_FILTER, label: 'All Instruments' }, ...options];
 };
 
-const filterTransactionsByType = (transactions: Transaction[], type: string) => {
-  if (type === DEFAULT_INSTRUMENT_FILTER) {
+const filterTransactionsByType = (transactions: Transaction[], selectedTypes: string[]) => {
+  if (selectedTypes.length === 0 || selectedTypes.includes(DEFAULT_INSTRUMENT_FILTER)) {
     return transactions;
   }
 
-  return transactions.filter(transaction => resolveAssetType(transaction) === type);
+  const typeSet = new Set(selectedTypes);
+  return transactions.filter(transaction => typeSet.has(resolveAssetType(transaction)));
 };
 
 const formatTransactionTypeLabel = (value: string) =>
@@ -93,14 +94,33 @@ const buildActionOptions = (transactionTypes: Transaction['type'][]): Transactio
   return [{ value: DEFAULT_ACTION_FILTER, label: 'All actions' }, ...options];
 };
 
-type ActionFilterValue = Transaction['type'] | typeof DEFAULT_ACTION_FILTER;
-
-const filterTransactionsByAction = (transactions: Transaction[], action: ActionFilterValue) => {
-  if (action === DEFAULT_ACTION_FILTER) {
+const filterTransactionsByAction = (transactions: Transaction[], selectedActions: string[]) => {
+  if (selectedActions.length === 0 || selectedActions.includes(DEFAULT_ACTION_FILTER)) {
     return transactions;
   }
 
-  return transactions.filter(transaction => transaction.type === action);
+  const actionSet = new Set(selectedActions);
+  return transactions.filter(transaction => actionSet.has(transaction.type));
+};
+
+const sanitizeSelection = (selected: string[], options: { value: string }[], defaultValue: string) => {
+  if (options.length === 0) {
+    return selected;
+  }
+
+  const validValues = new Set(options.map(option => option.value));
+  const filtered = selected.filter(value => value === defaultValue || validValues.has(value));
+
+  if (filtered.includes(defaultValue) && filtered.length > 1) {
+    const withoutDefault = filtered.filter(value => value !== defaultValue);
+    return withoutDefault.length > 0 ? withoutDefault : [defaultValue];
+  }
+
+  if (filtered.length === 0) {
+    return [defaultValue];
+  }
+
+  return filtered;
 };
 
 export default function TransactionHistoryContainer({
@@ -109,11 +129,11 @@ export default function TransactionHistoryContainer({
   ...transactionHistoryProps
 }: TransactionHistoryContainerProps) {
   const instrumentOptions = useMemo(() => buildInstrumentOptions(transactions), [transactions]);
-  const [activeInstrumentFilter, setActiveInstrumentFilter] = useState<string>(DEFAULT_INSTRUMENT_FILTER);
+  const [activeInstrumentFilter, setActiveInstrumentFilter] = useState<string[]>([DEFAULT_INSTRUMENT_FILTER]);
   const [availableActionTypes, setAvailableActionTypes] = useState<Transaction['type'][]>(
     () => getUniqueTransactionTypes(transactions)
   );
-  const [activeActionFilter, setActiveActionFilter] = useState<ActionFilterValue>(DEFAULT_ACTION_FILTER);
+  const [activeActionFilter, setActiveActionFilter] = useState<string[]>([DEFAULT_ACTION_FILTER]);
 
   const actionOptions = useMemo(
     () => buildActionOptions(availableActionTypes),
@@ -121,22 +141,32 @@ export default function TransactionHistoryContainer({
   );
 
   useEffect(() => {
-    if (!instrumentOptions.some(option => option.value === activeInstrumentFilter)) {
-      setActiveInstrumentFilter(DEFAULT_INSTRUMENT_FILTER);
-    }
-  }, [instrumentOptions, activeInstrumentFilter]);
+    setActiveInstrumentFilter(previous => {
+      const sanitized = sanitizeSelection(previous, instrumentOptions, DEFAULT_INSTRUMENT_FILTER);
+      const hasChanged =
+        sanitized.length !== previous.length ||
+        sanitized.some(value => !previous.includes(value)) ||
+        previous.some(value => !sanitized.includes(value));
+
+      return hasChanged ? sanitized : previous;
+    });
+  }, [instrumentOptions]);
 
   useEffect(() => {
     const nextActionTypes = getUniqueTransactionTypes(transactions);
     setAvailableActionTypes(nextActionTypes);
 
-    if (
-      activeActionFilter !== DEFAULT_ACTION_FILTER &&
-      !nextActionTypes.includes(activeActionFilter as Transaction['type'])
-    ) {
-      setActiveActionFilter(DEFAULT_ACTION_FILTER);
-    }
-  }, [transactions, activeActionFilter]);
+    setActiveActionFilter(previous => {
+      const actionOptionsForSanitization = buildActionOptions(nextActionTypes);
+      const sanitized = sanitizeSelection(previous, actionOptionsForSanitization, DEFAULT_ACTION_FILTER);
+      const hasChanged =
+        sanitized.length !== previous.length ||
+        sanitized.some(value => !previous.includes(value)) ||
+        previous.some(value => !sanitized.includes(value));
+
+      return hasChanged ? sanitized : previous;
+    });
+  }, [transactions]);
 
   const filteredTransactions = useMemo(
     () => {
