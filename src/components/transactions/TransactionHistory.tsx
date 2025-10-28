@@ -1,4 +1,4 @@
-import React, { ReactNode, useMemo, useState } from 'react';
+import { ReactNode, useMemo, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,8 @@ export default function TransactionHistory({
   title = "Transaction History",
   className,
   portfolios = [],
-  defaultPortfolioId
+  defaultPortfolioId,
+  filters
 }: TransactionHistoryProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
