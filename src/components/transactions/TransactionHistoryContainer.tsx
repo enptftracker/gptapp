@@ -109,6 +109,11 @@ const sanitizeSelection = (selected: string[], options: { value: string }[], def
   }
 
   const optionValues = options.map(option => option.value);
+  if (!optionValues.includes(defaultValue)) {
+    const fallbackValue = optionValues[0];
+    return fallbackValue ? [fallbackValue] : selected;
+  }
+
   const nonDefaultOptionValues = optionValues.filter(optionValue => optionValue !== defaultValue);
   const validValues = new Set(optionValues);
   const filtered = Array.from(new Set(selected.filter(value => validValues.has(value))));
