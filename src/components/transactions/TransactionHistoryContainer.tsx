@@ -115,8 +115,7 @@ const sanitizeSelection = (selected: string[], options: { value: string }[], def
   }
 
   const nonDefaultOptionValues = optionValues.filter(optionValue => optionValue !== defaultValue);
-  const validValues = new Set(optionValues);
-  const filtered = Array.from(new Set(selected.filter(value => validValues.has(value))));
+  const filtered = optionValues.filter(optionValue => selected.includes(optionValue));
 
   if (filtered.length === 0) {
     return [defaultValue];
@@ -128,11 +127,7 @@ const sanitizeSelection = (selected: string[], options: { value: string }[], def
     nonDefaultSelections.length === nonDefaultOptionValues.length &&
     nonDefaultOptionValues.every(optionValue => nonDefaultSelections.includes(optionValue));
 
-  if (includesDefault) {
-    return [defaultValue];
-  }
-
-  if (hasAllNonDefaultSelections) {
+  if (includesDefault || hasAllNonDefaultSelections) {
     return [defaultValue];
   }
 
