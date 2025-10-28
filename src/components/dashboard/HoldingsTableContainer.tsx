@@ -63,19 +63,34 @@ const sanitizeSelection = (selected: string[], options: InstrumentTypeOption[], 
     return selected;
   }
 
-  const validValues = new Set(options.map(option => option.value));
-  const filtered = selected.filter(value => value === defaultValue || validValues.has(value));
-
-  if (filtered.includes(defaultValue) && filtered.length > 1) {
-    const withoutDefault = filtered.filter(value => value !== defaultValue);
-    return withoutDefault.length > 0 ? withoutDefault : [defaultValue];
-  }
+  const optionValues = options.map(option => option.value);
+  const nonDefaultOptionValues = optionValues.filter(optionValue => optionValue !== defaultValue);
+  const validValues = new Set(optionValues);
+  const filtered = Array.from(new Set(selected.filter(value => validValues.has(value))));
 
   if (filtered.length === 0) {
     return [defaultValue];
   }
 
-  return filtered;
+  const includesDefault = filtered.includes(defaultValue);
+  const nonDefaultSelections = filtered.filter(value => value !== defaultValue);
+  const hasAllNonDefaultSelections =
+    nonDefaultSelections.length === nonDefaultOptionValues.length &&
+    nonDefaultOptionValues.every(optionValue => nonDefaultSelections.includes(optionValue));
+
+  if (includesDefault) {
+    return [defaultValue];
+  }
+
+  if (hasAllNonDefaultSelections) {
+    return [defaultValue];
+  }
+
+  if (nonDefaultSelections.length === 0) {
+    return [defaultValue];
+  }
+
+  return nonDefaultSelections;
 };
 
 export default function HoldingsTableContainer({ holdings, wrapperClassName, ...tableProps }: HoldingsTableContainerProps) {

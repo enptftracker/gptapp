@@ -26,17 +26,25 @@ export default function InstrumentTypeFilter({
 }: InstrumentTypeFilterProps) {
   const labelId = useId();
   const defaultValue = options[0]?.value;
+  const optionValues = options.map(option => option.value);
+  const nonDefaultOptionValues = optionValues.filter(optionValue => optionValue !== defaultValue);
   const normalizedValue = (() => {
     if (!defaultValue) {
       return value;
     }
 
-    if (value.includes(defaultValue) && value.length > 1) {
-      return value.filter(optionValue => optionValue !== defaultValue);
-    }
-
     if (value.length === 0) {
       return [defaultValue];
+    }
+
+    const includesDefault = value.includes(defaultValue);
+    const nonDefaultSelections = value.filter(optionValue => optionValue !== defaultValue);
+    const hasEveryNonDefaultSelected =
+      nonDefaultSelections.length === nonDefaultOptionValues.length &&
+      nonDefaultOptionValues.every(optionValue => nonDefaultSelections.includes(optionValue));
+
+    if ((includesDefault && value.length > 1) || (!includesDefault && hasEveryNonDefaultSelected)) {
+      return optionValues;
     }
 
     return value;
@@ -48,17 +56,39 @@ export default function InstrumentTypeFilter({
       return;
     }
 
-    if (nextValue.length === 0) {
+    const validSelections = nextValue.filter(optionValue => optionValues.includes(optionValue));
+    const includesDefault = validSelections.includes(defaultValue);
+    const nonDefaultSelections = validSelections.filter(optionValue => optionValue !== defaultValue);
+    const hasAllNonDefaultSelections =
+      nonDefaultSelections.length === nonDefaultOptionValues.length &&
+      nonDefaultOptionValues.every(optionValue => nonDefaultSelections.includes(optionValue));
+
+    if (validSelections.length === 0) {
       onValueChange([defaultValue]);
       return;
     }
 
-    if (nextValue.includes(defaultValue) && nextValue.length > 1) {
-      onValueChange(nextValue.filter(optionValue => optionValue !== defaultValue));
+    if (includesDefault && nonDefaultSelections.length === 0) {
+      onValueChange([defaultValue]);
       return;
     }
 
-    onValueChange(nextValue);
+    if (includesDefault && value.includes(defaultValue) && value.length === 1 && nonDefaultSelections.length > 0) {
+      onValueChange(nonDefaultSelections);
+      return;
+    }
+
+    if (includesDefault) {
+      onValueChange([defaultValue]);
+      return;
+    }
+
+    if (hasAllNonDefaultSelections) {
+      onValueChange([defaultValue]);
+      return;
+    }
+
+    onValueChange(nonDefaultSelections);
   };
 
   return (
