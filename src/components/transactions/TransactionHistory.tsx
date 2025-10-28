@@ -21,22 +21,51 @@ export interface TransactionHistoryProps {
   defaultPortfolioId?: string;
 }
 
-const getTransactionTypeColor = (type: Transaction['type']) => {
-  switch (type) {
-    case 'BUY':
-      return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300';
-    case 'SELL':
-      return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300';
-    case 'DIVIDEND':
-      return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300';
-    case 'DEPOSIT':
-      return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300';
-    case 'WITHDRAW':
-      return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300';
-    case 'FEE':
-      return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300';
-    default:
-      return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300';
+const transactionTypeStyles: Record<
+  Transaction['type'] | 'DEFAULT',
+  { badge: string; row: string; stickyCell: string; hover: string }
+> = {
+  BUY: {
+    badge: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200',
+    row: 'bg-emerald-50/80 dark:bg-emerald-950/40',
+    stickyCell: 'bg-emerald-50/80 dark:bg-emerald-950/40',
+    hover: 'hover:bg-emerald-100/80 dark:hover:bg-emerald-900/50'
+  },
+  DIVIDEND: {
+    badge: 'bg-lime-100 text-lime-900 dark:bg-lime-900/60 dark:text-lime-200',
+    row: 'bg-lime-50/80 dark:bg-lime-950/40',
+    stickyCell: 'bg-lime-50/80 dark:bg-lime-950/40',
+    hover: 'hover:bg-lime-100/80 dark:hover:bg-lime-900/50'
+  },
+  SELL: {
+    badge: 'bg-red-100 text-red-900 dark:bg-red-900/60 dark:text-red-200',
+    row: 'bg-red-50/80 dark:bg-red-950/40',
+    stickyCell: 'bg-red-50/80 dark:bg-red-950/40',
+    hover: 'hover:bg-red-100/80 dark:hover:bg-red-900/50'
+  },
+  DEPOSIT: {
+    badge: 'bg-sky-100 text-sky-900 dark:bg-sky-900/60 dark:text-sky-200',
+    row: 'bg-muted/40 dark:bg-muted/20',
+    stickyCell: 'bg-muted/40 dark:bg-muted/20',
+    hover: 'hover:bg-muted/60 dark:hover:bg-muted/30'
+  },
+  WITHDRAW: {
+    badge: 'bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200',
+    row: 'bg-muted/40 dark:bg-muted/20',
+    stickyCell: 'bg-muted/40 dark:bg-muted/20',
+    hover: 'hover:bg-muted/60 dark:hover:bg-muted/30'
+  },
+  FEE: {
+    badge: 'bg-zinc-100 text-zinc-900 dark:bg-zinc-900/60 dark:text-zinc-200',
+    row: 'bg-muted/40 dark:bg-muted/20',
+    stickyCell: 'bg-muted/40 dark:bg-muted/20',
+    hover: 'hover:bg-muted/60 dark:hover:bg-muted/30'
+  },
+  DEFAULT: {
+    badge: 'bg-zinc-100 text-zinc-900 dark:bg-zinc-900/60 dark:text-zinc-200',
+    row: 'bg-muted/40 dark:bg-muted/20',
+    stickyCell: 'bg-muted/40 dark:bg-muted/20',
+    hover: 'hover:bg-muted/60 dark:hover:bg-muted/30'
   }
 };
 
@@ -129,18 +158,23 @@ export default function TransactionHistory({
                     .filter(Boolean)
                     .map((part) => String(part).toUpperCase());
                   const badgeLabel = badgeParts.length > 0 ? badgeParts.join(' · ') : ticker;
+                  const { badge, row, stickyCell, hover } =
+                    transactionTypeStyles[transaction.type] ?? transactionTypeStyles.DEFAULT;
 
                   return (
-                    <TableRow key={transaction.id}>
+                    <TableRow
+                      key={transaction.id}
+                      className={`${row} ${hover} data-[state=selected]:bg-muted`}
+                    >
                       <TableCell className="font-medium text-xs md:text-sm whitespace-nowrap">
                         {format(new Date(transaction.trade_date), 'MMM dd, yyyy')}
                       </TableCell>
                       <TableCell>
-                        <Badge className={`${getTransactionTypeColor(transaction.type)} text-xs`}>
+                        <Badge className={`${badge} text-xs`}>
                           {transaction.type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="sticky left-0 z-10 bg-background text-xs md:text-sm">
+                      <TableCell className={`sticky left-0 z-10 ${stickyCell} text-xs md:text-sm`}>
                         <div className="flex items-center gap-3 min-w-0">
                           <InstrumentIcon ticker={ticker} name={name} size="sm" className="flex-shrink-0" />
                           <div className="min-w-0">
