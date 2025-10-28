@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 
 const preprocessNumberField = (
   fieldLabel: string,
-  options?: { defaultValue?: number }
+  options?: { defaultValue?: number; min?: number; positive?: boolean; message?: string }
 ) =>
   z.preprocess((value) => {
     if (value === '' || value === undefined || value === null) {
@@ -32,7 +32,15 @@ const preprocessNumberField = (
     }
 
     return value;
-  }, z.number({ invalid_type_error: `${fieldLabel} is required` }).min(0, `${fieldLabel} must be positive`));
+  }, (() => {
+    const min = options?.min ?? 0;
+    const message = options?.message ?? `${fieldLabel} must be positive`;
+    const baseSchema = z.number({ invalid_type_error: `${fieldLabel} is required` });
+
+    return options?.positive
+      ? baseSchema.gt(min, message)
+      : baseSchema.min(min, message);
+  })());
 
 const transactionSchema = z.object({
   portfolioId: z.string().min(1, 'Portfolio is required'),
@@ -41,7 +49,11 @@ const transactionSchema = z.object({
   quantity: preprocessNumberField('Quantity'),
   unitPrice: preprocessNumberField('Unit price'),
   fee: preprocessNumberField('Fee', { defaultValue: 0 }),
-  fxRate: preprocessNumberField('FX rate', { defaultValue: 1 }),
+  fxRate: preprocessNumberField('FX rate', {
+    defaultValue: 1,
+    positive: true,
+    message: 'FX rate must be greater than 0'
+  }),
   tradeCurrency: z.string().default('USD'),
   tradeDate: z.string().min(1, 'Trade date is required'),
   notes: z.string().optional(),
@@ -100,7 +112,7 @@ export default function TransactionForm({
         : '',
       fxRate: existingTransaction.fx_rate !== null && existingTransaction.fx_rate !== undefined
         ? existingTransaction.fx_rate.toString()
-        : '',
+        : '1',
       tradeCurrency: existingTransaction.trade_currency,
       tradeDate: existingTransaction.trade_date,
       notes: existingTransaction.notes || '',
@@ -110,7 +122,7 @@ export default function TransactionForm({
       quantity: '',
       unitPrice: '',
       fee: '',
-      fxRate: '',
+      fxRate: '1',
       tradeCurrency: 'USD',
       tradeDate: new Date().toISOString().split('T')[0],
       notes: '',
@@ -328,7 +340,7 @@ export default function TransactionForm({
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 md:gap-4">
               <FormField
                 control={form.control}
                 name="fee"
@@ -346,6 +358,32 @@ export default function TransactionForm({
                         onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="fxRate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-sm">FX Rate</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="0.000001"
+                        min="0.0000001"
+                        className="text-sm"
+                        placeholder="1.0000"
+                        {...field}
+                        value={field.value ?? ''}
+                        onChange={(e) => field.onChange(e.target.value)}
+                      />
+                    </FormControl>
+                    <FormDescription className="text-xs md:text-sm">
+                      Enter the conversion as base currency per trade currency (e.g., USD base / CAD quote).
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
