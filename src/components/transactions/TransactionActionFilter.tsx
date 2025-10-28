@@ -56,7 +56,7 @@ export default function TransactionActionFilter({
                 value={option.value}
                 className={cn(
                   'rounded-full border border-transparent px-4 py-2 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:text-sm',
-                  'data-[state=off]:bg-muted data-[state=off]:text-muted-foreground data-[state=off]:hover:bg-muted/80',
+                  'data-[state=off]:bg-muted/40 data-[state=off]:text-muted-foreground data-[state=off]:hover:bg-muted/60 data-[state=off]:dark:bg-muted/20 data-[state=off]:dark:hover:bg-muted/30',
                   styles.button,
                   styles.buttonHover
                 )}
