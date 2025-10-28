@@ -43,7 +43,7 @@ export default function TransactionActionFilter({
       nonDefaultSelections.length === nonDefaultOptionValues.length &&
       nonDefaultOptionValues.every(optionValue => nonDefaultSelections.includes(optionValue));
 
-    if (includesDefault || hasEveryNonDefaultSelected) {
+    if ((includesDefault && value.length > 1) || (!includesDefault && hasEveryNonDefaultSelected)) {
       return optionValues;
     }
 
@@ -56,18 +56,25 @@ export default function TransactionActionFilter({
       return;
     }
 
-    const validSelections = Array.from(
-      new Set(nextValue.filter(optionValue => optionValues.includes(optionValue)))
-    );
+    const validSelections = nextValue.filter(optionValue => optionValues.includes(optionValue));
     const includesDefault = validSelections.includes(defaultValue);
     const nonDefaultSelections = validSelections.filter(optionValue => optionValue !== defaultValue);
     const hasAllNonDefaultSelections =
       nonDefaultSelections.length === nonDefaultOptionValues.length &&
       nonDefaultOptionValues.every(optionValue => nonDefaultSelections.includes(optionValue));
-    const previousIncludesDefault = value.includes(defaultValue);
 
     if (validSelections.length === 0) {
       onValueChange([defaultValue]);
+      return;
+    }
+
+    if (includesDefault && nonDefaultSelections.length === 0) {
+      onValueChange([defaultValue]);
+      return;
+    }
+
+    if (includesDefault && value.includes(defaultValue) && value.length === 1 && nonDefaultSelections.length > 0) {
+      onValueChange(nonDefaultSelections);
       return;
     }
 
@@ -76,12 +83,7 @@ export default function TransactionActionFilter({
       return;
     }
 
-    if (hasAllNonDefaultSelections && !previousIncludesDefault) {
-      onValueChange([defaultValue]);
-      return;
-    }
-
-    if (nonDefaultSelections.length === 0) {
+    if (hasAllNonDefaultSelections) {
       onValueChange([defaultValue]);
       return;
     }
