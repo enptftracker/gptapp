@@ -20,7 +20,10 @@ function WatchlistRow({
   onSelect: (item: WatchlistItem) => void;
   onRemove: () => void;
 }) {
-  const { data: quote, isLoading, error } = useMarketData(item.symbol.ticker);
+  const { data: quote, isLoading, error } = useMarketData(item.symbol.ticker, {
+    assetType: item.symbol.asset_type,
+    quoteCurrency: item.symbol.quote_currency,
+  });
   const quoteCurrency = item.symbol.quote_currency || 'USD';
 
   const formatPrice = (price: number) =>
@@ -129,9 +132,19 @@ export default function Watchlist() {
   const addToWatchlist = useAddToWatchlist();
   const removeFromWatchlist = useRemoveFromWatchlist();
 
-  const handleAddSymbol = async (ticker: string, name: string, assetType: string) => {
+  const handleAddSymbol = async (
+    ticker: string,
+    name: string,
+    assetType: string,
+    quoteCurrency: string,
+  ) => {
     try {
-      await addToWatchlist.mutateAsync(ticker);
+      await addToWatchlist.mutateAsync({
+        ticker,
+        name,
+        assetType,
+        quoteCurrency,
+      });
     } catch (error) {
       // Error handling is done in the hook
     }

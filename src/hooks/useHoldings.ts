@@ -5,7 +5,7 @@ import { symbolService, profileService, fxRateService, type FxRate } from '@/lib
 import { PortfolioCalculations, QuoteSnapshot, type FxRateSnapshot } from '@/lib/calculations';
 import { MarketDataService } from '@/lib/marketData';
 
-async function fetchLiveQuotes(symbols: { id: string; ticker: string }[]): Promise<QuoteSnapshot[]> {
+async function fetchLiveQuotes(symbols: { id: string; ticker: string; asset_type?: string; quote_currency?: string }[]): Promise<QuoteSnapshot[]> {
   if (symbols.length === 0) {
     return [];
   }
@@ -17,7 +17,10 @@ async function fetchLiveQuotes(symbols: { id: string; ticker: string }[]): Promi
       }
 
       try {
-        const quote = await MarketDataService.getMarketData(symbol.ticker);
+        const quote = await MarketDataService.getMarketData(symbol.ticker, {
+          assetType: symbol.asset_type,
+          quoteCurrency: symbol.quote_currency,
+        });
         if (quote && typeof quote.price === 'number') {
           return {
             symbol_id: symbol.id,
@@ -183,7 +186,12 @@ export function usePortfolioHoldings(portfolioId: string) {
 
       const [prices, fxRates] = await Promise.all([
         fetchLiveQuotes(
-          symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
+          symbols.map(symbol => ({
+            id: symbol.id,
+            ticker: symbol.ticker,
+            asset_type: symbol.asset_type,
+            quote_currency: symbol.quote_currency,
+          }))
         ),
         loadFxRates(baseCurrency, tradeCurrencies, queryClient)
       ]);
@@ -243,7 +251,12 @@ export function usePortfolioMetrics(portfolioId: string) {
 
       const [prices, fxRates] = await Promise.all([
         fetchLiveQuotes(
-          symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
+          symbols.map(symbol => ({
+            id: symbol.id,
+            ticker: symbol.ticker,
+            asset_type: symbol.asset_type,
+            quote_currency: symbol.quote_currency,
+          }))
         ),
         loadFxRates(baseCurrency, tradeCurrencies, queryClient)
       ]);
@@ -295,7 +308,12 @@ export function useConsolidatedHoldings() {
 
       const [prices, fxRates] = await Promise.all([
         fetchLiveQuotes(
-          symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
+          symbols.map(symbol => ({
+            id: symbol.id,
+            ticker: symbol.ticker,
+            asset_type: symbol.asset_type,
+            quote_currency: symbol.quote_currency,
+          }))
         ),
         loadFxRates(baseCurrency, tradeCurrencies, queryClient)
       ]);

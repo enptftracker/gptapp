@@ -5,13 +5,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { MarketDataService } from '@/lib/marketData';
-
-type SymbolResult = { ticker: string; name: string; type: string };
+import { MarketDataService, type SymbolSearchResult } from '@/lib/marketData';
 
 interface SymbolSearchProps {
   value?: string;
-  onSelect: (ticker: string, name: string, assetType: string) => void;
+  onSelect: (ticker: string, name: string, assetType: string, quoteCurrency: string) => void;
   placeholder?: string;
   className?: string;
 }
@@ -19,8 +17,8 @@ interface SymbolSearchProps {
 export function SymbolSearch({ value, onSelect, placeholder = "Search tickers...", className }: SymbolSearchProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [symbols, setSymbols] = useState<SymbolResult[]>([]);
-  const [selectedSymbol, setSelectedSymbol] = useState<SymbolResult | null>(null);
+  const [symbols, setSymbols] = useState<SymbolSearchResult[]>([]);
+  const [selectedSymbol, setSelectedSymbol] = useState<SymbolSearchResult | null>(null);
   const [inputValue, setInputValue] = useState(value ?? "");
   const commandListRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -71,8 +69,8 @@ export function SymbolSearch({ value, onSelect, placeholder = "Search tickers...
 
   const showSelectedBadge = Boolean(selectedSymbol && inputValue === selectedSymbol.ticker);
 
-  const handleSelect = (symbol: SymbolResult) => {
-    onSelect(symbol.ticker, symbol.name, symbol.type);
+  const handleSelect = (symbol: SymbolSearchResult) => {
+    onSelect(symbol.ticker, symbol.name, symbol.assetType, symbol.quoteCurrency);
     setSelectedSymbol(symbol);
     setInputValue(symbol.ticker);
     setSearchQuery(symbol.ticker);
@@ -123,7 +121,7 @@ export function SymbolSearch({ value, onSelect, placeholder = "Search tickers...
           />
           {showSelectedBadge && selectedSymbol && (
             <Badge variant="secondary" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs">
-              {selectedSymbol.type}
+              {selectedSymbol.assetType}
             </Badge>
           )}
         </div>
@@ -151,11 +149,14 @@ export function SymbolSearch({ value, onSelect, placeholder = "Search tickers...
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{symbol.ticker}</span>
                       <Badge variant="outline" className="text-xs">
-                        {symbol.type}
+                        {symbol.assetType}
                       </Badge>
                     </div>
                     <span className="text-sm text-muted-foreground truncate">
                       {symbol.name}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      Quote currency: {symbol.quoteCurrency}
                     </span>
                   </div>
                   <Check

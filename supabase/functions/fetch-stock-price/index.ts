@@ -2,10 +2,14 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
 interface StockRequest {
-  ticker: string;
+  ticker?: string;
+  assetType?: string;
+  quoteCurrency?: string;
 }
 
 const FINNHUB_QUOTE_ENDPOINT = "https://finnhub.io/api/v1/quote";
+const FINNHUB_CRYPTO_CANDLE_ENDPOINT = "https://finnhub.io/api/v1/crypto/candle";
+const FINNHUB_FOREX_CANDLE_ENDPOINT = "https://finnhub.io/api/v1/forex/candle";
 
 const getFinnhubApiKey = (): string => {
   const apiKey = Deno.env.get("FINNHUB_API_KEY")?.trim();
@@ -82,6 +86,129 @@ const toIsoTimestamp = (timestamp?: number | null): string | undefined => {
   }
 };
 
+const extractLatestFromArray = (
+  values?: Array<number | string>,
+): number | undefined => {
+  if (!Array.isArray(values) || values.length === 0) {
+    return undefined;
+  }
+
+  const last = values[values.length - 1];
+  return toFiniteNumber(last);
+};
+
+const extractLatestTimestamp = (values?: Array<number | null>): number | undefined => {
+  if (!Array.isArray(values) || values.length === 0) {
+    return undefined;
+  }
+
+  const last = values[values.length - 1];
+  return typeof last === "number" && Number.isFinite(last) ? last : undefined;
+};
+
+const fetchFinnhubCandleQuote = async (
+  endpoint: string,
+  ticker: string,
+): Promise<{
+  price: number;
+  high?: number;
+  low?: number;
+  volume?: number;
+  timestamp?: number;
+}> => {
+  const apiKey = getFinnhubApiKey();
+  const url = new URL(endpoint);
+  const now = Math.floor(Date.now() / 1000);
+  const from = now - 60 * 60; // Look back an hour for a recent candle
+
+  url.searchParams.set("symbol", ticker);
+  url.searchParams.set("resolution", "1");
+  url.searchParams.set("from", from.toString());
+  url.searchParams.set("to", now.toString());
+  url.searchParams.set("token", apiKey);
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const upstreamStatus = response.status;
+    throw new HttpError(
+      `Finnhub API error: ${upstreamStatus}`,
+      upstreamStatus >= 400 && upstreamStatus < 500 ? upstreamStatus : 502,
+    );
+  }
+
+  const payload: FinnhubCandleResponse = await response.json();
+
+  if (!payload || payload.s !== "ok") {
+    throw new HttpError(
+      "Finnhub candle response is invalid",
+      502,
+      payload,
+    );
+  }
+
+  const price = extractLatestFromArray(payload.c);
+
+  if (typeof price !== "number") {
+    throw new HttpError(
+      "Instrument not found or price unavailable",
+      404,
+      payload,
+    );
+  }
+
+  const high = extractLatestFromArray(payload.h);
+  const low = extractLatestFromArray(payload.l);
+  const volume = extractLatestFromArray(payload.v);
+  const timestamp = extractLatestTimestamp(payload.t);
+
+  return { price, high, low, volume, timestamp };
+};
+
+const fetchFinnhubCryptoQuote = async (ticker: string) => {
+  const candle = await fetchFinnhubCandleQuote(
+    FINNHUB_CRYPTO_CANDLE_ENDPOINT,
+    ticker,
+  );
+
+  return {
+    symbol: ticker,
+    price: candle.price,
+    change: 0,
+    changePercent: 0,
+    high: candle.high,
+    low: candle.low,
+    volume: candle.volume,
+    tradingDay: candle.timestamp ? normalizeTradingDay(candle.timestamp) : undefined,
+    lastUpdated: toIsoTimestamp(candle.timestamp),
+    provider: "finnhub" as const,
+  };
+};
+
+const fetchFinnhubForexQuote = async (ticker: string) => {
+  const candle = await fetchFinnhubCandleQuote(
+    FINNHUB_FOREX_CANDLE_ENDPOINT,
+    ticker,
+  );
+
+  return {
+    symbol: ticker,
+    price: candle.price,
+    change: 0,
+    changePercent: 0,
+    high: candle.high,
+    low: candle.low,
+    volume: candle.volume,
+    tradingDay: candle.timestamp ? normalizeTradingDay(candle.timestamp) : undefined,
+    lastUpdated: toIsoTimestamp(candle.timestamp),
+    provider: "finnhub" as const,
+  };
+};
+
 interface FinnhubQuoteResult {
   c?: number | string; // Current price
   d?: number | string; // Change
@@ -92,6 +219,84 @@ interface FinnhubQuoteResult {
   pc?: number | string; // Previous close price
   t?: number | null; // Timestamp
 }
+
+interface FinnhubCandleResponse {
+  c?: Array<number | string>;
+  h?: Array<number | string>;
+  l?: Array<number | string>;
+  o?: Array<number | string>;
+  v?: Array<number | string>;
+  t?: Array<number | null>;
+  s?: string;
+}
+
+const inferAssetTypeFromTicker = (ticker: string): string | null => {
+  const upper = ticker.toUpperCase();
+  const [maybeExchange, maybeSymbol] = upper.split(":", 2);
+  const symbolPart = maybeSymbol ?? maybeExchange;
+
+  const cryptoExchanges = new Set([
+    "BINANCE",
+    "COINBASE",
+    "KRAKEN",
+    "BITSTAMP",
+    "BITFINEX",
+    "GEMINI",
+    "HUOBI",
+    "OKX",
+    "OKEX",
+    "BYBIT",
+  ]);
+
+  const forexExchanges = new Set([
+    "OANDA",
+    "FXCM",
+    "FOREX",
+    "SAXO",
+    "ICMARKETS",
+    "PEPPERSTONE",
+    "CMC",
+    "IDC",
+  ]);
+
+  if (maybeSymbol) {
+    if (cryptoExchanges.has(maybeExchange)) {
+      return "CRYPTO";
+    }
+
+    if (forexExchanges.has(maybeExchange)) {
+      return "FX";
+    }
+  }
+
+  const stablecoinSuffixes = ["USDT", "USDC", "BUSD", "USDP", "TUSD"];
+
+  const normalizedSymbol = symbolPart.replace(/[^A-Z]/g, "");
+
+  if (/^[A-Z]{6}$/.test(normalizedSymbol)) {
+    return "FX";
+  }
+
+  for (const suffix of stablecoinSuffixes) {
+    if (symbolPart.endsWith(suffix)) {
+      return "CRYPTO";
+    }
+  }
+
+  const splitParts = symbolPart.split(/[-_/]/).filter(Boolean);
+  if (splitParts.length >= 2) {
+    const quote = splitParts[splitParts.length - 1];
+    if (stablecoinSuffixes.includes(quote)) {
+      return "CRYPTO";
+    }
+
+    if (quote.length === 3) {
+      return "FX";
+    }
+  }
+
+  return null;
+};
 
 const fetchFinnhubQuote = async (ticker: string) => {
   const apiKey = getFinnhubApiKey();
@@ -156,6 +361,26 @@ const fetchFinnhubQuote = async (ticker: string) => {
   };
 };
 
+const fetchQuoteByAssetType = async (
+  ticker: string,
+  assetType?: string,
+) => {
+  const normalized = assetType?.trim().toUpperCase();
+  const inferred = normalized && normalized.length > 0
+    ? normalized
+    : inferAssetTypeFromTicker(ticker) ?? undefined;
+
+  if (inferred === "CRYPTO") {
+    return fetchFinnhubCryptoQuote(ticker);
+  }
+
+  if (inferred === "FX" || inferred === "FOREX" || inferred === "CURRENCY") {
+    return fetchFinnhubForexQuote(ticker);
+  }
+
+  return fetchFinnhubQuote(ticker);
+};
+
 export const handleFetchStockPrice = async (
   req: Request
 ): Promise<Response> => {
@@ -174,7 +399,8 @@ export const handleFetchStockPrice = async (
     const payload: Partial<StockRequest> =
       req.method === "POST" && isJson ? await req.json() : {};
 
-    const ticker = payload?.ticker;
+    const ticker = typeof payload?.ticker === "string" ? payload.ticker.trim() : "";
+    const assetType = payload?.assetType;
 
     if (!ticker) {
       return new Response(JSON.stringify({ error: "Ticker symbol is required" }), {
@@ -182,9 +408,9 @@ export const handleFetchStockPrice = async (
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }
-    console.log(`Fetching stock data from Finnhub for: ${ticker}`);
+    console.log(`Fetching market data for: ${ticker} (${assetType ?? 'auto'})`);
 
-    const stockData = await fetchFinnhubQuote(ticker);
+    const stockData = await fetchQuoteByAssetType(ticker, assetType);
 
     return new Response(JSON.stringify(stockData), {
       status: 200,

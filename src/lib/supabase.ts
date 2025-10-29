@@ -14,7 +14,7 @@ export interface Symbol {
   owner_id: string;
   ticker: string;
   name?: string;
-  asset_type: 'EQUITY' | 'ETF' | 'CRYPTO' | 'FUND';
+  asset_type: 'EQUITY' | 'ETF' | 'CRYPTO' | 'FUND' | 'FX';
   exchange?: string;
   quote_currency: string;
   created_at: string;

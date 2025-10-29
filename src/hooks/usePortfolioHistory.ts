@@ -4,21 +4,34 @@ import { PortfolioCalculations, PortfolioHistoryPoint, LotMethod, QuoteSnapshot 
 import { MarketDataService } from '@/lib/marketData';
 
 async function fetchQuotesForTransactions(transactions: DbTransaction[]): Promise<QuoteSnapshot[]> {
-  const symbolTickerMap = new Map<string, string>();
+  const symbolTickerMap = new Map<string, {
+    ticker: string;
+    assetType?: string;
+    quoteCurrency?: string;
+  }>();
 
   for (const transaction of transactions) {
     const symbolId = transaction.symbol_id;
     const ticker = transaction.symbol?.ticker;
+    const assetType = transaction.symbol?.asset_type;
+    const quoteCurrency = transaction.symbol?.quote_currency;
 
     if (symbolId && ticker && !symbolTickerMap.has(symbolId)) {
-      symbolTickerMap.set(symbolId, ticker);
+      symbolTickerMap.set(symbolId, {
+        ticker,
+        assetType,
+        quoteCurrency,
+      });
     }
   }
 
   const entries = await Promise.all(
-    Array.from(symbolTickerMap.entries()).map(async ([symbolId, ticker]) => {
+    Array.from(symbolTickerMap.entries()).map(async ([symbolId, metadata]) => {
       try {
-        const quote = await MarketDataService.getMarketData(ticker);
+        const quote = await MarketDataService.getMarketData(metadata.ticker, {
+          assetType: metadata.assetType,
+          quoteCurrency: metadata.quoteCurrency,
+        });
         if (quote && typeof quote.price === 'number') {
           return {
             symbol_id: symbolId,

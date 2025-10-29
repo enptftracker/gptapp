@@ -255,7 +255,7 @@ export default function TransactionForm({
                     <FormControl>
                       <SymbolSearch
                         value={field.value}
-                        onSelect={(ticker, name, assetType) => {
+                        onSelect={(ticker) => {
                           field.onChange(ticker);
                         }}
                         placeholder="Search for a ticker..."

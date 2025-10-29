@@ -2,6 +2,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+export interface AddWatchlistSymbolInput {
+  ticker: string;
+  name?: string;
+  assetType?: string;
+  quoteCurrency?: string;
+}
+
 export interface WatchlistItem {
   id: string;
   symbol_id: string;
@@ -45,16 +52,71 @@ export function useAddToWatchlist() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (ticker: string) => {
+    mutationFn: async ({ ticker, name, assetType, quoteCurrency }: AddWatchlistSymbolInput) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
+
+      const normalizedTicker = ticker.trim().toUpperCase();
+      const normalizedName = typeof name === 'string' && name.trim().length > 0 ? name.trim() : normalizedTicker;
+
+      const normalizeAssetType = (value?: string): string => {
+        if (!value) {
+          return 'EQUITY';
+        }
+
+        const upper = value.trim().toUpperCase();
+
+        if (upper.includes('CRYPTO')) {
+          return 'CRYPTO';
+        }
+
+        if (upper.includes('FOREX') || upper === 'FX' || upper.includes('CURRENCY')) {
+          return 'FX';
+        }
+
+        if (upper.includes('ETF')) {
+          return 'ETF';
+        }
+
+        if (upper.includes('FUND') || upper.includes('MUTUAL')) {
+          return 'FUND';
+        }
+
+        return 'EQUITY';
+      };
+
+      const normalizedAssetType = normalizeAssetType(assetType);
+
+      const normalizeCurrency = (value?: string): string => {
+        if (!value) {
+          return 'USD';
+        }
+
+        const normalized = value.trim().toUpperCase();
+
+        if (!normalized) {
+          return 'USD';
+        }
+
+        const stablecoinMap: Record<string, string> = {
+          USDT: 'USD',
+          USDC: 'USD',
+          BUSD: 'USD',
+          USDP: 'USD',
+          TUSD: 'USD',
+        };
+
+        return stablecoinMap[normalized] ?? normalized;
+      };
+
+      const normalizedQuoteCurrency = normalizeCurrency(quoteCurrency);
 
       // First, find or create the symbol
       let symbolId;
       const { data: existingSymbol } = await supabase
         .from('symbols')
         .select('id')
-        .eq('ticker', ticker.toUpperCase())
+        .eq('ticker', normalizedTicker)
         .single();
 
       if (existingSymbol) {
@@ -64,10 +126,10 @@ export function useAddToWatchlist() {
         const { data: newSymbol, error: symbolError } = await supabase
           .from('symbols')
           .insert({
-            ticker: ticker.toUpperCase(),
-            name: ticker.toUpperCase(),
-            asset_type: 'EQUITY',
-            quote_currency: 'USD',
+            ticker: normalizedTicker,
+            name: normalizedName,
+            asset_type: normalizedAssetType,
+            quote_currency: normalizedQuoteCurrency,
             owner_id: user.id
           })
           .select('id')
