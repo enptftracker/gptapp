@@ -45,6 +45,7 @@ export default function Dashboard() {
         queryClient.invalidateQueries({ queryKey: ['holdings'] }),
         queryClient.invalidateQueries({ queryKey: ['metrics'] }),
         queryClient.invalidateQueries({ queryKey: ['portfolio-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['fx-rates'] }),
       ]);
     },
     onSuccess: () => {

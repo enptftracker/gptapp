@@ -1,8 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useTransactions } from './useTransactions';
 import { usePortfolios } from './usePortfolios';
-import { symbolService, profileService, fxRateService } from '@/lib/supabase';
-import { PortfolioCalculations, QuoteSnapshot } from '@/lib/calculations';
+import { symbolService, profileService, fxRateService, type FxRate } from '@/lib/supabase';
+import { PortfolioCalculations, QuoteSnapshot, type FxRateSnapshot } from '@/lib/calculations';
 import { MarketDataService } from '@/lib/marketData';
 
 async function fetchLiveQuotes(symbols: { id: string; ticker: string }[]): Promise<QuoteSnapshot[]> {
@@ -36,9 +36,126 @@ async function fetchLiveQuotes(symbols: { id: string; ticker: string }[]): Promi
   return results.filter((entry): entry is QuoteSnapshot => entry !== null);
 }
 
+const normalizeCurrency = (value?: string | null): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const buildFxQueryKey = (baseCurrency: string, quoteCurrencies: string[]) => [
+  'fx-rates',
+  baseCurrency,
+  quoteCurrencies.slice().sort().join('-')
+];
+
+const toFxSnapshot = (rate: FxRate | FxRateSnapshot): FxRateSnapshot => ({
+  base_currency: rate.base_currency,
+  quote_currency: rate.quote_currency,
+  rate: rate.rate,
+  asof: rate.asof,
+});
+
+const mergeFxRates = (stored: FxRateSnapshot[], live: FxRateSnapshot[]): FxRateSnapshot[] => {
+  const merged = new Map<string, FxRateSnapshot>();
+
+  const insert = (rate: FxRateSnapshot, overwrite = false) => {
+    const base = normalizeCurrency(rate.base_currency);
+    const quote = normalizeCurrency(rate.quote_currency);
+    const numericRate = typeof rate.rate === 'number' ? rate.rate : Number.NaN;
+
+    if (!base || !quote || !Number.isFinite(numericRate) || numericRate <= 0) {
+      return;
+    }
+
+    const key = `${base}-${quote}`;
+    const normalized: FxRateSnapshot = {
+      base_currency: base,
+      quote_currency: quote,
+      rate: Number.parseFloat(numericRate.toFixed(6)),
+      asof: typeof rate.asof === 'string'
+        ? rate.asof
+        : rate.asof instanceof Date
+          ? rate.asof.toISOString()
+          : undefined,
+    };
+
+    if (!merged.has(key) || overwrite) {
+      merged.set(key, normalized);
+    }
+  };
+
+  stored.forEach(rate => insert(rate, false));
+  live.forEach(rate => insert(rate, true));
+
+  return Array.from(merged.values());
+};
+
+const fetchAndPersistFxRates = async (
+  baseCurrency: string,
+  quoteCurrencies: string[],
+): Promise<FxRateSnapshot[]> => {
+  if (quoteCurrencies.length === 0) {
+    return [];
+  }
+
+  try {
+    const liveRates = await MarketDataService.getFxRates(baseCurrency, quoteCurrencies);
+
+    if (liveRates.length > 0) {
+      try {
+        await fxRateService.saveRates(liveRates);
+      } catch (error) {
+        console.error('Failed to persist live FX rates', error);
+      }
+    }
+
+    return liveRates;
+  } catch (error) {
+    console.error('Failed to fetch live FX rates', error);
+    return [];
+  }
+};
+
+const loadFxRates = async (
+  baseCurrency: string,
+  tradeCurrencies: string[],
+  queryClient: QueryClient,
+): Promise<FxRateSnapshot[]> => {
+  const normalizedBase = normalizeCurrency(baseCurrency) ?? 'USD';
+  const normalizedQuotes = Array.from(new Set(
+    tradeCurrencies
+      .map(currency => normalizeCurrency(currency))
+      .filter((currency): currency is string => Boolean(currency) && currency !== normalizedBase)
+  ));
+
+  if (normalizedQuotes.length === 0) {
+    return [];
+  }
+
+  const [storedRates, liveRates] = await Promise.all([
+    fxRateService.getRelevantRates(normalizedBase, normalizedQuotes),
+    queryClient.ensureQueryData({
+      queryKey: buildFxQueryKey(normalizedBase, normalizedQuotes),
+      queryFn: () => fetchAndPersistFxRates(normalizedBase, normalizedQuotes),
+      staleTime: 60 * 1000,
+      gcTime: 5 * 60 * 1000,
+    }).catch((error) => {
+      console.error('Failed to cache live FX rates', error);
+      return [] as FxRateSnapshot[];
+    })
+  ]);
+
+  const storedSnapshots = storedRates.map(toFxSnapshot);
+  return mergeFxRates(storedSnapshots, liveRates);
+};
+
 export function usePortfolioHoldings(portfolioId: string) {
   const { data: transactions = [] } = useTransactions();
   const { data: portfolios = [] } = usePortfolios();
+  const queryClient = useQueryClient();
 
   return useQuery({
     queryKey: ['holdings', portfolioId],
@@ -68,7 +185,7 @@ export function usePortfolioHoldings(portfolioId: string) {
         fetchLiveQuotes(
           symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
         ),
-        fxRateService.getRelevantRates(baseCurrency, tradeCurrencies)
+        loadFxRates(baseCurrency, tradeCurrencies, queryClient)
       ]);
 
       const lotMethod = profile?.default_lot_method || 'FIFO';
@@ -89,6 +206,7 @@ export function usePortfolioHoldings(portfolioId: string) {
 
 export function usePortfolioMetrics(portfolioId: string) {
   const { data: transactions = [] } = useTransactions();
+  const queryClient = useQueryClient();
 
   return useQuery({
     queryKey: ['metrics', portfolioId],
@@ -127,7 +245,7 @@ export function usePortfolioMetrics(portfolioId: string) {
         fetchLiveQuotes(
           symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
         ),
-        fxRateService.getRelevantRates(baseCurrency, tradeCurrencies)
+        loadFxRates(baseCurrency, tradeCurrencies, queryClient)
       ]);
 
       const lotMethod = profile?.default_lot_method || 'FIFO';
@@ -149,6 +267,7 @@ export function usePortfolioMetrics(portfolioId: string) {
 export function useConsolidatedHoldings() {
   const { data: portfolios = [], isLoading: portfoliosLoading } = usePortfolios();
   const { data: transactions = [], isLoading: transactionsLoading } = useTransactions();
+  const queryClient = useQueryClient();
 
   return useQuery({
     queryKey: ['consolidated-holdings', portfolios.length, transactions.length],
@@ -178,7 +297,7 @@ export function useConsolidatedHoldings() {
         fetchLiveQuotes(
           symbols.map(symbol => ({ id: symbol.id, ticker: symbol.ticker }))
         ),
-        fxRateService.getRelevantRates(baseCurrency, tradeCurrencies)
+        loadFxRates(baseCurrency, tradeCurrencies, queryClient)
       ]);
 
       const lotMethod = profile?.default_lot_method || 'FIFO';
