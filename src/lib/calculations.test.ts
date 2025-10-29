@@ -176,3 +176,87 @@ describe('PortfolioCalculations.calculatePortfolioHistory', () => {
     expect(consolidated[0]?.totalMarketValue).toBeCloseTo(history[history.length - 1].value);
   });
 });
+
+describe('PortfolioCalculations FX rate integration', () => {
+  const cadSymbol = {
+    id: 'symbol-cad',
+    owner_id: 'user-1',
+    ticker: 'CADS',
+    name: 'Canadian Stock',
+    asset_type: 'EQUITY' as const,
+    exchange: 'TSX',
+    quote_currency: 'CAD',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z'
+  };
+
+  const baseTransaction = buildTransaction({
+    id: 'fx-direct-1',
+    portfolio_id: 'portfolio-fx',
+    symbol_id: cadSymbol.id,
+    symbol: cadSymbol,
+    type: 'BUY',
+    quantity: 10,
+    unit_price: 100,
+    trade_currency: 'CAD',
+    fx_rate: 0.72,
+    trade_date: '2024-01-01T00:00:00Z'
+  });
+
+  const quoteSnapshots = [
+    { symbol_id: cadSymbol.id, price: 110, asof: '2024-01-10T00:00:00Z' }
+  ];
+
+  it('applies direct trade-to-base FX quotes when provided', () => {
+    const fxQuotes = [
+      {
+        base_currency: 'CAD',
+        quote_currency: 'USD',
+        rate: 0.75,
+        asof: '2024-01-10T00:00:00Z'
+      }
+    ];
+
+    const holdings = PortfolioCalculations.calculateHoldings(
+      'portfolio-fx',
+      [baseTransaction],
+      [cadSymbol],
+      quoteSnapshots,
+      'FIFO',
+      'USD',
+      fxQuotes
+    );
+
+    expect(holdings).toHaveLength(1);
+    const holding = holdings[0]!;
+    expect(holding.currentFxRate).toBeCloseTo(0.75, 6);
+    expect(holding.marketValueBase).toBeCloseTo(825); // 10 * 110 * 0.75
+    expect(holding.fxUnrealizedPL).toBeCloseTo(0); // cost basis already reflects live FX rate
+  });
+
+  it('inverts base-to-trade FX quotes when needed', () => {
+    const fxQuotes = [
+      {
+        base_currency: 'USD',
+        quote_currency: 'CAD',
+        rate: 1.333333,
+        asof: '2024-01-10T00:00:00Z'
+      }
+    ];
+
+    const holdings = PortfolioCalculations.calculateHoldings(
+      'portfolio-fx',
+      [baseTransaction],
+      [cadSymbol],
+      quoteSnapshots,
+      'FIFO',
+      'USD',
+      fxQuotes
+    );
+
+    expect(holdings).toHaveLength(1);
+    const holding = holdings[0]!;
+    expect(holding.currentFxRate).toBeCloseTo(0.75, 4);
+    expect(holding.marketValueBase).toBeCloseTo(825);
+  });
+});

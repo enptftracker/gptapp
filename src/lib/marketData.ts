@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import type { FxRateSnapshot } from './calculations';
 
 export interface LiveQuote {
   symbol: string;
@@ -53,6 +54,18 @@ type FetchHistoricalDataResponse = {
   period?: string;
   resolution?: string;
   data?: HistoricalEntry[];
+};
+
+type FetchFxRatesResponse = {
+  base_currency?: string;
+  provider?: string;
+  asof?: string;
+  rates?: Array<{
+    base_currency?: string;
+    quote_currency?: string;
+    rate?: number;
+    asof?: string;
+  }>;
 };
 
 class MarketDataServiceImpl {
@@ -139,6 +152,47 @@ class MarketDataServiceImpl {
     }
   }
 
+  private static normalizeCurrency(code: string): string | null {
+    if (typeof code !== 'string') {
+      return null;
+    }
+
+    const normalized = code.trim().toUpperCase();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private static async fetchFxRates(
+    baseCurrency: string,
+    quoteCurrencies: string[]
+  ): Promise<FetchFxRatesResponse | null> {
+    try {
+      const { data, error } = await supabase.functions.invoke<FetchFxRatesResponse>(
+        'fetch-fx-rate',
+        {
+          body: {
+            baseCurrency,
+            quoteCurrencies,
+          }
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data || typeof data !== 'object') {
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error fetching FX rates:', error);
+      throw error instanceof Error
+        ? error
+        : new Error('Unknown error fetching FX rates.');
+    }
+  }
+
   private static parseTimestamp(entry: HistoricalEntry): number | null {
     if (typeof entry.timestamp === 'number' && Number.isFinite(entry.timestamp)) {
       return entry.timestamp;
@@ -201,6 +255,57 @@ class MarketDataServiceImpl {
       lastUpdated,
       provider: data.provider ?? undefined
     };
+  }
+
+  static async getFxRates(
+    baseCurrency: string,
+    quoteCurrencies: string[],
+  ): Promise<FxRateSnapshot[]> {
+    const normalizedBase = this.normalizeCurrency(baseCurrency);
+    const normalizedQuotes = Array.from(new Set(
+      quoteCurrencies
+        .map(currency => this.normalizeCurrency(currency))
+        .filter((currency): currency is string => Boolean(currency))
+    ));
+
+    if (!normalizedBase || normalizedQuotes.length === 0) {
+      return [];
+    }
+
+    const fxData = await this.fetchFxRates(normalizedBase, normalizedQuotes);
+
+    if (!fxData || !Array.isArray(fxData.rates)) {
+      return [];
+    }
+
+    const fallbackAsof = typeof fxData.asof === 'string'
+      ? fxData.asof
+      : new Date().toISOString();
+
+    return normalizedQuotes
+      .map((quoteCurrency) => {
+        const match = fxData.rates?.find((rate) =>
+          this.normalizeCurrency(rate.base_currency) === quoteCurrency &&
+          this.normalizeCurrency(rate.quote_currency) === normalizedBase &&
+          typeof rate.rate === 'number' && rate.rate > 0
+        );
+
+        if (!match) {
+          return null;
+        }
+
+        const asof = typeof match.asof === 'string' && match.asof.length > 0
+          ? match.asof
+          : fallbackAsof;
+
+        return {
+          base_currency: quoteCurrency,
+          quote_currency: normalizedBase,
+          rate: this.round(match.rate, 6),
+          asof,
+        } satisfies FxRateSnapshot;
+      })
+      .filter((entry): entry is FxRateSnapshot => entry !== null);
   }
 
   static async getHistoricalPrices(

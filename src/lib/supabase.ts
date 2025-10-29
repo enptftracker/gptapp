@@ -289,6 +289,53 @@ export const fxRateService = {
     });
 
     return Array.from(latestByPair.values());
+  },
+
+  async saveRates(rates: Array<{ base_currency: string; quote_currency: string; rate: number; asof?: string | Date | null }>): Promise<void> {
+    const payload = rates
+      .map(rate => {
+        if (typeof rate !== 'object' || rate === null) {
+          return null;
+        }
+
+        const base = typeof rate.base_currency === 'string' ? rate.base_currency.trim().toUpperCase() : '';
+        const quote = typeof rate.quote_currency === 'string' ? rate.quote_currency.trim().toUpperCase() : '';
+        const numericRate = typeof rate.rate === 'number' ? rate.rate : Number.NaN;
+
+        if (!base || !quote || !Number.isFinite(numericRate) || numericRate <= 0) {
+          return null;
+        }
+
+        const asofValue = rate.asof instanceof Date
+          ? rate.asof
+          : typeof rate.asof === 'string'
+            ? new Date(rate.asof)
+            : null;
+
+        const asof = asofValue && !Number.isNaN(asofValue.getTime())
+          ? asofValue.toISOString()
+          : new Date().toISOString();
+
+        return {
+          base_currency: base,
+          quote_currency: quote,
+          rate: numericRate,
+          asof,
+        };
+      })
+      .filter((entry): entry is { base_currency: string; quote_currency: string; rate: number; asof: string } => entry !== null);
+
+    if (payload.length === 0) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from('fx_rates')
+      .insert(payload);
+
+    if (error) {
+      throw error;
+    }
   }
 };
 
