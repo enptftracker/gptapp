@@ -1,16 +1,12 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import {
+  filterAllowedFinnhubResults,
+  type FinnhubSearchEntry,
+} from "./exchangeFilter.ts";
 
 interface SearchRequest {
   query?: string;
-}
-
-interface FinnhubSearchEntry {
-  description?: string;
-  displaySymbol?: string;
-  symbol?: string;
-  type?: string;
-  currency?: string;
 }
 
 interface FinnhubSearchResponse {
@@ -210,7 +206,7 @@ const searchFinnhub = async (query: string): Promise<SymbolSearchResult[]> => {
   }
 
   const payload: FinnhubSearchResponse = await response.json();
-  const results = payload.result ?? [];
+  const results = filterAllowedFinnhubResults(payload.result ?? []);
 
   return results
     .map(mapSearchResult)
