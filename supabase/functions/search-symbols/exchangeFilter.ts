@@ -27,6 +27,16 @@ export const ALLOWED_EXCHANGE_PREFIXES = new Set<string>([
   "ARCA",
   "BATS",
   "IEX",
+  // Major crypto venues
+  "BINANCE",
+  "COINBASE",
+  "KRAKEN",
+  "BITSTAMP",
+  "BITFINEX",
+  // Major FX providers
+  "OANDA",
+  "FXCM",
+  "FOREX",
 ]);
 
 export const ALLOWED_EXCHANGE_SUFFIXES = new Set<string>([
