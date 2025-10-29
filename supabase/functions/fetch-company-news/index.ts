@@ -176,9 +176,10 @@ const fetchCompanyNews = async (
   ticker: string,
   dateRange: { from: string; to: string },
 ): Promise<CompanyNewsItem[]> => {
+  const normalizedTicker = ticker.toUpperCase();
   const apiKey = getFinnhubApiKey();
   const url = new URL(FINNHUB_COMPANY_NEWS_ENDPOINT);
-  url.searchParams.set("symbol", ticker);
+  url.searchParams.set("symbol", normalizedTicker);
   url.searchParams.set("from", dateRange.from);
   url.searchParams.set("to", dateRange.to);
   url.searchParams.set("token", apiKey);
@@ -209,7 +210,21 @@ const fetchCompanyNews = async (
     .filter((item): item is FinnhubCompanyNewsItem =>
       item && typeof item === "object"
     )
-    .map((item) => normalizeNewsItem(item, ticker))
+    .filter((item) => {
+      const related =
+        typeof item.related === "string" ? item.related.toUpperCase() : "";
+
+      if (!related) {
+        return false;
+      }
+
+      return related
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .includes(normalizedTicker);
+    })
+    .map((item) => normalizeNewsItem(item, normalizedTicker))
     .filter((item) => item.title && item.url);
 
   return normalized
