@@ -2,13 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import {
   HistoricalRange,
   HistoricalPricePoint,
-  MarketDataService
+  MarketDataService,
+  type InstrumentMetadata
 } from '@/lib/marketData';
 
-export function useMarketData(ticker: string) {
+export function useMarketData(ticker: string, metadata?: InstrumentMetadata) {
   return useQuery({
-    queryKey: ['market-data', ticker],
-    queryFn: () => MarketDataService.getMarketData(ticker),
+    queryKey: ['market-data', ticker, metadata?.assetType, metadata?.quoteCurrency],
+    queryFn: () => MarketDataService.getMarketData(ticker, metadata),
     enabled: !!ticker,
     staleTime: 1000 * 60 * 5, // 5 minutes
     refetchInterval: 1000 * 60 * 5, // Refresh every 5 minutes

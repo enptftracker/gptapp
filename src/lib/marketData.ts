@@ -14,6 +14,18 @@ export interface LiveQuote {
   provider?: string;
 }
 
+export interface InstrumentMetadata {
+  assetType?: string;
+  quoteCurrency?: string;
+}
+
+export interface SymbolSearchResult {
+  ticker: string;
+  name: string;
+  assetType: string;
+  quoteCurrency: string;
+}
+
 export type HistoricalRange = '1D' | '1M' | '3M' | '1Y' | '5Y' | 'MAX';
 
 export interface HistoricalPricePoint {
@@ -37,6 +49,15 @@ type FetchStockPriceResponse = {
   tradingDay?: string;
   lastUpdated?: string;
   provider?: string;
+};
+
+type FetchSymbolSearchResponse = {
+  results?: Array<{
+    ticker?: string;
+    name?: string;
+    assetType?: string;
+    quoteCurrency?: string;
+  }>;
 };
 
 type HistoricalEntry = {
@@ -72,6 +93,19 @@ class MarketDataServiceImpl {
   static readonly PROVIDER_STORAGE_KEY = 'market-data-provider';
   private static readonly LOGO_ENDPOINT = 'https://finnhub.io/api/v1/stock/profile2';
   private static readonly logoCache = new Map<string, string | null>();
+  private static readonly DEFAULT_SYMBOLS: SymbolSearchResult[] = [
+    { ticker: 'AAPL', name: 'Apple Inc.', assetType: 'EQUITY', quoteCurrency: 'USD' },
+    { ticker: 'GOOGL', name: 'Alphabet Inc. Class A', assetType: 'EQUITY', quoteCurrency: 'USD' },
+    { ticker: 'MSFT', name: 'Microsoft Corporation', assetType: 'EQUITY', quoteCurrency: 'USD' },
+    { ticker: 'NVDA', name: 'NVIDIA Corporation', assetType: 'EQUITY', quoteCurrency: 'USD' },
+    { ticker: 'META', name: 'Meta Platforms Inc.', assetType: 'EQUITY', quoteCurrency: 'USD' },
+    { ticker: 'SPY', name: 'SPDR S&P 500 ETF Trust', assetType: 'ETF', quoteCurrency: 'USD' },
+    { ticker: 'QQQ', name: 'Invesco QQQ Trust', assetType: 'ETF', quoteCurrency: 'USD' },
+    { ticker: 'VTI', name: 'Vanguard Total Stock Market ETF', assetType: 'ETF', quoteCurrency: 'USD' },
+    { ticker: 'BINANCE:BTCUSDT', name: 'Bitcoin (Binance)', assetType: 'CRYPTO', quoteCurrency: 'USD' },
+    { ticker: 'BINANCE:ETHUSDT', name: 'Ethereum (Binance)', assetType: 'CRYPTO', quoteCurrency: 'USD' },
+    { ticker: 'OANDA:EUR_USD', name: 'Euro / US Dollar', assetType: 'FX', quoteCurrency: 'USD' },
+  ];
 
   private static normalizeTicker(ticker: string): string | null {
     const normalized = ticker.trim().toUpperCase();
@@ -96,13 +130,18 @@ class MarketDataServiceImpl {
   }
 
   private static async fetchStockPrice(
-    ticker: string
+    ticker: string,
+    metadata?: InstrumentMetadata
   ): Promise<FetchStockPriceResponse | null> {
     try {
       const { data, error } = await supabase.functions.invoke<FetchStockPriceResponse>(
         'fetch-stock-price',
         {
-          body: { ticker }
+          body: {
+            ticker,
+            assetType: metadata?.assetType,
+            quoteCurrency: metadata?.quoteCurrency,
+          }
         }
       );
 
@@ -161,6 +200,24 @@ class MarketDataServiceImpl {
     return normalized.length > 0 ? normalized : null;
   }
 
+  private static normalizeQuoteCurrency(code?: string | null): string | null {
+    const normalized = code ? this.normalizeCurrency(code) : null;
+
+    if (!normalized) {
+      return null;
+    }
+
+    const stablecoinMap: Record<string, string> = {
+      USDT: 'USD',
+      USDC: 'USD',
+      BUSD: 'USD',
+      USDP: 'USD',
+      TUSD: 'USD',
+    };
+
+    return stablecoinMap[normalized] ?? normalized;
+  }
+
   private static async fetchFxRates(
     baseCurrency: string,
     quoteCurrencies: string[]
@@ -208,13 +265,73 @@ class MarketDataServiceImpl {
     return null;
   }
 
-  static async getMarketData(ticker: string): Promise<LiveQuote | null> {
+  private static normalizeAssetType(assetType?: string | null): string {
+    if (typeof assetType !== 'string') {
+      return 'EQUITY';
+    }
+
+    const normalized = assetType.trim().toUpperCase();
+
+    if (normalized.includes('CRYPTO')) {
+      return 'CRYPTO';
+    }
+
+    if (normalized === 'CRYPTO') {
+      return 'CRYPTO';
+    }
+
+    if (normalized.includes('FOREX') || normalized === 'FX' || normalized.includes('CURRENCY')) {
+      return 'FX';
+    }
+
+    if (normalized.includes('ETF')) {
+      return 'ETF';
+    }
+
+    if (normalized.includes('FUND') || normalized.includes('MUTUAL')) {
+      return 'FUND';
+    }
+
+    return 'EQUITY';
+  }
+
+  private static mapSearchResult(entry: {
+    ticker?: string | null;
+    name?: string | null;
+    assetType?: string | null;
+    quoteCurrency?: string | null;
+  }): SymbolSearchResult | null {
+    const ticker = this.normalizeTicker(entry.ticker ?? '');
+
+    if (!ticker) {
+      return null;
+    }
+
+    const name = typeof entry.name === 'string' && entry.name.trim().length > 0
+      ? entry.name.trim()
+      : ticker;
+
+    const assetType = this.normalizeAssetType(entry.assetType);
+    const quoteCurrency = this.normalizeQuoteCurrency(entry.quoteCurrency) ?? 'USD';
+
+    return {
+      ticker,
+      name,
+      assetType,
+      quoteCurrency,
+    } satisfies SymbolSearchResult;
+  }
+
+  static async getMarketData(
+    ticker: string,
+    metadata?: InstrumentMetadata,
+  ): Promise<LiveQuote | null> {
     const normalized = this.normalizeTicker(ticker);
     if (!normalized) {
       return null;
     }
 
-    const data = await this.fetchStockPrice(normalized);
+    const data = await this.fetchStockPrice(normalized, metadata);
 
     if (!data) {
       return null;
@@ -351,56 +468,40 @@ class MarketDataServiceImpl {
       .sort((a, b) => a.timestamp - b.timestamp);
   }
 
-  static async searchSymbols(query: string): Promise<Array<{ ticker: string; name: string; type: string }>> {
-    const symbols = [
-      { ticker: 'AAPL', name: 'Apple Inc.', type: 'EQUITY' },
-      { ticker: 'GOOGL', name: 'Alphabet Inc.', type: 'EQUITY' },
-      { ticker: 'GOOG', name: 'Alphabet Inc. Class A', type: 'EQUITY' },
-      { ticker: 'TSLA', name: 'Tesla Inc.', type: 'EQUITY' },
-      { ticker: 'MSFT', name: 'Microsoft Corporation', type: 'EQUITY' },
-      { ticker: 'AMZN', name: 'Amazon.com Inc.', type: 'EQUITY' },
-      { ticker: 'NVDA', name: 'NVIDIA Corporation', type: 'EQUITY' },
-      { ticker: 'META', name: 'Meta Platforms Inc.', type: 'EQUITY' },
-      { ticker: 'NFLX', name: 'Netflix Inc.', type: 'EQUITY' },
-      { ticker: 'JPM', name: 'JPMorgan Chase & Co.', type: 'EQUITY' },
-      { ticker: 'BAC', name: 'Bank of America Corp', type: 'EQUITY' },
-      { ticker: 'WFC', name: 'Wells Fargo & Company', type: 'EQUITY' },
-      { ticker: 'JNJ', name: 'Johnson & Johnson', type: 'EQUITY' },
-      { ticker: 'UNH', name: 'UnitedHealth Group Inc.', type: 'EQUITY' },
-      { ticker: 'PFE', name: 'Pfizer Inc.', type: 'EQUITY' },
-      { ticker: 'KO', name: 'The Coca-Cola Company', type: 'EQUITY' },
-      { ticker: 'PEP', name: 'PepsiCo Inc.', type: 'EQUITY' },
-      { ticker: 'WMT', name: 'Walmart Inc.', type: 'EQUITY' },
-      { ticker: 'MCD', name: "McDonald's Corporation", type: 'EQUITY' },
-      { ticker: 'DIS', name: 'The Walt Disney Company', type: 'EQUITY' },
-      { ticker: 'SPY', name: 'SPDR S&P 500 ETF Trust', type: 'ETF' },
-      { ticker: 'QQQ', name: 'Invesco QQQ Trust', type: 'ETF' },
-      { ticker: 'VTI', name: 'Vanguard Total Stock Market ETF', type: 'ETF' },
-      { ticker: 'IWM', name: 'iShares Russell 2000 ETF', type: 'ETF' },
-      { ticker: 'EFA', name: 'iShares MSCI EAFE ETF', type: 'ETF' },
-      { ticker: 'GLD', name: 'SPDR Gold Shares', type: 'ETF' },
-      { ticker: 'SLV', name: 'iShares Silver Trust', type: 'ETF' },
-      { ticker: 'ARKK', name: 'ARK Innovation ETF', type: 'ETF' },
-      { ticker: 'XLK', name: 'Technology Select Sector SPDR Fund', type: 'ETF' },
-      { ticker: 'XLF', name: 'Financial Select Sector SPDR Fund', type: 'ETF' },
-      { ticker: 'XLY', name: 'Consumer Discretionary Select Sector SPDR Fund', type: 'ETF' },
-      { ticker: 'XLE', name: 'Energy Select Sector SPDR Fund', type: 'ETF' },
-      { ticker: 'XLV', name: 'Health Care Select Sector SPDR Fund', type: 'ETF' },
-      { ticker: 'BITO', name: 'ProShares Bitcoin Strategy ETF', type: 'ETF' },
-      { ticker: 'VT', name: 'Vanguard Total World Stock ETF', type: 'ETF' },
-      { ticker: 'BTC-USD', name: 'Bitcoin', type: 'CRYPTO' },
-      { ticker: 'ETH-USD', name: 'Ethereum', type: 'CRYPTO' },
-      { ticker: 'SOL-USD', name: 'Solana', type: 'CRYPTO' },
-      { ticker: 'ADA-USD', name: 'Cardano', type: 'CRYPTO' },
-      { ticker: 'DOGE-USD', name: 'Dogecoin', type: 'CRYPTO' },
-      { ticker: 'BNB-USD', name: 'BNB', type: 'CRYPTO' },
-      { ticker: 'MATIC-USD', name: 'Polygon', type: 'CRYPTO' },
-      { ticker: 'COIN', name: 'Coinbase Global Inc.', type: 'EQUITY' },
-      { ticker: 'MSTR', name: 'MicroStrategy Inc.', type: 'EQUITY' }
-    ];
+  static async searchSymbols(query: string): Promise<SymbolSearchResult[]> {
+    const trimmedQuery = query.trim();
 
-    const lowerQuery = query.toLowerCase();
-    return symbols.filter(symbol =>
+    try {
+      const { data, error } = await supabase.functions.invoke<FetchSymbolSearchResponse>(
+        'search-symbols',
+        {
+          body: { query: trimmedQuery }
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      const results = data?.results ?? [];
+
+      const mapped = results
+        .map((entry) => this.mapSearchResult(entry))
+        .filter((entry): entry is SymbolSearchResult => Boolean(entry));
+
+      if (mapped.length > 0) {
+        return mapped.slice(0, 25);
+      }
+    } catch (error) {
+      console.error('Error searching symbols via provider', error);
+    }
+
+    if (!trimmedQuery) {
+      return this.DEFAULT_SYMBOLS.slice(0, 25);
+    }
+
+    const lowerQuery = trimmedQuery.toLowerCase();
+    return this.DEFAULT_SYMBOLS.filter(symbol =>
       symbol.ticker.toLowerCase().includes(lowerQuery) ||
       symbol.name.toLowerCase().includes(lowerQuery)
     );
